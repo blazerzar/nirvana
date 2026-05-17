@@ -5,7 +5,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-nirvana-core = { path = "../nirvana-core" }
+anyhow = "1.0.102"
+chrono = "0.4.44"
 clap = { version = "4.6.1", features = ["derive"] }
 console = "0.16.3"
-anyhow = "1.0.102"
+nirvana-core = { path = "../nirvana-core" }

@@ -1,0 +1,6 @@
+{
+    "language": "sqlite",
+    "tabWidth": 4,
+    "keywordCase": "lower",
+    "linesBetweenQueries": 2
+}

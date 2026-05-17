@@ -17,6 +17,16 @@ struct Cli {
 enum Command {
     /// Show system and app diagnostics
     Info,
+    Connection {
+        #[command(subcommand)]
+        command: Connection,
+    },
+}
+
+#[derive(Subcommand)]
+enum Connection {
+    /// List all connections
+    List,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -24,6 +34,9 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Some(Command::Info) => cli::info::run(),
+        Some(Command::Connection { command }) => match command {
+            Connection::List => cli::connection::list(),
+        },
         None => Ok(()),
     }
 }

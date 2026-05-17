@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 directories = "6.0.0"
+rusqlite = { version = "0.39.0", features = ["bundled"] }
 serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2.0.18"
 toml = "1.1.2"

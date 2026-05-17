@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
 use serde::{Deserialize, Serialize};
-use thiserror;
+use thiserror::Error;
 
 use crate::AppPaths;
 
@@ -14,12 +14,12 @@ pub struct AppConfig {
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ActiveConnection {
     #[serde(rename = "id")]
-    Id(u64),
+    Id(i64),
     #[serde(rename = "name")]
     Name(String),
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("config I/O error: {0}")]
     Io(#[from] std::io::Error),

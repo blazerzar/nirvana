@@ -10,31 +10,34 @@ const actions = computed(() => [
         key: "s",
         label: "Start",
         fn: () => tasks.openStartModal(),
-        disabled: false,
+        disabled: tasks.loading,
     },
     {
         key: "x",
         label: "Stop",
         fn: () => tasks.stopActiveTask(),
-        disabled: tasks.activeTask === null,
+        disabled: tasks.loading || tasks.activeTask === null,
     },
     {
         key: "w",
         label: "Switch",
         fn: () => tasks.switchToPreviousTask(),
-        disabled: tasks.activeTask === null || tasks.previousTask === null,
+        disabled:
+            tasks.loading ||
+            tasks.activeTask === null ||
+            tasks.previousTask === null,
     },
     {
         key: "e",
         label: "Edit",
         fn: () => tasks.openEditModal(),
-        disabled: tasks.selectedSessionEntry === null,
+        disabled: true,
     },
     {
         key: "p",
         label: "Publish",
-        fn: () => tasks.publishUnpublished(),
-        disabled: tasks.selectedDateUnpublishedTotalMs === 0,
+        fn: () => tasks.openPublishModal(),
+        disabled: tasks.loading || tasks.publishableSessions.length === 0,
     },
 ]);
 </script>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { AppInfo, ViewMode } from "./types/types";
 import TaskModals from "./components/TaskModals.vue";
@@ -87,6 +87,15 @@ onUnmounted(() => {
     if (ticker) window.clearInterval(ticker);
     window.removeEventListener("keydown", handleKeydown);
 });
+
+watch(
+    () => connections.activeConnection,
+    (connection) => {
+        if (connection) {
+            void tasks.loadSelectedDate();
+        }
+    },
+);
 </script>
 
 <template>
@@ -178,7 +187,14 @@ onUnmounted(() => {
                         aria-label="Go to today"
                         @click="tasks.goToToday()"
                     >
-                        {{ tasks.selectedDateLabel }}
+                        <Transition name="date-swap" mode="out-in">
+                            <span
+                                :key="tasks.selectedDateLabel"
+                                class="inline-block"
+                            >
+                                {{ tasks.selectedDateLabel }}
+                            </span>
+                        </Transition>
                     </button>
                     <button
                         class="inline-flex h-4 min-w-4 items-center justify-center rounded px-1.5 text-[12px] leading-none text-(--faint) transition-[color,background] duration-150 ease-(--ease) hover:bg-[rgba(255,255,255,0.04)] hover:text-(--muted)"

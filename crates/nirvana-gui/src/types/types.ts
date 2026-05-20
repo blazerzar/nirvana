@@ -14,7 +14,7 @@ export type PublishState = "unpublished" | "published";
 
 export type ViewMode = "ticket" | "day";
 
-export type ModalKind = "start" | "edit";
+export type ModalKind = "start" | "edit" | "publish";
 
 export type ConnectionType = "jira-cloud" | "jira-dc";
 
@@ -34,6 +34,35 @@ export type CreateConnectionInput = {
   hostname: string;
   username: string;
   token: string;
+};
+
+export type BackendSlot = {
+  id: number;
+  ticket_key: string;
+  summary: string | null;
+  note: string | null;
+  started_at: number;
+  stopped_at: number | null;
+  published_at: number | null;
+  issue_url: string | null;
+};
+
+export type BackendTicket = {
+  id: number;
+  ticket_key: string;
+  summary: string | null;
+  issue_url: string | null;
+};
+
+export type BackendPublishFailure = {
+  ticket_key: string;
+  error: string;
+};
+
+export type BackendPublishResult = {
+  published_count: number;
+  failed: BackendPublishFailure[];
+  timestamp: number;
 };
 
 export type TaskSession = {
@@ -79,6 +108,7 @@ export type StartTaskInput = {
   ticketKey: string;
   title?: string;
   note?: string;
+  start?: Date;
 };
 
 export type EditSessionInput = {

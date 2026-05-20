@@ -50,6 +50,9 @@ const timelineRowClass = (entry: TaskTimelineSession) => ({
         entry.isActive && tasks.selectedSessionId !== entry.session.id,
 });
 
+const contentKey = () =>
+    `${tasks.viewMode}-${tasks.selectedDate.toISOString().slice(0, 10)}`;
+
 watch(
     () => [tasks.viewMode, tasks.selectedTaskId, tasks.selectedSessionId],
     async () => {
@@ -67,21 +70,36 @@ watch(
 <template>
     <section class="flex min-h-0 flex-col">
         <div
-            v-if="tasks.viewMode === 'ticket'"
-            ref="ticketList"
-            class="min-h-0 flex-1 overflow-auto py-1"
-            role="list"
-            aria-label="Tracked tasks by ticket"
+            v-if="tasks.error"
+            class="border-b border-[rgba(255,154,134,0.18)] bg-[rgba(255,154,134,0.07)] px-[18px] py-2 text-[11px] text-[#ff9a86] max-[760px]:px-3.5"
         >
-            <TransitionGroup name="row" tag="div">
-                <article
-                    v-for="summary in tasks.summaries"
-                    :key="summary.task.id"
-                    :class="rowClass(summary)"
-                    :data-selected="tasks.selectedTaskId === summary.task.id"
-                    role="listitem"
-                    @click="tasks.selectTask(summary.task.id)"
-                >
+            {{ tasks.error }}
+        </div>
+        <div
+            v-else-if="tasks.loading"
+            class="border-b border-(--border) px-[18px] py-2 text-[11px] text-(--faint) max-[760px]:px-3.5"
+        >
+            Loading tracked work...
+        </div>
+
+        <Transition name="content-swap" mode="out-in">
+            <div
+                v-if="tasks.viewMode === 'ticket'"
+                :key="contentKey()"
+                ref="ticketList"
+                class="min-h-0 flex-1 overflow-auto py-1"
+                role="list"
+                aria-label="Tracked tasks by ticket"
+            >
+                <TransitionGroup name="row" tag="div">
+                    <article
+                        v-for="summary in tasks.summaries"
+                        :key="summary.task.id"
+                        :class="rowClass(summary)"
+                        :data-selected="tasks.selectedTaskId === summary.task.id"
+                        role="listitem"
+                        @click="tasks.selectTask(summary.task.id)"
+                    >
                     <button
                         class="inline-flex w-4 shrink-0 items-center justify-center bg-transparent pt-px text-sm leading-none text-(--very-faint) transition-colors duration-150 ease-[var(--ease)] hover:text-(--muted)"
                         type="button"
@@ -196,34 +214,35 @@ watch(
                             slotLabel(summary.slotCount)
                         }}</span>
                     </div>
-                </article>
-            </TransitionGroup>
+                    </article>
+                </TransitionGroup>
 
-            <EmptyState
-                v-if="tasks.summaries.length === 0"
-                :icon="TicketIcon"
-                :title="`No tickets tracked on ${tasks.selectedDateLabel}`"
-                body="Start tracking to add the first work session for this day."
-            />
-        </div>
+                <EmptyState
+                    v-if="!tasks.loading && tasks.summaries.length === 0"
+                    :icon="TicketIcon"
+                    :title="`No tickets tracked on ${tasks.selectedDateLabel}`"
+                    body="Start tracking to add the first work session for this day."
+                />
+            </div>
 
-        <div
-            v-else
-            ref="timelineList"
-            class="min-h-0 flex-1 overflow-auto pt-1.5"
-            role="list"
-            aria-label="Tracked tasks in day order"
-        >
-            <TransitionGroup name="row" tag="div">
-                <article
-                    v-for="entry in tasks.timelineSessions"
-                    :key="entry.session.id"
-                    :class="timelineRowClass(entry)"
-                    :data-selected="tasks.selectedSessionId === entry.session.id"
-                    :title="entry.session.note"
-                    role="listitem"
-                    @click="tasks.selectSession(entry.session.id)"
-                >
+            <div
+                v-else
+                :key="contentKey()"
+                ref="timelineList"
+                class="min-h-0 flex-1 overflow-auto pt-1.5"
+                role="list"
+                aria-label="Tracked tasks in day order"
+            >
+                <TransitionGroup name="row" tag="div">
+                    <article
+                        v-for="entry in tasks.timelineSessions"
+                        :key="entry.session.id"
+                        :class="timelineRowClass(entry)"
+                        :data-selected="tasks.selectedSessionId === entry.session.id"
+                        :title="entry.session.note"
+                        role="listitem"
+                        @click="tasks.selectSession(entry.session.id)"
+                    >
                     <div class="flex min-w-0 items-center gap-[7px]">
                         <span
                             class="shrink-0 font-mono text-[11px] font-semibold"
@@ -235,16 +254,26 @@ watch(
                         >
                             {{ entry.task.key }}
                         </span>
-                        <span
-                            class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11.5px] font-medium"
-                            :class="
-                                entry.isActive
-                                    ? 'text-(--text)'
-                                    : 'text-(--muted)'
-                            "
+                        <div
+                            class="flex min-w-0 items-baseline gap-1.5 overflow-hidden"
                         >
-                            {{ entry.task.title }}
-                        </span>
+                            <span
+                                class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11.5px] font-medium"
+                                :class="
+                                    entry.isActive
+                                        ? 'text-(--text)'
+                                        : 'text-(--muted)'
+                                "
+                            >
+                                {{ entry.task.title }}
+                            </span>
+                            <span
+                                v-if="entry.session.note"
+                                class="min-w-[36px] max-w-[min(32vw,320px)] overflow-hidden text-ellipsis whitespace-nowrap text-[10.5px] text-(--faint) max-[520px]:hidden"
+                            >
+                                {{ entry.session.note }}
+                            </span>
+                        </div>
                         <span
                             v-if="entry.isActive"
                             class="shrink-0 rounded-[3px] bg-(--accent) px-1.25 py-px text-[8px] font-bold uppercase tracking-[0.04em] text-(--bg)"
@@ -282,15 +311,16 @@ watch(
                             :title="entry.session.publishState"
                         ></span>
                     </div>
-                </article>
-            </TransitionGroup>
+                    </article>
+                </TransitionGroup>
 
-            <EmptyState
-                v-if="tasks.timelineSessions.length === 0"
-                :icon="TicketIcon"
-                :title="`No tickets tracked on ${tasks.selectedDateLabel}`"
-                body="Start tracking to add the first work session for this day."
-            />
-        </div>
+                <EmptyState
+                    v-if="!tasks.loading && tasks.timelineSessions.length === 0"
+                    :icon="TicketIcon"
+                    :title="`No tickets tracked on ${tasks.selectedDateLabel}`"
+                    body="Start tracking to add the first work session for this day."
+                />
+            </div>
+        </Transition>
     </section>
 </template>

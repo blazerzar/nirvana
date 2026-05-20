@@ -11,17 +11,20 @@ const {
   error,
   firstField,
   handleNoteKeydown,
+  handleStartKeydown,
   handleTicketKeydown,
   highlightedResultIndex,
   knownTask,
   note,
   noteField,
+  normalizeStartTime,
   reset,
   searchOpen,
   searchResults,
   selectSearchResult,
   shouldShowSearch,
   slotCountLabel,
+  start,
   statusText,
   submit,
   ticketKey,
@@ -112,6 +115,21 @@ onMounted(async () => {
         />
       </label>
 
+      <label class="flex min-w-0 flex-col gap-1 opacity-70 transition-opacity duration-150 ease-[var(--ease)] focus-within:opacity-100">
+        <span class="text-[9px] font-bold uppercase tracking-[0.04em] text-(--very-faint)">Start time</span>
+        <input
+          v-model="start"
+          class="min-h-[30px] w-full rounded-md border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.018)] px-2.5 py-1.5 text-[11px] text-(--faint) tabular-nums outline-none transition-[border-color,box-shadow,color] duration-150 ease-[var(--ease)] focus:border-[rgba(149,222,200,0.42)] focus:text-(--muted) focus:shadow-[0_0_0_2px_rgba(149,222,200,0.06)]"
+          type="text"
+          inputmode="numeric"
+          pattern="[0-9]{1,2}:[0-9]{2}"
+          placeholder="14:30"
+          autocomplete="off"
+          @blur="normalizeStartTime"
+          @keydown="handleStartKeydown"
+        />
+      </label>
+
       <p
         class="mt-0.5 mb-0 min-h-[18px] rounded-md border px-2.5 py-2 text-[11px]"
         :class="activeTaskWarning ? 'border-[rgba(210,192,113,0.2)] bg-[rgba(210,192,113,0.08)] text-(--warning)' : 'border-(--border) bg-(--surface) text-(--muted)'"
@@ -135,8 +153,8 @@ onMounted(async () => {
         <button
           class="min-h-[30px] rounded-md border border-(--accent) bg-(--accent) px-3 py-1.5 text-[11px] font-bold text-(--bg) transition-[color,background,border-color] duration-150 ease-[var(--ease)] disabled:cursor-default disabled:opacity-[0.42]"
           type="submit"
-          :disabled="Boolean(error)"
-        >Start</button>
+          :disabled="Boolean(error) || tasks.loading"
+        >{{ tasks.loading ? "Starting..." : "Start" }}</button>
       </footer>
     </template>
   </ModalShell>

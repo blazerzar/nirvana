@@ -1,16 +1,6 @@
 import { defineStore } from "pinia";
-import { createTasksData } from "../tasksData";
-import {
-  deleteSession as deleteSessionOperation,
-  ensureTaskForKey as ensureTaskForKeyOperation,
-  findTaskByKey as findTaskByKeyOperation,
-  nextSessionId as nextSessionIdOperation,
-  nextTaskId as nextTaskIdOperation,
-  publishUnpublishedForDay,
-  startTaskSession,
-  stopActiveTask as stopActiveTaskOperation,
-  updateSession as updateSessionOperation,
-} from "../tasks/operations";
+import { invoke } from "@tauri-apps/api/core";
+import { normalizeTicketKey, normalizedNote } from "../tasks/operations";
 import {
   activeSessionFor,
   activeTaskFor,
@@ -30,12 +20,16 @@ import {
   startOfDay,
 } from "../tasks/time";
 import {
+  BackendSlot,
+  BackendPublishResult,
+  BackendTicket,
   EditSessionInput,
   ModalKind,
   StartTaskInput,
   Task,
   TaskSession,
   TaskSessionEntry,
+  TaskStatus,
   TaskSummary,
   TaskTimelineSession,
   ViewMode,
@@ -43,13 +37,102 @@ import {
 
 export { formatClock, formatDayLabel, formatDuration };
 
+const taskIdForKey = (ticketKey: string) => {
+  let hash = 0;
+  const key = normalizeTicketKey(ticketKey);
+
+  for (let index = 0; index < key.length; index += 1) {
+    hash = (hash * 31 + key.charCodeAt(index)) | 0;
+  }
+
+  return Math.abs(hash) || 1;
+};
+
+const dateRangeSeconds = (selectedDate: Date) => {
+  const fromDate = startOfDay(selectedDate);
+  const toDate = startOfDay(addDays(fromDate, 1));
+
+  return {
+    from: Math.floor(fromDate.getTime() / 1000),
+    to: Math.floor(toDate.getTime() / 1000),
+  };
+};
+
+const dateKey = (date: Date) => startOfDay(date).toISOString();
+
+const buildTasksFromBackend = (
+  slots: BackendSlot[],
+  tickets: BackendTicket[],
+): Task[] => {
+  const tasksByKey = new Map<string, Task>();
+
+  const ensureTask = (
+    ticketKey: string,
+    title?: string | null,
+    url?: string | null,
+  ) => {
+    const key = normalizeTicketKey(ticketKey);
+    const existing = tasksByKey.get(key);
+
+    if (existing) {
+      if (title && existing.title === existing.key) {
+        existing.title = title;
+      }
+      if (url) {
+        existing.url = url;
+      }
+      return existing;
+    }
+
+    const task: Task = {
+      id: taskIdForKey(key),
+      key,
+      title: title || key,
+      status: TaskStatus.Idle,
+      url: url ?? undefined,
+      sessions: [],
+    };
+
+    tasksByKey.set(key, task);
+    return task;
+  };
+
+  tickets.forEach((ticket) => {
+    ensureTask(ticket.ticket_key, ticket.summary, ticket.issue_url);
+  });
+
+  slots.forEach((slot) => {
+    const task = ensureTask(slot.ticket_key, slot.summary, slot.issue_url);
+    const session: TaskSession = {
+      id: slot.id,
+      taskId: task.id,
+      start: new Date(slot.started_at * 1000),
+      end: slot.stopped_at ? new Date(slot.stopped_at * 1000) : null,
+      note: slot.note ?? undefined,
+      publishState: slot.published_at === null ? "unpublished" : "published",
+    };
+
+    task.sessions.push(session);
+    if (session.end === null) {
+      task.status = TaskStatus.Running;
+    }
+  });
+
+  return Array.from(tasksByKey.values()).sort((left, right) =>
+    left.key.localeCompare(right.key),
+  );
+};
+
 export const useAllTasksStore = defineStore("allTasks", {
   state: () => ({
-    tasks: createTasksData(),
-    selectedTaskId: 12 as number | null,
-    expandedTaskIds: [12] as number[],
+    tasks: [] as Task[],
+    selectedTaskId: null as number | null,
+    expandedTaskIds: [] as number[],
     selectedSessionId: null as number | null,
     selectedDate: startOfDay(new Date()),
+    loadedDateKey: "",
+    loading: false,
+    error: "",
     viewMode: "day" as ViewMode,
     activeModal: null as ModalKind | null,
     now: new Date(),
@@ -86,6 +169,14 @@ export const useAllTasksStore = defineStore("allTasks", {
     selectedSessionEntry(state): TaskSessionEntry | null {
       return selectedSessionEntryFor(state.tasks, state.selectedSessionId);
     },
+    publishableSessions(state): TaskTimelineSession[] {
+      return timelineSessionsForDay(state.tasks, state.selectedDate, state.now)
+        .filter(
+          (entry) =>
+            entry.session.publishState === "unpublished" &&
+            entry.session.end !== null,
+        );
+    },
   },
   actions: {
     setViewMode(viewMode: ViewMode) {
@@ -94,17 +185,76 @@ export const useAllTasksStore = defineStore("allTasks", {
     previousDay() {
       this.selectedDate = startOfDay(addDays(this.selectedDate, -1));
       this.selectedSessionId = null;
+      void this.loadSelectedDate();
     },
     nextDay() {
       this.selectedDate = startOfDay(addDays(this.selectedDate, 1));
       this.selectedSessionId = null;
+      void this.loadSelectedDate();
     },
     goToToday() {
       this.selectedDate = startOfDay(new Date(this.now));
       this.selectedSessionId = null;
+      void this.loadSelectedDate();
     },
     tick() {
       this.now = new Date();
+    },
+    async loadSelectedDate() {
+      const { from, to } = dateRangeSeconds(this.selectedDate);
+      this.loading = true;
+      this.error = "";
+
+      try {
+        const [slots, tickets] = await Promise.all([
+          invoke<BackendSlot[]>("list_slots", {
+            input: { from, to, sort: "started" },
+          }),
+          invoke<BackendTicket[]>("list_recent_tickets"),
+        ]);
+
+        const previousSelectedTaskId = this.selectedTaskId;
+        const previousSelectedSessionId = this.selectedSessionId;
+
+        this.tasks = buildTasksFromBackend(slots, tickets);
+        this.loadedDateKey = dateKey(this.selectedDate);
+
+        const selectedSessionExists =
+          previousSelectedSessionId !== null &&
+          this.tasks.some((task) =>
+            task.sessions.some(
+              (session) => session.id === previousSelectedSessionId,
+            ),
+          );
+        const selectedTaskExists =
+          previousSelectedTaskId !== null &&
+          this.tasks.some((task) => task.id === previousSelectedTaskId);
+
+        this.selectedSessionId = selectedSessionExists
+          ? previousSelectedSessionId
+          : null;
+        this.selectedTaskId = selectedSessionExists
+          ? this.selectedSessionEntry?.task.id ?? null
+          : selectedTaskExists
+            ? previousSelectedTaskId
+            : this.timelineSessions[0]?.task.id ?? this.tasks[0]?.id ?? null;
+
+        this.expandedTaskIds = Array.from(
+          new Set([
+            ...this.expandedTaskIds.filter((id) =>
+              this.tasks.some((task) => task.id === id),
+            ),
+            ...(this.activeTask ? [this.activeTask.id] : []),
+          ]),
+        );
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : String(error);
+        this.tasks = [];
+        this.selectedSessionId = null;
+        this.selectedTaskId = null;
+      } finally {
+        this.loading = false;
+      }
     },
     selectTask(taskId: number) {
       this.selectedTaskId = taskId;
@@ -165,14 +315,19 @@ export const useAllTasksStore = defineStore("allTasks", {
       this.activeModal = "start";
     },
     openEditModal() {
-      if (!this.selectedSessionEntry) {
+      this.error = "Editing database slots is not supported yet.";
+    },
+    openPublishModal() {
+      if (this.publishableSessions.length === 0) {
         return;
       }
 
-      this.activeModal = "edit";
+      this.error = "";
+      this.activeModal = "publish";
     },
     closeModal() {
       this.activeModal = null;
+      this.error = "";
     },
     toggleExpanded(taskId: number) {
       if (this.expandedTaskIds.includes(taskId)) {
@@ -185,77 +340,107 @@ export const useAllTasksStore = defineStore("allTasks", {
     isExpanded(taskId: number) {
       return this.expandedTaskIds.includes(taskId);
     },
-    stopActiveTask() {
-      stopActiveTaskOperation(this.tasks, this.now);
-    },
-    nextTaskId() {
-      return nextTaskIdOperation(this.tasks);
-    },
-    nextSessionId() {
-      return nextSessionIdOperation(this.tasks);
+    async stopActiveTask() {
+      this.loading = true;
+      this.error = "";
+
+      try {
+        await invoke<BackendSlot | null>("stop_slot");
+        await this.loadSelectedDate();
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : String(error);
+      } finally {
+        this.loading = false;
+      }
     },
     findTaskByKey(ticketKey: string) {
-      return findTaskByKeyOperation(this.tasks, ticketKey);
+      const key = normalizeTicketKey(ticketKey);
+      return this.tasks.find((task) => task.key.toUpperCase() === key) ?? null;
     },
-    ensureTaskForKey(ticketKey: string, title?: string) {
-      return ensureTaskForKeyOperation(this.tasks, ticketKey, title);
-    },
-    startTask(taskId?: number | null, note?: string) {
-      const nextTaskId = taskId ?? this.selectedTaskId;
-      if (nextTaskId === null) {
-        return;
-      }
+    async startTask(ticketKey?: string | null, note?: string, start?: Date) {
+      const key =
+        ticketKey ??
+        (this.selectedTaskId
+          ? this.tasks.find((task) => task.id === this.selectedTaskId)?.key
+          : null);
 
-      const started = startTaskSession(this.tasks, nextTaskId, this.now, note);
-      if (!started) {
-        return;
-      }
+      if (!key) return false;
 
-      this.selectedDate = startOfDay(new Date(this.now));
-      this.selectedTaskId = started.task.id;
-      this.selectedSessionId = started.session.id;
-      this.expandedTaskIds = Array.from(new Set([...this.expandedTaskIds, started.task.id]));
+      this.loading = true;
+      this.error = "";
+
+      try {
+        const slot = await invoke<BackendSlot>("start_slot", {
+          input: {
+            ticketKey: key,
+            note: normalizedNote(note) ?? null,
+            startedAt: start ? Math.floor(start.getTime() / 1000) : null,
+          },
+        });
+        this.selectedDate = startOfDay(new Date(slot.started_at * 1000));
+        await this.loadSelectedDate();
+        this.selectSession(slot.id);
+        this.expandedTaskIds = Array.from(
+          new Set([
+            ...this.expandedTaskIds,
+            this.selectedSessionEntry?.task.id,
+          ].filter((id): id is number => typeof id === "number")),
+        );
+        return true;
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : String(error);
+        return false;
+      } finally {
+        this.loading = false;
+      }
     },
-    startTaskFromInput(input: StartTaskInput) {
-      const task = this.ensureTaskForKey(input.ticketKey, input.title);
-      this.startTask(task.id, input.note);
-      this.activeModal = null;
+    async startTaskFromInput(input: StartTaskInput) {
+      const started = await this.startTask(input.ticketKey, input.note, input.start);
+      if (started) {
+        this.activeModal = null;
+      }
+      return started;
     },
-    switchToPreviousTask() {
+    async switchToPreviousTask() {
       if (!this.previousTask || !this.activeTask) {
-        return;
+        return false;
       }
 
-      this.startTask(this.previousTask.id);
+      return this.startTask(this.previousTask.key);
     },
     switchToSelectedTask() {
-      this.switchToPreviousTask();
+      return this.switchToPreviousTask();
     },
     updateSession(input: EditSessionInput) {
-      const updated = updateSessionOperation(this.tasks, input);
-      if (!updated) {
-        return false;
-      }
-
-      this.selectedTaskId = updated.task.id;
-      this.selectedSessionId = updated.session.id;
-      this.expandedTaskIds = Array.from(new Set([...this.expandedTaskIds, updated.task.id]));
-      this.activeModal = null;
-      return true;
+      void input;
+      this.error = "Editing database slots is not supported yet.";
+      return false;
     },
     deleteSelectedSession() {
-      const task = deleteSessionOperation(this.tasks, this.selectedSessionId);
-      if (!task) {
-        return false;
-      }
-
-      this.selectedSessionId = null;
-      this.selectedTaskId = task.id;
-      this.activeModal = null;
-      return true;
+      this.error = "Deleting database slots is not supported yet.";
+      return false;
     },
-    publishUnpublished() {
-      publishUnpublishedForDay(this.tasks, this.selectedDate);
+    async confirmPublishUnpublished() {
+      const { from, to } = dateRangeSeconds(this.selectedDate);
+      this.loading = true;
+      this.error = "";
+
+      try {
+        const result = await invoke<BackendPublishResult>("publish_slots", {
+          input: { from, to },
+        });
+        await this.loadSelectedDate();
+
+        if (result.failed.length > 0) {
+          this.error = `${result.failed.length} ${result.failed.length === 1 ? "slot" : "slots"} failed to publish.`;
+        } else {
+          this.activeModal = null;
+        }
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : String(error);
+      } finally {
+        this.loading = false;
+      }
     },
     runShortcut(key: string) {
       if (this.activeModal) {
@@ -275,7 +460,7 @@ export const useAllTasksStore = defineStore("allTasks", {
       }
 
       if (key === "p") {
-        this.publishUnpublished();
+        this.openPublishModal();
       }
 
       if (key === "e") {

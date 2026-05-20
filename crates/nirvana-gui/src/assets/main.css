@@ -72,6 +72,53 @@
   opacity: 0;
 }
 
+.modal-enter-active [data-modal-panel] {
+  transition:
+    opacity 180ms var(--ease),
+    transform 180ms var(--ease);
+}
+
+.modal-leave-active [data-modal-panel] {
+  transition:
+    opacity 130ms var(--ease),
+    transform 130ms var(--ease);
+}
+
+.modal-enter-from [data-modal-panel],
+.modal-leave-to [data-modal-panel] {
+  opacity: 0;
+  transform: translateY(6px) scale(0.985);
+}
+
+/* ── Content/date transitions ── */
+.content-swap-enter-active {
+  transition:
+    opacity 150ms var(--ease),
+    transform 150ms var(--ease);
+}
+
+.content-swap-leave-active {
+  transition:
+    opacity 110ms var(--ease),
+    transform 110ms var(--ease);
+}
+
+.content-swap-enter-from,
+.content-swap-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.date-swap-enter-active,
+.date-swap-leave-active {
+  transition: opacity 120ms var(--ease);
+}
+
+.date-swap-enter-from,
+.date-swap-leave-to {
+  opacity: 0;
+}
+
 /* ── Row enter/leave transitions ── */
 .row-enter-active {
   transition: opacity 160ms var(--ease), transform 160ms var(--ease);
@@ -85,6 +132,10 @@
 .row-leave-to {
   opacity: 0;
   transform: translateY(4px);
+}
+
+.row-move {
+  transition: transform 180ms var(--ease);
 }
 
 /* ── Session expand/collapse transitions ── */
@@ -105,4 +156,24 @@
 .expand-enter-to,
 .expand-leave-from {
   max-height: 400px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
+
+  .modal-enter-from [data-modal-panel],
+  .modal-leave-to [data-modal-panel],
+  .content-swap-enter-from,
+  .content-swap-leave-to,
+  .row-enter-from,
+  .row-leave-to {
+    transform: none;
+  }
 }

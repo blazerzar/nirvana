@@ -9,6 +9,7 @@ defineEmits(["close", "submit"]);
 
 <template>
   <form
+    data-modal-panel
     :class="`overflow-hidden rounded-lg border border-(--border) bg-[#0d1011] text-(--text) shadow-[0_24px_70px_rgba(0,0,0,0.54)] ${widthClass}`"
     :aria-labelledby="labelledBy"
     @submit.prevent="$emit('submit')"

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useAllTasksStore } from "../stores/allTasks";
 import EditTaskModal from "./modals/EditTaskModal.vue";
+import PublishTaskModal from "./modals/PublishTaskModal.vue";
 import StartTaskModal from "./modals/StartTaskModal.vue";
 
 const tasks = useAllTasksStore();
@@ -14,7 +15,8 @@ const tasks = useAllTasksStore();
             @click.self="tasks.closeModal()"
         >
             <StartTaskModal v-if="tasks.activeModal === 'start'" />
-            <EditTaskModal v-else />
+            <EditTaskModal v-else-if="tasks.activeModal === 'edit'" />
+            <PublishTaskModal v-else />
         </div>
     </Transition>
 </template>

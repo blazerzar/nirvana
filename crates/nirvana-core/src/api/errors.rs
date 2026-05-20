@@ -23,4 +23,10 @@ pub enum TrackingError {
     NoActiveConnection,
     #[error("ticket not found: {0}")]
     TicketNotFound(String),
+    #[error("slot not found: {0}")]
+    SlotNotFound(i64),
+    #[error("cannot edit a published slot")]
+    SlotAlreadyPublished,
+    #[error("stopped_at must be null or after started_at")]
+    InvalidTimeRange,
 }

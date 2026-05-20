@@ -1,4 +1,5 @@
 mod connection;
+mod edit;
 mod info;
 mod list;
 mod publish;
@@ -8,6 +9,7 @@ mod time;
 
 pub(crate) use time::parse_time;
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use nirvana_core::api::domain::Change;
 use std::fmt;
 use std::fmt::Display;
 
@@ -30,6 +32,8 @@ enum Command {
     Start(StartArgs),
     /// Stop tracking time on active ticket
     Stop(StopArgs),
+    /// Edit an existing slot
+    Edit(EditArgs),
     /// List slots
     List(ListArgs),
     /// Publish slots to backend
@@ -58,6 +62,21 @@ struct StopArgs {
     /// Stop time (e.g. "14:30" or "2026-05-19 14:30")
     #[arg(long)]
     at: Option<String>,
+}
+
+#[derive(Args, Debug)]
+struct EditArgs {
+    /// Slot ID to edit
+    slot_id: i64,
+    /// Set or clear the note (use empty string to clear)
+    #[arg(long)]
+    note: Option<String>,
+    /// Set the start time (e.g. "14:30" or "2026-05-19 14:30")
+    #[arg(long)]
+    start: Option<String>,
+    /// Set or clear the stop time (use empty string to clear, reopening the slot)
+    #[arg(long)]
+    stop: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -155,6 +174,25 @@ pub(crate) fn run() -> anyhow::Result<()> {
         Some(Command::Info) => info::run(),
         Some(Command::Start(args)) => start::run(args),
         Some(Command::Stop(args)) => stop::run(args),
+        Some(Command::Edit(args)) => {
+            let note = match args.note {
+                None => Change::Skip,
+                Some(s) if s.is_empty() => Change::Clear,
+                Some(s) => Change::Set(s),
+            };
+            let started_at = args.start.as_deref().map(parse_time).transpose()?;
+            let stopped_at = match &args.stop {
+                None => Change::Skip,
+                Some(s) if s.is_empty() => Change::Clear,
+                Some(s) => Change::Set(parse_time(s)?),
+            };
+            edit::run(edit::EditArgs {
+                slot_id: args.slot_id,
+                note,
+                started_at,
+                stopped_at,
+            })
+        }
         Some(Command::List(args)) => list::run(args),
         Some(Command::Publish(args)) => publish::run(args),
         Some(Command::Connection { command }) => match command {

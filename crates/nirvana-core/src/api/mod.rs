@@ -1,4 +1,5 @@
 mod connection;
+mod edit;
 pub mod domain;
 pub mod errors;
 mod info;
@@ -14,7 +15,9 @@ use crate::storage::Database;
 
 use errors::NirvanaError;
 
-pub use crate::storage::slot_repo::SlotSort;
+pub use crate::storage::slot_repo::{Change, SlotSort};
+
+pub use domain::SlotEdit;
 
 pub struct NirvanaApi {
     paths: AppPaths,

@@ -2,6 +2,8 @@ use crate::storage::connection_repo::ConnectionRecord;
 use crate::storage::slot_repo::SlotWithTicket;
 use crate::storage::ticket_repo::TicketRecord;
 
+pub use crate::storage::slot_repo::Change;
+
 #[derive(Debug)]
 pub struct Connection {
     pub id: i64,
@@ -98,4 +100,11 @@ pub struct PublishResult {
 pub struct PublishFailure {
     pub ticket_key: String,
     pub error: String,
+}
+
+#[derive(Debug, Default)]
+pub struct SlotEdit {
+    pub note: Change<String>,
+    pub started_at: Option<i64>,
+    pub stopped_at: Change<i64>,
 }

@@ -5,6 +5,14 @@ pub enum SlotSort {
     TicketId,
 }
 
+#[derive(Debug, Default)]
+pub enum Change<T> {
+    #[default]
+    Skip,
+    Clear,
+    Set(T),
+}
+
 #[allow(dead_code)]
 pub(crate) struct SlotRecord {
     pub id: i64,
@@ -94,6 +102,29 @@ pub(crate) fn stop_by_id(db: &Database, slot_id: i64, stopped_at: i64) -> Result
         (stopped_at, slot_id),
     )?;
     Ok(())
+}
+
+pub(crate) fn find_by_id_with_ticket(
+    db: &Database,
+    slot_id: i64,
+) -> Result<Option<SlotWithTicket>, DbError> {
+    db.conn()
+        .query_row(
+            "select s.id, t.ticket_key, t.summary, s.connection_id, s.note, s.started_at, s.stopped_at, s.published_at
+             from slots s
+             join tickets t on t.id = s.ticket_id
+             where s.id = ?1",
+            [slot_id],
+            map_slot_with_ticket,
+        )
+        .map(Some)
+        .or_else(|e| {
+            if e == rusqlite::Error::QueryReturnedNoRows {
+                Ok(None)
+            } else {
+                Err(DbError::from(e))
+            }
+        })
 }
 
 pub(crate) fn stop_running(db: &Database, stopped_at: i64) -> Result<SlotWithTicket, DbError> {
@@ -237,4 +268,66 @@ fn map_slot_with_ticket(row: &rusqlite::Row<'_>) -> rusqlite::Result<SlotWithTic
         stopped_at: row.get(6)?,
         published_at: row.get(7)?,
     })
+}
+
+pub(crate) struct SlotUpdate {
+    pub note: Change<String>,
+    pub started_at: Option<i64>,
+    pub stopped_at: Change<i64>,
+}
+
+pub(crate) fn update(db: &Database, slot_id: i64, changes: &SlotUpdate) -> Result<(), DbError> {
+    use rusqlite::types::Value;
+
+    let mut set_clauses: Vec<String> = Vec::new();
+    let mut params: Vec<Value> = Vec::new();
+    let mut param_idx = 1;
+
+    match &changes.note {
+        Change::Skip => {}
+        Change::Clear => {
+            set_clauses.push(format!("note = ?{param_idx}"));
+            params.push(Value::Null);
+            param_idx += 1;
+        }
+        Change::Set(v) => {
+            set_clauses.push(format!("note = ?{param_idx}"));
+            params.push(Value::Text(v.clone()));
+            param_idx += 1;
+        }
+    }
+
+    if let Some(started_at) = changes.started_at {
+        set_clauses.push(format!("started_at = ?{param_idx}"));
+        params.push(Value::Integer(started_at));
+        param_idx += 1;
+    }
+
+    match &changes.stopped_at {
+        Change::Skip => {}
+        Change::Clear => {
+            set_clauses.push(format!("stopped_at = ?{param_idx}"));
+            params.push(Value::Null);
+            param_idx += 1;
+        }
+        Change::Set(v) => {
+            set_clauses.push(format!("stopped_at = ?{param_idx}"));
+            params.push(Value::Integer(*v));
+            param_idx += 1;
+        }
+    }
+
+    if set_clauses.is_empty() {
+        return Ok(());
+    }
+
+    params.push(Value::Integer(slot_id));
+    let sql = format!(
+        "update slots set {} where id = ?{param_idx}",
+        set_clauses.join(", ")
+    );
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+        params.iter().map(|p| p as &dyn rusqlite::types::ToSql).collect();
+    db.conn().execute(&sql, param_refs.as_slice())?;
+    Ok(())
 }

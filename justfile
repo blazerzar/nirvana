@@ -43,3 +43,25 @@ fmt:
 # Clean build artifacts
 clean:
     cargo clean
+
+# ── GUI (crates/nirvana-gui) ─────────────────────────────────────────────────
+
+# Install GUI JS dependencies (run once after clone or after package.json changes)
+gui-install:
+    cd crates/nirvana-gui && bun install
+
+# Start Vite dev server only (frontend, no Rust recompile)
+gui-dev:
+    cd crates/nirvana-gui && bun run dev
+
+# Start full Tauri app in dev mode (Vite + Rust backend, hot-reload)
+gui-tauri-dev:
+    cd crates/nirvana-gui && bunx tauri dev
+
+# Build the full Tauri desktop app (release bundle)
+gui-build:
+    cd crates/nirvana-gui && bunx tauri build
+
+# Type-check the Vue/TS frontend
+gui-typecheck:
+    cd crates/nirvana-gui && bunx vue-tsc --noEmit

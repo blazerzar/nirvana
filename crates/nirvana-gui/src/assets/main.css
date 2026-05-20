@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+@layer base {
+  /* ── Tokens ── */
+  :root {
+    color-scheme: dark;
+    --font-mono: "JetBrains Mono", "JetBrainsMono", "JetBrains Mono NL",
+      ui-monospace, "SF Mono", "Roboto Mono", Menlo, Monaco, Consolas, monospace;
+    --default-font-family: var(--font-mono);
+    --default-mono-font-family: var(--font-mono);
+
+    font-family: var(--font-mono);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+
+    --bg: #070809;
+    --panel: #0b0d0e;
+    --surface: rgba(255, 255, 255, 0.032);
+    --surface-strong: rgba(255, 255, 255, 0.06);
+    --border: rgba(255, 255, 255, 0.075);
+    --text: #e7e9e8;
+    --muted: #8b9290;
+    --faint: #59615f;
+    --very-faint: #3a3f3e;
+    --accent: #95dec8;
+    --success: #83d29e;
+    --warning: #d2c071;
+    --radius: 12px;
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  *,
+  ::before,
+  ::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #app {
+    min-height: 100%;
+    margin: 0;
+    background: var(--bg);
+  }
+
+  button {
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+}
+
+@keyframes dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* ── Modal transition ── */
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 160ms var(--ease);
+}
+
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+
+/* ── Row enter/leave transitions ── */
+.row-enter-active {
+  transition: opacity 160ms var(--ease), transform 160ms var(--ease);
+}
+
+.row-leave-active {
+  transition: opacity 120ms var(--ease), transform 120ms var(--ease);
+}
+
+.row-enter-from,
+.row-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+/* ── Session expand/collapse transitions ── */
+.expand-enter-active {
+  transition: opacity 180ms var(--ease), max-height 180ms var(--ease);
+}
+
+.expand-leave-active {
+  transition: opacity 140ms var(--ease), max-height 140ms var(--ease);
+}
+
+.expand-enter-from,
+.expand-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+
+.expand-enter-to,
+.expand-leave-from {
+  max-height: 400px;
+}

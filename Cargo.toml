@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/nirvana",
     "crates/nirvana-core",
+    "crates/nirvana-gui/src-tauri",
 ]
 
 [workspace.package]

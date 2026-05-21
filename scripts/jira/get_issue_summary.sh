@@ -2,7 +2,11 @@
 
 source .env
 
+echo $JIRA_BASE_URL
+echo $JIRA_USER_EMAIL
+echo $JIRA_CLOUD_API
+
 curl --request GET \
-    --url "${JIRA_BASE_URL}/rest/api/3/issue/DEV-1?fields=summary" \
-    --user "${JIRA_USER_EMAIL}:${JIRA_CLOUD_API}" \
-    --header 'Accept: application/json' | jq
+  --url "${JIRA_BASE_URL}/rest/api/2/issue/ME-498?fields=summary" \
+  --header "Authorization: Bearer ${JIRA_CLOUD_API}" \
+  --header "Accept: application/json" | jq

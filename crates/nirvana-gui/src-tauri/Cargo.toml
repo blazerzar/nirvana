@@ -3,7 +3,6 @@ name = "nirvana-gui"
 version.workspace = true
 edition = "2021"
 description = "Nirvana desktop GUI"
-authors = ["you"]
 
 [lib]
 name = "nirvana_gui_lib"

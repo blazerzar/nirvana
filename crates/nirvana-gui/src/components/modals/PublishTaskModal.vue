@@ -2,11 +2,12 @@
 import { computed } from "vue";
 import {
   formatClock,
+  formatDayLabel,
   formatDuration,
   useAllTasksStore,
 } from "../../stores/allTasks";
 import { useSettingsStore } from "../../stores/settings";
-import { TaskTimelineSession } from "../../types/types";
+import { BackendSlot, TaskTimelineSession } from "../../types/types";
 import ModalShell from "./ModalShell.vue";
 
 const tasks = useAllTasksStore();
@@ -24,7 +25,16 @@ type PublishPreviewWorklog = {
   sourceSlotCount: number;
 };
 
-const individualPreviewWorklogs = (sessions: TaskTimelineSession[]) =>
+type PublishPreviewSource = {
+  id: string;
+  ticketKey: string;
+  title: string;
+  note?: string;
+  startedAt: Date;
+  durationMs: number;
+};
+
+const sourcesFromSessions = (sessions: TaskTimelineSession[]) =>
   sessions.map((entry) => ({
     id: `slot-${entry.session.id}`,
     ticketKey: entry.task.key,
@@ -32,59 +42,121 @@ const individualPreviewWorklogs = (sessions: TaskTimelineSession[]) =>
     note: entry.session.note,
     startedAt: entry.session.start,
     durationMs: entry.durationMs,
+  }));
+
+const sourcesFromSlots = (slots: BackendSlot[]) =>
+  slots
+    .map((slot) => {
+      const startedAt = new Date(slot.started_at * 1000);
+      const stoppedAt = slot.stopped_at ? new Date(slot.stopped_at * 1000) : null;
+
+      return {
+        id: `all-slot-${slot.id}`,
+        ticketKey: slot.ticket_key,
+        title: slot.summary || slot.ticket_key,
+        note: slot.note ?? undefined,
+        startedAt,
+        durationMs: stoppedAt ? stoppedAt.getTime() - startedAt.getTime() : 0,
+      };
+    })
+    .filter((source) => source.durationMs > 0);
+
+const individualPreviewWorklogs = (sources: PublishPreviewSource[]) =>
+  sources.map((source) => ({
+    ...source,
     sourceSlotCount: 1,
   }));
 
-const squashedPreviewWorklogs = (sessions: TaskTimelineSession[]) => {
-  const firstStartMs = Math.min(
-    ...sessions.map((entry) => entry.session.start.getTime()),
-  );
-  const groups: PublishPreviewWorklog[] = [];
+const localDayKey = (date: Date) =>
+  `${date.getFullYear()}-${(date.getMonth() + 1)
+    .toString()
+    .padStart(2, "0")}-${date.getDate().toString().padStart(2, "0")}`;
 
-  sessions.forEach((entry) => {
-    const existing = groups.find(
-      (worklog) => worklog.ticketKey === entry.task.key,
-    );
+const squashedPreviewWorklogs = (sources: PublishPreviewSource[]) => {
+  const dayGroups: {
+    day: string;
+    firstStartMs: number;
+    worklogs: PublishPreviewWorklog[];
+  }[] = [];
 
-    if (existing) {
-      existing.durationMs += entry.durationMs;
-      existing.sourceSlotCount += 1;
-      return;
-    }
+  [...sources]
+    .sort((left, right) => left.startedAt.getTime() - right.startedAt.getTime())
+    .forEach((source) => {
+      const day = localDayKey(source.startedAt);
+      let dayGroup = dayGroups.find((group) => group.day === day);
+      if (!dayGroup) {
+        dayGroup = {
+          day,
+          firstStartMs: source.startedAt.getTime(),
+          worklogs: [],
+        };
+        dayGroups.push(dayGroup);
+      }
 
-    groups.push({
-      id: `ticket-${entry.task.key}`,
-      ticketKey: entry.task.key,
-      title: entry.task.title,
-      startedAt: new Date(firstStartMs),
-      durationMs: entry.durationMs,
-      sourceSlotCount: 1,
+      const existing = dayGroup.worklogs.find(
+        (worklog) => worklog.ticketKey === source.ticketKey,
+      );
+
+      if (existing) {
+        existing.durationMs += source.durationMs;
+        existing.sourceSlotCount += 1;
+        return;
+      }
+
+      dayGroup.worklogs.push({
+        id: `ticket-${day}-${source.ticketKey}`,
+        ticketKey: source.ticketKey,
+        title: source.title,
+        startedAt: new Date(dayGroup.firstStartMs),
+        durationMs: source.durationMs,
+        sourceSlotCount: 1,
+      });
     });
-  });
 
-  let cursorMs = firstStartMs;
-  groups.forEach((worklog) => {
-    worklog.startedAt = new Date(cursorMs);
-    cursorMs += worklog.durationMs;
+  return dayGroups.flatMap((group) => {
+    let cursorMs = group.firstStartMs;
+    group.worklogs.forEach((worklog) => {
+      worklog.startedAt = new Date(cursorMs);
+      cursorMs += worklog.durationMs;
+    });
+    return group.worklogs;
   });
-
-  return groups;
 };
+
+const previewSources = computed(() => sourcesFromSessions(publishableSessions.value));
+const allPreviewSources = computed(() => sourcesFromSlots(tasks.allPublishableSlots));
 
 const previewWorklogs = computed(() =>
   settings.publishSquashedWorklogs
-    ? squashedPreviewWorklogs(publishableSessions.value)
-    : individualPreviewWorklogs(publishableSessions.value),
+    ? squashedPreviewWorklogs(previewSources.value)
+    : individualPreviewWorklogs(previewSources.value),
+);
+
+const allPreviewWorklogs = computed(() =>
+  settings.publishSquashedWorklogs
+    ? squashedPreviewWorklogs(allPreviewSources.value)
+    : individualPreviewWorklogs(allPreviewSources.value),
 );
 
 const totalDurationMs = computed(() =>
   previewWorklogs.value.reduce((sum, worklog) => sum + worklog.durationMs, 0),
 );
 
+const allDurationMs = computed(() =>
+  allPreviewWorklogs.value.reduce((sum, worklog) => sum + worklog.durationMs, 0),
+);
+
 const slotLabel = computed(
   () =>
     `${publishableSessions.value.length} ${
       publishableSessions.value.length === 1 ? "slot" : "slots"
+    }`,
+);
+
+const allSlotLabel = computed(
+  () =>
+    `${allPreviewSources.value.length} ${
+      allPreviewSources.value.length === 1 ? "slot" : "slots"
     }`,
 );
 
@@ -95,9 +167,28 @@ const worklogLabel = computed(
     }`,
 );
 
+const allWorklogLabel = computed(
+  () =>
+    `${allPreviewWorklogs.value.length} Jira ${
+      allPreviewWorklogs.value.length === 1 ? "worklog" : "worklogs"
+    }`,
+);
+
 const modeLabel = computed(() =>
   settings.publishSquashedWorklogs ? "Squashed preview" : "Slot preview",
 );
+
+const allDateRangeLabel = computed(() => {
+  if (allPreviewSources.value.length === 0) return "No unpublished slots";
+
+  const starts = allPreviewSources.value.map((source) => source.startedAt.getTime());
+  const start = new Date(Math.min(...starts));
+  const end = new Date(Math.max(...starts));
+  const startLabel = formatDayLabel(start);
+  const endLabel = formatDayLabel(end);
+
+  return startLabel === endLabel ? startLabel : `${startLabel} - ${endLabel}`;
+});
 
 const sourceSlotLabel = (count: number) =>
   `${count} local ${count === 1 ? "slot" : "slots"}`;
@@ -179,6 +270,22 @@ const worklogRange = (worklog: PublishPreviewWorklog) => {
         There are no stopped unpublished slots to publish for this day.
       </p>
 
+      <div
+        class="rounded-md border border-[rgba(149,222,200,0.16)] bg-[rgba(149,222,200,0.045)] px-3 py-2"
+      >
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+          <span class="font-semibold text-(--text)">All unpublished</span>
+          <span class="text-(--very-faint)">·</span>
+          <span class="text-(--muted)">{{ allDateRangeLabel }}</span>
+          <span class="text-(--very-faint)">·</span>
+          <span class="text-(--muted)">{{ allWorklogLabel }}</span>
+          <span class="text-(--very-faint)">·</span>
+          <span class="text-(--muted)">{{ allSlotLabel }}</span>
+          <span class="text-(--very-faint)">·</span>
+          <span class="font-semibold text-(--accent)">{{ formatDuration(allDurationMs) }}</span>
+        </div>
+      </div>
+
       <p class="m-0 min-h-4 text-[11px] text-[#ff9a86]">{{ tasks.error }}</p>
     </div>
 
@@ -199,17 +306,31 @@ const worklogRange = (worklog: PublishPreviewWorklog) => {
           Cancel
         </button>
         <button
+          class="inline-flex min-h-[30px] min-w-[102px] items-center justify-center gap-1.5 rounded-md border border-[rgba(149,222,200,0.42)] bg-[rgba(149,222,200,0.08)] px-3 py-1.5 text-[11px] font-bold text-(--accent) transition-[color,background,border-color] duration-150 ease-[var(--ease)] hover:bg-[rgba(149,222,200,0.13)] disabled:cursor-default disabled:opacity-[0.42]"
+          type="button"
+          :disabled="tasks.loading || allPreviewSources.length === 0"
+          :aria-busy="tasks.publishingScope === 'all' ? 'true' : 'false'"
+          @click="tasks.confirmPublishAllUnpublished()"
+        >
+          <span
+            v-if="tasks.publishingScope === 'all'"
+            class="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-(--accent) border-t-transparent"
+            aria-hidden="true"
+          ></span>
+          <span>{{ tasks.publishingScope === "all" ? "Publishing all..." : "Publish all" }}</span>
+        </button>
+        <button
           class="inline-flex min-h-[30px] min-w-[82px] items-center justify-center gap-1.5 rounded-md border border-(--accent) bg-(--accent) px-3 py-1.5 text-[11px] font-bold text-(--bg) transition-[color,background,border-color] duration-150 ease-[var(--ease)] disabled:cursor-default disabled:opacity-[0.42]"
           type="submit"
           :disabled="tasks.loading || publishableSessions.length === 0"
-          :aria-busy="tasks.loading ? 'true' : 'false'"
+          :aria-busy="tasks.publishingScope === 'day' ? 'true' : 'false'"
         >
           <span
-            v-if="tasks.loading"
+            v-if="tasks.publishingScope === 'day'"
             class="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-(--bg) border-t-transparent"
             aria-hidden="true"
           ></span>
-          <span>{{ tasks.loading ? "Publishing..." : "Publish" }}</span>
+          <span>{{ tasks.publishingScope === "day" ? "Publishing..." : "Publish" }}</span>
         </button>
       </footer>
     </template>

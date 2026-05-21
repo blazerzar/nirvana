@@ -8,6 +8,7 @@ const tasks = useAllTasksStore();
 const createModal = useCreateTaskModal();
 const {
   computedError,
+  dateInput,
   durationInput,
   firstField,
   handleDurationKeydown,
@@ -21,6 +22,7 @@ const {
   note,
   noteField,
   applyDurationToStop,
+  normalizeDate,
   normalizeStartTime,
   normalizeStopTime,
   normalizeDuration,
@@ -129,7 +131,20 @@ onMounted(async () => {
         <strong class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-medium text-(--muted)">{{ knownTask.title }}</strong>
       </div>
 
-      <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3 max-[760px]:grid-cols-1">
+      <div class="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 max-[760px]:grid-cols-1">
+        <label class="flex min-w-0 flex-col gap-1.5">
+          <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Date</span>
+          <input
+            v-model="dateInput"
+            class="min-h-[34px] w-full rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-[rgba(149,222,200,0.7)] focus:shadow-[0_0_0_2px_rgba(149,222,200,0.1)]"
+            type="date"
+            autocomplete="off"
+            :disabled="tasks.loading"
+            @change="normalizeDate"
+            @blur="normalizeDate"
+          />
+        </label>
+
         <label class="flex min-w-0 flex-col gap-1.5">
           <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Start time</span>
           <input

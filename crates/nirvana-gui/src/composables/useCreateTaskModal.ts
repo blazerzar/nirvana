@@ -19,6 +19,33 @@ type TicketSearchResult = {
 
 const normalizeTicketKey = (value: string) => value.trim().toUpperCase();
 
+const formatDateInput = (date: Date) => {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const parseDateInput = (value: string) => {
+  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return startOfDay(date);
+};
+
 const fuzzyScore = (query: string, candidate: string) => {
   const normalizedQuery = query.trim().toLowerCase();
   const normalizedCandidate = candidate.toLowerCase();
@@ -54,6 +81,7 @@ export const useCreateTaskModal = () => {
   const noteField = ref<HTMLInputElement | null>(null);
   const ticketKey = ref("");
   const note = ref("");
+  const dateInput = ref("");
   const start = ref("");
   const stop = ref("");
   const durationInput = ref("");
@@ -95,18 +123,24 @@ export const useCreateTaskModal = () => {
       searchResults.value.length > 0,
   );
 
+  const parsedDate = computed(() => parseDateInput(dateInput.value));
+
   const parsedStart = computed(() => {
+    if (!parsedDate.value) return null;
+
     const time = parseTimeParts(start.value);
     if (!time) return null;
 
-    return applyTimeParts(startOfDay(tasks.selectedDate), time);
+    return applyTimeParts(parsedDate.value, time);
   });
 
   const parsedStop = computed(() => {
+    if (!parsedDate.value) return null;
+
     const time = parseTimeParts(stop.value);
     if (!time) return null;
 
-    return applyTimeParts(startOfDay(tasks.selectedDate), time);
+    return applyTimeParts(parsedDate.value, time);
   });
 
   const parsedDurationMs = computed(() => parseDurationInput(durationInput.value));
@@ -132,6 +166,8 @@ export const useCreateTaskModal = () => {
   const computedError = computed(() => {
     if (tasks.activeModal !== "create") return "";
     if (!normalizeTicketKey(ticketKey.value)) return "Ticket key is required.";
+    if (!dateInput.value.trim()) return "Date is required.";
+    if (!parsedDate.value) return "Date is invalid.";
     if (!start.value.trim()) return "Start time is required.";
     if (!stop.value.trim()) return "Stop time is required.";
     if (!parsedStart.value) return "Start time is invalid.";
@@ -159,7 +195,7 @@ export const useCreateTaskModal = () => {
     const key = normalizeTicketKey(ticketKey.value);
 
     if (key && parsedStart.value && parsedStop.value && !computedError.value) {
-      return `Adding ${knownTask.value?.key ?? key} from ${formatClock(parsedStart.value)} to ${formatClock(parsedStop.value)}.`;
+      return `Adding ${knownTask.value?.key ?? key} on ${dateInput.value} from ${formatClock(parsedStart.value)} to ${formatClock(parsedStop.value)}.`;
     }
 
     return key
@@ -177,6 +213,7 @@ export const useCreateTaskModal = () => {
 
     ticketKey.value = tasks.selectedTask?.key ?? "";
     note.value = "";
+    dateInput.value = formatDateInput(tasks.selectedDate);
     start.value = formatTimeInput(fallbackStart);
     stop.value = formatTimeInput(fallbackStop);
     durationInput.value = formatDurationInput(
@@ -246,6 +283,15 @@ export const useCreateTaskModal = () => {
 
     event.preventDefault();
     submit();
+  };
+
+  const normalizeDate = async () => {
+    const date = parsedDate.value;
+    if (!date) return;
+
+    dateInput.value = formatDateInput(date);
+    localError.value = "";
+    await tasks.setSelectedDate(date);
   };
 
   const normalizeTime = (value: typeof start) => {
@@ -362,8 +408,10 @@ export const useCreateTaskModal = () => {
 
   return {
     computedError,
+    dateInput,
     durationInput,
     firstField,
+    normalizeDate,
     handleNoteKeydown,
     handleDurationKeydown,
     handleStartKeydown,

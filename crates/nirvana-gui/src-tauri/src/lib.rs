@@ -299,6 +299,14 @@ fn list_slots(input: ListSlotsInput) -> Result<Vec<GuiSlot>, String> {
 }
 
 #[tauri::command]
+fn list_unpublished_slots(input: PublishSlotsInput) -> Result<Vec<GuiSlot>, String> {
+    let api = NirvanaApi::new().map_err(|error| error.to_string())?;
+    api.get_unpublished_slots(input.from, input.to)
+        .map(|slots| slots.into_iter().map(GuiSlot::from).collect())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn list_recent_tickets() -> Result<Vec<GuiTicket>, String> {
     let api = NirvanaApi::new().map_err(|error| error.to_string())?;
     api.list_recent_tickets()
@@ -384,6 +392,7 @@ pub fn run() {
             delete_connection,
             create_connection,
             list_slots,
+            list_unpublished_slots,
             list_recent_tickets,
             start_slot,
             create_slot,

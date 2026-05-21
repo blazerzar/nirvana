@@ -175,6 +175,52 @@ pub(crate) fn insert(
         .map_err(DbError::from)
 }
 
+pub(crate) fn insert_completed(
+    db: &Database,
+    ticket_id: i64,
+    connection_id: i64,
+    note: Option<&str>,
+    started_at: i64,
+    stopped_at: i64,
+) -> Result<SlotWithTicket, DbError> {
+    db.conn().execute(
+        "insert into slots (ticket_id, connection_id, note, started_at, stopped_at, published_at)
+         values (?1, ?2, ?3, ?4, ?5, null)",
+        (ticket_id, connection_id, note, started_at, stopped_at),
+    )?;
+
+    let slot_id = db.conn().last_insert_rowid();
+
+    db.conn()
+        .query_row(
+            "select s.id, t.ticket_key, t.summary, s.connection_id, s.note, s.started_at, s.stopped_at, s.published_at
+             from slots s
+             join tickets t on t.id = s.ticket_id
+             where s.id = ?1",
+            [slot_id],
+            map_slot_with_ticket,
+        )
+        .map_err(DbError::from)
+}
+
+pub(crate) fn overlaps(
+    db: &Database,
+    connection_id: i64,
+    started_at: i64,
+    stopped_at: i64,
+) -> Result<bool, DbError> {
+    let count: i64 = db.conn().query_row(
+        "select count(*)
+         from slots
+         where connection_id = ?1
+           and started_at < ?3
+           and coalesce(stopped_at, 9223372036854775807) > ?2",
+        (connection_id, started_at, stopped_at),
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
 pub(crate) fn get_slots(
     db: &Database,
     connection_id: i64,
@@ -245,14 +291,12 @@ pub(crate) fn get_unpublished(
     rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
 }
 
-pub(crate) fn mark_published(
-    db: &Database,
-    ids: &[i64],
-    published_at: i64,
-) -> Result<(), DbError> {
+pub(crate) fn mark_published(db: &Database, ids: &[i64], published_at: i64) -> Result<(), DbError> {
     for id in ids {
-        db.conn()
-            .execute("update slots set published_at = ?1 where id = ?2", (published_at, id))?;
+        db.conn().execute(
+            "update slots set published_at = ?1 where id = ?2",
+            (published_at, id),
+        )?;
     }
     Ok(())
 }
@@ -333,8 +377,10 @@ pub(crate) fn update(db: &Database, slot_id: i64, changes: &SlotUpdate) -> Resul
         "update slots set {} where id = ?{param_idx}",
         set_clauses.join(", ")
     );
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-        params.iter().map(|p| p as &dyn rusqlite::types::ToSql).collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params
+        .iter()
+        .map(|p| p as &dyn rusqlite::types::ToSql)
+        .collect();
     db.conn().execute(&sql, param_refs.as_slice())?;
     Ok(())
 }

@@ -1,6 +1,6 @@
 use console::style;
-use nirvana_core::api::domain::{Change, SlotEdit};
 use nirvana_core::api::NirvanaApi;
+use nirvana_core::api::domain::{Change, SlotEdit};
 
 pub(crate) struct EditArgs {
     pub slot_id: i64,

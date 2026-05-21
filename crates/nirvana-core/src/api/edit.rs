@@ -1,10 +1,10 @@
-use crate::api::domain::{Slot, SlotEdit};
-use crate::storage::slot_repo::Change;
-use crate::api::errors::TrackingError;
 use crate::api::NirvanaApi;
 use crate::api::NirvanaError;
+use crate::api::domain::{Slot, SlotEdit};
+use crate::api::errors::TrackingError;
 use crate::integration;
 use crate::storage::slot_repo;
+use crate::storage::slot_repo::Change;
 
 impl NirvanaApi {
     pub fn edit_slot(&self, slot_id: i64, edit: SlotEdit) -> Result<Slot, NirvanaError> {
@@ -52,9 +52,21 @@ impl NirvanaApi {
         }
 
         let update = slot_repo::SlotUpdate {
-            note: if note_changed { edit.note } else { Change::Skip },
-            started_at: if started_changed { edit.started_at } else { None },
-            stopped_at: if stopped_changed { edit.stopped_at } else { Change::Skip },
+            note: if note_changed {
+                edit.note
+            } else {
+                Change::Skip
+            },
+            started_at: if started_changed {
+                edit.started_at
+            } else {
+                None
+            },
+            stopped_at: if stopped_changed {
+                edit.stopped_at
+            } else {
+                Change::Skip
+            },
         };
         slot_repo::update(&self.db, slot_id, &update)?;
 

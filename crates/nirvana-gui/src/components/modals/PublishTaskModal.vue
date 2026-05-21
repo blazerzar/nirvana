@@ -5,17 +5,80 @@ import {
   formatDuration,
   useAllTasksStore,
 } from "../../stores/allTasks";
+import { useSettingsStore } from "../../stores/settings";
+import { TaskTimelineSession } from "../../types/types";
 import ModalShell from "./ModalShell.vue";
 
 const tasks = useAllTasksStore();
+const settings = useSettingsStore();
 
 const publishableSessions = computed(() => tasks.publishableSessions);
 
+type PublishPreviewWorklog = {
+  id: string;
+  ticketKey: string;
+  title: string;
+  note?: string;
+  startedAt: Date;
+  durationMs: number;
+  sourceSlotCount: number;
+};
+
+const individualPreviewWorklogs = (sessions: TaskTimelineSession[]) =>
+  sessions.map((entry) => ({
+    id: `slot-${entry.session.id}`,
+    ticketKey: entry.task.key,
+    title: entry.task.title,
+    note: entry.session.note,
+    startedAt: entry.session.start,
+    durationMs: entry.durationMs,
+    sourceSlotCount: 1,
+  }));
+
+const squashedPreviewWorklogs = (sessions: TaskTimelineSession[]) => {
+  const firstStartMs = Math.min(
+    ...sessions.map((entry) => entry.session.start.getTime()),
+  );
+  const groups: PublishPreviewWorklog[] = [];
+
+  sessions.forEach((entry) => {
+    const existing = groups.find(
+      (worklog) => worklog.ticketKey === entry.task.key,
+    );
+
+    if (existing) {
+      existing.durationMs += entry.durationMs;
+      existing.sourceSlotCount += 1;
+      return;
+    }
+
+    groups.push({
+      id: `ticket-${entry.task.key}`,
+      ticketKey: entry.task.key,
+      title: entry.task.title,
+      startedAt: new Date(firstStartMs),
+      durationMs: entry.durationMs,
+      sourceSlotCount: 1,
+    });
+  });
+
+  let cursorMs = firstStartMs;
+  groups.forEach((worklog) => {
+    worklog.startedAt = new Date(cursorMs);
+    cursorMs += worklog.durationMs;
+  });
+
+  return groups;
+};
+
+const previewWorklogs = computed(() =>
+  settings.publishSquashedWorklogs
+    ? squashedPreviewWorklogs(publishableSessions.value)
+    : individualPreviewWorklogs(publishableSessions.value),
+);
+
 const totalDurationMs = computed(() =>
-  publishableSessions.value.reduce(
-    (sum, entry) => sum + entry.durationMs,
-    0,
-  ),
+  previewWorklogs.value.reduce((sum, worklog) => sum + worklog.durationMs, 0),
 );
 
 const slotLabel = computed(
@@ -25,8 +88,24 @@ const slotLabel = computed(
     }`,
 );
 
-const sessionRange = (start: Date, end: Date | null) =>
-  `${formatClock(start)} - ${end ? formatClock(end) : "now"}`;
+const worklogLabel = computed(
+  () =>
+    `${previewWorklogs.value.length} Jira ${
+      previewWorklogs.value.length === 1 ? "worklog" : "worklogs"
+    }`,
+);
+
+const modeLabel = computed(() =>
+  settings.publishSquashedWorklogs ? "Squashed preview" : "Slot preview",
+);
+
+const sourceSlotLabel = (count: number) =>
+  `${count} local ${count === 1 ? "slot" : "slots"}`;
+
+const worklogRange = (worklog: PublishPreviewWorklog) => {
+  const end = new Date(worklog.startedAt.getTime() + worklog.durationMs);
+  return `${formatClock(worklog.startedAt)} - ${formatClock(end)}`;
+};
 </script>
 
 <template>
@@ -49,37 +128,46 @@ const sessionRange = (start: Date, end: Date | null) =>
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
           <span class="font-semibold text-(--text)">{{ tasks.selectedDateLabel }}</span>
           <span class="text-(--very-faint)">·</span>
+          <span class="text-(--muted)">{{ worklogLabel }}</span>
+          <span class="text-(--very-faint)">·</span>
           <span class="text-(--muted)">{{ slotLabel }}</span>
           <span class="text-(--very-faint)">·</span>
           <span class="font-semibold text-(--accent)">{{ formatDuration(totalDurationMs) }}</span>
+          <span class="ml-auto text-[10px] text-(--faint) max-[520px]:ml-0">{{ modeLabel }}</span>
         </div>
       </div>
 
       <div
-        v-if="publishableSessions.length > 0"
+        v-if="previewWorklogs.length > 0"
         class="max-h-[min(320px,46vh)] overflow-auto rounded-md border border-(--border) bg-[rgba(0,0,0,0.16)]"
       >
         <div
-          v-for="entry in publishableSessions"
-          :key="entry.session.id"
+          v-for="worklog in previewWorklogs"
+          :key="worklog.id"
           class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-[rgba(255,255,255,0.04)] px-3 py-2 text-[11px] first:border-t-0 max-[760px]:grid-cols-1 max-[760px]:gap-1"
         >
           <div class="min-w-0">
             <div class="flex min-w-0 items-center gap-2">
-              <span class="shrink-0 font-mono font-semibold text-(--accent)">{{ entry.task.key }}</span>
-              <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-medium text-(--muted)">{{ entry.task.title }}</span>
+              <span class="shrink-0 font-mono font-semibold text-(--accent)">{{ worklog.ticketKey }}</span>
+              <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-medium text-(--muted)">{{ worklog.title }}</span>
             </div>
             <div
-              v-if="entry.session.note"
+              v-if="worklog.note"
               class="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] italic text-(--faint)"
             >
-              {{ entry.session.note }}
+              {{ worklog.note }}
+            </div>
+            <div
+              v-else-if="settings.publishSquashedWorklogs"
+              class="mt-1 text-[10px] text-(--faint)"
+            >
+              {{ sourceSlotLabel(worklog.sourceSlotCount) }}
             </div>
           </div>
 
           <div class="flex shrink-0 items-center justify-end gap-2 tabular-nums max-[760px]:justify-start">
-            <span class="text-[10px] text-(--faint)">{{ sessionRange(entry.session.start, entry.session.end) }}</span>
-            <span class="font-semibold text-(--muted)">{{ formatDuration(entry.durationMs) }}</span>
+            <span class="text-[10px] text-(--faint)">{{ worklogRange(worklog) }}</span>
+            <span class="font-semibold text-(--muted)">{{ formatDuration(worklog.durationMs) }}</span>
           </div>
         </div>
       </div>

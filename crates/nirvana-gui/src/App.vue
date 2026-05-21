@@ -1,23 +1,39 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { AppInfo, ViewMode } from "./types/types";
+import { AppInfo, AppView, ViewMode } from "./types/types";
 import TaskModals from "./components/TaskModals.vue";
 import Footer from "./layout/Footer.vue";
 import ConnectionSetup from "./page/ConnectionSetup.vue";
 import Main from "./page/Main.vue";
+import Settings from "./page/Settings.vue";
 import { useAllTasksStore } from "./stores/allTasks";
 import { useConnectionsStore } from "./stores/connections";
+import { useSettingsStore } from "./stores/settings";
 import SettingsIcon from "./assets/icons/settings.svg?raw";
 
 const tasks = useAllTasksStore();
 const connections = useConnectionsStore();
+const settings = useSettingsStore();
 const appInfo = ref<AppInfo>({ name: "nirvana", version: "0.1.0" });
+const currentView = ref<AppView>("tracker");
 
 const viewModes: { label: string; value: ViewMode }[] = [
     { label: "Ticket", value: "ticket" },
     { label: "Day", value: "day" },
 ];
+
+const dateTransitionName = () => {
+    if (tasks.dayTransitionDirection === "previous") {
+        return "date-slide-previous";
+    }
+
+    if (tasks.dayTransitionDirection === "next") {
+        return "date-slide-next";
+    }
+
+    return "date-swap";
+};
 
 const getAppInfo = async () => {
     try {
@@ -49,6 +65,14 @@ const handleKeydown = (event: KeyboardEvent) => {
         return;
     }
 
+    if (currentView.value === "settings") {
+        if (key === "escape" || key === "esc") {
+            event.preventDefault();
+            currentView.value = "tracker";
+        }
+        return;
+    }
+
     if (isTyping || event.metaKey || event.ctrlKey || event.altKey) return;
     if (!connections.activeConnection) return;
 
@@ -68,7 +92,7 @@ const handleKeydown = (event: KeyboardEvent) => {
         return;
     }
 
-    if (["s", "x", "w", "p", "e"].includes(key)) {
+    if (["s", "a", "x", "w", "p", "e"].includes(key)) {
         event.preventDefault();
         tasks.runShortcut(key);
     }
@@ -79,6 +103,7 @@ let ticker: number | undefined;
 onMounted(() => {
     getAppInfo();
     connections.initialize();
+    settings.initialize();
     ticker = window.setInterval(() => tasks.tick(), 1000);
     window.addEventListener("keydown", handleKeydown);
 });
@@ -187,14 +212,16 @@ watch(
                         aria-label="Go to today"
                         @click="tasks.goToToday()"
                     >
-                        <Transition name="date-swap" mode="out-in">
-                            <span
-                                :key="tasks.selectedDateLabel"
-                                class="inline-block"
-                            >
-                                {{ tasks.selectedDateLabel }}
-                            </span>
-                        </Transition>
+                        <span class="relative inline-grid min-h-3 w-[92px] overflow-hidden">
+                            <Transition :name="dateTransitionName()">
+                                <span
+                                    :key="tasks.selectedDateLabel"
+                                    class="inline-block whitespace-nowrap"
+                                >
+                                    {{ tasks.selectedDateLabel }}
+                                </span>
+                            </Transition>
+                        </span>
                     </button>
                     <button
                         class="inline-flex h-4 min-w-4 items-center justify-center rounded px-1.5 text-[12px] leading-none text-(--faint) transition-[color,background] duration-150 ease-(--ease) hover:bg-[rgba(255,255,255,0.04)] hover:text-(--muted)"
@@ -229,8 +256,20 @@ watch(
 
                     <button
                         class="flex h-7 w-7 items-center justify-center rounded-[7px] border border-(--border) bg-(--surface) text-(--faint) transition-[color,background] duration-150 ease-[var(--ease)] hover:bg-(--surface-strong) hover:text-(--muted)"
+                        :class="
+                            currentView === 'settings'
+                                ? 'border-(--accent) bg-[rgba(149,222,200,0.12)] text-(--accent)'
+                                : ''
+                        "
                         type="button"
                         aria-label="Settings"
+                        :aria-pressed="currentView === 'settings'"
+                        @click="
+                            currentView =
+                                currentView === 'settings'
+                                    ? 'tracker'
+                                    : 'settings'
+                        "
                     >
                         <span
                             class="h-[13px] w-[13px] [&>svg]:h-full [&>svg]:w-full"
@@ -241,9 +280,13 @@ watch(
                 </div>
             </div>
 
-            <Main />
-            <Footer />
-            <TaskModals />
+            <Settings
+                v-if="currentView === 'settings'"
+                @close="currentView = 'tracker'"
+            />
+            <Main v-else />
+            <Footer v-if="currentView === 'tracker'" />
+            <TaskModals v-if="currentView === 'tracker'" />
         </section>
     </main>
 </template>

@@ -8,11 +8,11 @@ mod start;
 mod stop;
 mod time;
 
-pub(crate) use time::parse_time;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use nirvana_core::api::domain::Change;
 use std::fmt;
 use std::fmt::Display;
+pub(crate) use time::parse_time;
 
 #[derive(Parser)]
 #[command(

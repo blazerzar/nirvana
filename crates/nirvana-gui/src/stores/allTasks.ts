@@ -23,6 +23,8 @@ import {
   BackendSlot,
   BackendPublishResult,
   BackendTicket,
+  DayTransitionDirection,
+  CreateSessionInput,
   EditSessionInput,
   ModalKind,
   StartTaskInput,
@@ -134,6 +136,7 @@ export const useAllTasksStore = defineStore("allTasks", {
     loading: false,
     error: "",
     viewMode: "day" as ViewMode,
+    dayTransitionDirection: "none" as DayTransitionDirection,
     activeModal: null as ModalKind | null,
     now: new Date(),
   }),
@@ -177,23 +180,34 @@ export const useAllTasksStore = defineStore("allTasks", {
             entry.session.end !== null,
         );
     },
+    isInitialLoading(state): boolean {
+      return state.loading && state.loadedDateKey === "";
+    },
   },
   actions: {
     setViewMode(viewMode: ViewMode) {
+      this.dayTransitionDirection = "none";
       this.viewMode = viewMode;
     },
     previousDay() {
+      this.dayTransitionDirection = "previous";
       this.selectedDate = startOfDay(addDays(this.selectedDate, -1));
       this.selectedSessionId = null;
       void this.loadSelectedDate();
     },
     nextDay() {
+      this.dayTransitionDirection = "next";
       this.selectedDate = startOfDay(addDays(this.selectedDate, 1));
       this.selectedSessionId = null;
       void this.loadSelectedDate();
     },
     goToToday() {
-      this.selectedDate = startOfDay(new Date(this.now));
+      const today = startOfDay(new Date(this.now));
+      const currentTime = this.selectedDate.getTime();
+      const todayTime = today.getTime();
+      this.dayTransitionDirection =
+        todayTime < currentTime ? "previous" : todayTime > currentTime ? "next" : "none";
+      this.selectedDate = today;
       this.selectedSessionId = null;
       void this.loadSelectedDate();
     },
@@ -314,6 +328,10 @@ export const useAllTasksStore = defineStore("allTasks", {
     openStartModal() {
       this.activeModal = "start";
     },
+    openCreateModal() {
+      this.error = "";
+      this.activeModal = "create";
+    },
     openEditModal() {
       if (!this.selectedSessionEntry) {
         return;
@@ -405,6 +423,37 @@ export const useAllTasksStore = defineStore("allTasks", {
         this.activeModal = null;
       }
       return started;
+    },
+    async createSession(input: CreateSessionInput) {
+      this.loading = true;
+      this.error = "";
+
+      try {
+        const slot = await invoke<BackendSlot>("create_slot", {
+          input: {
+            ticketKey: input.ticketKey,
+            note: normalizedNote(input.note) ?? null,
+            startedAt: Math.floor(input.start.getTime() / 1000),
+            stoppedAt: Math.floor(input.end.getTime() / 1000),
+          },
+        });
+        this.selectedDate = startOfDay(new Date(slot.started_at * 1000));
+        await this.loadSelectedDate();
+        this.selectSession(slot.id);
+        this.expandedTaskIds = Array.from(
+          new Set([
+            ...this.expandedTaskIds,
+            this.selectedSessionEntry?.task.id,
+          ].filter((id): id is number => typeof id === "number")),
+        );
+        this.activeModal = null;
+        return true;
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : String(error);
+        return false;
+      } finally {
+        this.loading = false;
+      }
     },
     async switchToPreviousTask() {
       if (!this.previousTask || !this.activeTask) {
@@ -516,6 +565,10 @@ export const useAllTasksStore = defineStore("allTasks", {
 
       if (key === "s") {
         this.openStartModal();
+      }
+
+      if (key === "a") {
+        this.openCreateModal();
       }
 
       if (key === "x") {

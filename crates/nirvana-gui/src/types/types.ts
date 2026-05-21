@@ -14,7 +14,11 @@ export type PublishState = "unpublished" | "published";
 
 export type ViewMode = "ticket" | "day";
 
-export type ModalKind = "start" | "edit" | "publish";
+export type DayTransitionDirection = "previous" | "next" | "none";
+
+export type ModalKind = "start" | "create" | "edit" | "publish";
+
+export type AppView = "tracker" | "settings";
 
 export type ConnectionType = "jira-cloud" | "jira-dc";
 
@@ -65,6 +69,10 @@ export type BackendPublishResult = {
   timestamp: number;
 };
 
+export type BackendSettings = {
+  publishSquashedWorklogs: boolean;
+};
+
 export type TaskSession = {
   id: number;
   taskId: number;
@@ -109,6 +117,13 @@ export type StartTaskInput = {
   title?: string;
   note?: string;
   start?: Date;
+};
+
+export type CreateSessionInput = {
+  ticketKey: string;
+  note?: string;
+  start: Date;
+  end: Date;
 };
 
 export type EditSessionInput = {

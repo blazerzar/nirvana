@@ -13,6 +13,12 @@ const actions = computed(() => [
         disabled: tasks.loading,
     },
     {
+        key: "a",
+        label: "Add",
+        fn: () => tasks.openCreateModal(),
+        disabled: tasks.loading,
+    },
+    {
         key: "x",
         label: "Stop",
         fn: () => tasks.stopActiveTask(),

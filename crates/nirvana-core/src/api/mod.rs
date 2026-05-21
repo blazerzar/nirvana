@@ -1,10 +1,11 @@
 mod connection;
 mod delete;
-mod edit;
 pub mod domain;
+mod edit;
 pub mod errors;
 mod info;
 mod publish;
+mod settings;
 mod slots;
 mod tracking;
 
@@ -18,7 +19,7 @@ use errors::NirvanaError;
 
 pub use crate::storage::slot_repo::{Change, SlotSort};
 
-pub use domain::SlotEdit;
+pub use domain::{SlotCreate, SlotEdit};
 
 pub struct NirvanaApi {
     paths: AppPaths,

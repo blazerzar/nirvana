@@ -37,7 +37,7 @@ const openTaskUrl = async (url?: string) => {
 };
 
 const rowClass = (summary: TaskSummary) => ({
-    "flex items-start gap-2.5 border-t border-[rgba(255,255,255,0.04)] px-[18px] py-[9px] transition-colors duration-150 ease-[var(--ease)] first:border-t-0 hover:bg-[rgba(255,255,255,0.025)] max-[760px]:px-3.5": true,
+    "border-t border-[rgba(255,255,255,0.04)] transition-colors duration-150 ease-[var(--ease)] first:border-t-0 hover:bg-[rgba(255,255,255,0.025)]": true,
     "bg-[rgba(149,222,200,0.06)]": tasks.selectedTaskId === summary.task.id,
     "bg-[rgba(149,222,200,0.05)]":
         summary.isActive && tasks.selectedTaskId !== summary.task.id,
@@ -52,6 +52,21 @@ const timelineRowClass = (entry: TaskTimelineSession) => ({
 
 const contentKey = () =>
     `${tasks.viewMode}-${tasks.selectedDate.toISOString().slice(0, 10)}`;
+
+const contentTransitionName = () => {
+    if (tasks.dayTransitionDirection === "previous") {
+        return "day-slide-previous";
+    }
+
+    if (tasks.dayTransitionDirection === "next") {
+        return "day-slide-next";
+    }
+
+    return "content-swap";
+};
+
+const contentTransitionMode = () =>
+    tasks.dayTransitionDirection === "none" ? "out-in" : undefined;
 
 watch(
     () => [tasks.viewMode, tasks.selectedTaskId, tasks.selectedSessionId],
@@ -68,7 +83,7 @@ watch(
 </script>
 
 <template>
-    <section class="flex min-h-0 flex-col">
+    <section class="flex min-h-0 flex-col overflow-hidden">
         <div
             v-if="tasks.error"
             class="border-b border-[rgba(255,154,134,0.18)] bg-[rgba(255,154,134,0.07)] px-[18px] py-2 text-[11px] text-[#ff9a86] max-[760px]:px-3.5"
@@ -76,21 +91,25 @@ watch(
             {{ tasks.error }}
         </div>
         <div
-            v-else-if="tasks.loading"
+            v-else-if="tasks.isInitialLoading"
             class="border-b border-(--border) px-[18px] py-2 text-[11px] text-(--faint) max-[760px]:px-3.5"
         >
             Loading tracked work...
         </div>
 
-        <Transition name="content-swap" mode="out-in">
-            <div
-                v-if="tasks.viewMode === 'ticket'"
-                :key="contentKey()"
-                ref="ticketList"
-                class="min-h-0 flex-1 overflow-auto py-1"
-                role="list"
-                aria-label="Tracked tasks by ticket"
+        <div class="relative min-h-0 flex-1 overflow-hidden">
+            <Transition
+                :name="contentTransitionName()"
+                :mode="contentTransitionMode()"
             >
+                <div
+                    v-if="tasks.viewMode === 'ticket'"
+                    :key="contentKey()"
+                    ref="ticketList"
+                    class="h-full min-h-0 overflow-auto py-1"
+                    role="list"
+                    aria-label="Tracked tasks by ticket"
+                >
                 <TransitionGroup name="row" tag="div">
                     <article
                         v-for="summary in tasks.summaries"
@@ -100,25 +119,27 @@ watch(
                         role="listitem"
                         @click="tasks.selectTask(summary.task.id)"
                     >
-                    <button
-                        class="inline-flex w-4 shrink-0 items-center justify-center bg-transparent pt-px text-sm leading-none text-(--very-faint) transition-colors duration-150 ease-[var(--ease)] hover:text-(--muted)"
-                        type="button"
-                        :aria-expanded="tasks.isExpanded(summary.task.id)"
-                        @click.stop="tasks.toggleExpanded(summary.task.id)"
-                    >
-                        <span
-                            class="inline-block transition-transform duration-150 ease-(--ease)"
-                            :class="
-                                tasks.isExpanded(summary.task.id)
-                                    ? 'rotate-90'
-                                    : ''
-                            "
-                            >›</span
+                        <div
+                            class="grid min-h-10 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 px-[18px] py-1.5 max-[760px]:px-3.5"
                         >
-                    </button>
+                            <button
+                                class="inline-flex h-6 w-5 shrink-0 items-center justify-center bg-transparent text-sm leading-none text-(--very-faint) transition-[color,transform] duration-150 ease-[var(--ease)] hover:text-(--muted)"
+                                type="button"
+                                :aria-expanded="tasks.isExpanded(summary.task.id)"
+                                @click.stop="tasks.toggleExpanded(summary.task.id)"
+                            >
+                                <span
+                                    class="inline-block transition-transform duration-150 ease-(--ease)"
+                                    :class="
+                                        tasks.isExpanded(summary.task.id)
+                                            ? 'rotate-90'
+                                            : ''
+                                    "
+                                    >›</span
+                                >
+                            </button>
 
-                    <div class="min-w-0 flex-1">
-                        <div class="mb-0.5 flex items-center gap-[7px]">
+                            <div class="flex min-w-0 items-center gap-[7px]">
                             <span
                                 class="shrink-0 font-mono text-[11px] font-semibold"
                                 :class="
@@ -154,66 +175,69 @@ watch(
                                 v-html="ExternalLinkIcon"
                             ></button>
                         </div>
+
+                            <div class="flex shrink-0 flex-row items-center gap-1.5">
+                                <span
+                                    class="text-[11.5px] tabular-nums"
+                                    :class="
+                                        summary.isActive
+                                            ? 'font-semibold text-(--text)'
+                                            : 'font-medium text-(--muted)'
+                                    "
+                                >
+                                    {{ formatDuration(summary.totalMs) }}
+                                </span>
+                                <span class="text-[10px] text-(--very-faint)">{{
+                                    slotLabel(summary.slotCount)
+                                }}</span>
+                            </div>
+                        </div>
+
                         <Transition name="expand">
                             <div
                                 v-if="tasks.isExpanded(summary.task.id)"
-                                class="mt-1.5 flex flex-col gap-0.5 overflow-hidden pl-6.5 max-[760px]:pl-4"
+                                class="grid overflow-hidden"
                             >
-                                <div
-                                    v-for="session in summary.sessions"
-                                    :key="session.id"
-                                    class="flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.25 text-[11px] transition-[background,border-color] duration-150 ease-(--ease) hover:bg-[rgba(255,255,255,0.04)]"
-                                    :class="
-                                        tasks.selectedSessionId === session.id
-                                            ? 'border-[rgba(149,222,200,0.18)] bg-[rgba(149,222,200,0.08)]'
-                                            : 'border-transparent bg-[rgba(255,255,255,0.02)]'
-                                    "
-                                    @click.stop="
-                                        tasks.selectSession(session.id)
-                                    "
-                                >
-                                    <span class="shrink-0 text-(--faint)">{{
-                                        sessionRange(session)
-                                    }}</span>
-                                    <span
-                                        class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap italic text-(--muted) max-[760px]:hidden"
-                                        >{{
-                                            session.note || "Focused work"
-                                        }}</span
-                                    >
-                                    <span
-                                        class="h-[5px] w-[5px] shrink-0 rounded-full max-[760px]:hidden"
+                                <div class="min-h-0 overflow-hidden border-t border-[rgba(255,255,255,0.035)] bg-[rgba(0,0,0,0.12)]">
+                                    <div
+                                        v-for="session in summary.sessions"
+                                        :key="session.id"
+                                        class="grid min-h-[30px] cursor-pointer grid-cols-[112px_minmax(0,1fr)_auto_auto] items-center gap-2 border-t border-[rgba(255,255,255,0.035)] px-[48px] py-1 text-[11px] transition-colors duration-150 ease-(--ease) first:border-t-0 hover:bg-[rgba(255,255,255,0.03)] max-[760px]:grid-cols-[minmax(0,1fr)_auto_auto] max-[760px]:px-8"
                                         :class="
-                                            session.publishState === 'published'
-                                                ? 'bg-(--success)'
-                                                : 'bg-(--warning)'
+                                            tasks.selectedSessionId === session.id
+                                                ? 'bg-[rgba(149,222,200,0.08)]'
+                                                : ''
                                         "
-                                        :title="session.publishState"
-                                    ></span>
-                                    <span
-                                        class="shrink-0 text-(--muted) tabular-nums"
-                                        >{{ sessionDuration(session) }}</span
+                                        @click.stop="
+                                            tasks.selectSession(session.id)
+                                        "
                                     >
+                                        <span class="shrink-0 text-(--faint)">{{
+                                            sessionRange(session)
+                                        }}</span>
+                                        <span
+                                            class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap italic text-(--muted) max-[760px]:hidden"
+                                            >{{
+                                                session.note || "Focused work"
+                                            }}</span
+                                        >
+                                        <span
+                                            class="h-[5px] w-[5px] shrink-0 rounded-full"
+                                            :class="
+                                                session.publishState === 'published'
+                                                    ? 'bg-(--success)'
+                                                    : 'bg-(--warning)'
+                                            "
+                                            :title="session.publishState"
+                                        ></span>
+                                        <span
+                                            class="shrink-0 text-(--muted) tabular-nums"
+                                            >{{ sessionDuration(session) }}</span
+                                        >
+                                    </div>
                                 </div>
                             </div>
                         </Transition>
-                    </div>
-
-                    <div class="flex shrink-0 flex-row items-center gap-1.5">
-                        <span
-                            class="text-[11.5px] tabular-nums"
-                            :class="
-                                summary.isActive
-                                    ? 'font-semibold text-(--text)'
-                                    : 'font-medium text-(--muted)'
-                            "
-                        >
-                            {{ formatDuration(summary.totalMs) }}
-                        </span>
-                        <span class="text-[10px] text-(--very-faint)">{{
-                            slotLabel(summary.slotCount)
-                        }}</span>
-                    </div>
                     </article>
                 </TransitionGroup>
 
@@ -223,16 +247,16 @@ watch(
                     :title="`No tickets tracked on ${tasks.selectedDateLabel}`"
                     body="Start tracking to add the first work session for this day."
                 />
-            </div>
+                </div>
 
-            <div
-                v-else
-                :key="contentKey()"
-                ref="timelineList"
-                class="min-h-0 flex-1 overflow-auto pt-1.5"
-                role="list"
-                aria-label="Tracked tasks in day order"
-            >
+                <div
+                    v-else
+                    :key="contentKey()"
+                    ref="timelineList"
+                    class="h-full min-h-0 overflow-auto pt-1.5"
+                    role="list"
+                    aria-label="Tracked tasks in day order"
+                >
                 <TransitionGroup name="row" tag="div">
                     <article
                         v-for="entry in tasks.timelineSessions"
@@ -320,7 +344,8 @@ watch(
                     :title="`No tickets tracked on ${tasks.selectedDateLabel}`"
                     body="Start tracking to add the first work session for this day."
                 />
-            </div>
-        </Transition>
+                </div>
+            </Transition>
+        </div>
     </section>
 </template>

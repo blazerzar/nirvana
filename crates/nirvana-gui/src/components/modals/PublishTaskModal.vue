@@ -199,11 +199,17 @@ const worklogRange = (worklog: PublishPreviewWorklog) => {
           Cancel
         </button>
         <button
-          class="min-h-[30px] rounded-md border border-(--accent) bg-(--accent) px-3 py-1.5 text-[11px] font-bold text-(--bg) transition-[color,background,border-color] duration-150 ease-[var(--ease)] disabled:cursor-default disabled:opacity-[0.42]"
+          class="inline-flex min-h-[30px] min-w-[82px] items-center justify-center gap-1.5 rounded-md border border-(--accent) bg-(--accent) px-3 py-1.5 text-[11px] font-bold text-(--bg) transition-[color,background,border-color] duration-150 ease-[var(--ease)] disabled:cursor-default disabled:opacity-[0.42]"
           type="submit"
           :disabled="tasks.loading || publishableSessions.length === 0"
+          :aria-busy="tasks.loading ? 'true' : 'false'"
         >
-          {{ tasks.loading ? "Publishing..." : "Publish" }}
+          <span
+            v-if="tasks.loading"
+            class="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-(--bg) border-t-transparent"
+            aria-hidden="true"
+          ></span>
+          <span>{{ tasks.loading ? "Publishing..." : "Publish" }}</span>
         </button>
       </footer>
     </template>

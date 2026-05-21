@@ -56,12 +56,12 @@ gui-dev:
 
 # Start full Tauri app in dev mode (Vite + Rust backend, hot-reload)
 gui-tauri-dev:
-    cd crates/nirvana-gui && bunx tauri dev
+    cd crates/nirvana-gui && bun run tauri dev
 
 # Build the full Tauri desktop app (release bundle)
 gui-build:
-    cd crates/nirvana-gui && bunx tauri build
+    cd crates/nirvana-gui && bun run tauri build
 
 # Type-check the Vue/TS frontend
 gui-typecheck:
-    cd crates/nirvana-gui && bunx vue-tsc --noEmit
+    cd crates/nirvana-gui && bun run typecheck

@@ -537,6 +537,10 @@ export const useAllTasksStore = defineStore("allTasks", {
       }
     },
     async confirmPublishUnpublished() {
+      if (this.loading) {
+        return;
+      }
+
       const { from, to } = dateRangeSeconds(this.selectedDate);
       this.loading = true;
       this.error = "";

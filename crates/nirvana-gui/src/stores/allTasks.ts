@@ -133,7 +133,9 @@ export const useAllTasksStore = defineStore("allTasks", {
     selectedSessionId: null as number | null,
     selectedDate: startOfDay(new Date()),
     loadedDateKey: "",
+    allPublishableSlots: [] as BackendSlot[],
     loading: false,
+    publishingScope: null as "day" | "all" | null,
     error: "",
     viewMode: "day" as ViewMode,
     dayTransitionDirection: "none" as DayTransitionDirection,
@@ -180,6 +182,16 @@ export const useAllTasksStore = defineStore("allTasks", {
             entry.session.end !== null,
         );
     },
+    canOpenPublishModal(state): boolean {
+      return (
+        state.allPublishableSlots.length > 0 ||
+        timelineSessionsForDay(state.tasks, state.selectedDate, state.now).some(
+          (entry) =>
+            entry.session.publishState === "unpublished" &&
+            entry.session.end !== null,
+        )
+      );
+    },
     isInitialLoading(state): boolean {
       return state.loading && state.loadedDateKey === "";
     },
@@ -188,6 +200,20 @@ export const useAllTasksStore = defineStore("allTasks", {
     setViewMode(viewMode: ViewMode) {
       this.dayTransitionDirection = "none";
       this.viewMode = viewMode;
+    },
+    async setSelectedDate(date: Date) {
+      const nextDate = startOfDay(date);
+      const currentTime = this.selectedDate.getTime();
+      const nextTime = nextDate.getTime();
+      if (currentTime === nextTime) {
+        return;
+      }
+
+      this.dayTransitionDirection =
+        nextTime < currentTime ? "previous" : nextTime > currentTime ? "next" : "none";
+      this.selectedDate = nextDate;
+      this.selectedSessionId = null;
+      await this.loadSelectedDate();
     },
     previousDay() {
       this.dayTransitionDirection = "previous";
@@ -220,17 +246,21 @@ export const useAllTasksStore = defineStore("allTasks", {
       this.error = "";
 
       try {
-        const [slots, tickets] = await Promise.all([
+        const [slots, tickets, allPublishableSlots] = await Promise.all([
           invoke<BackendSlot[]>("list_slots", {
             input: { from, to, sort: "started" },
           }),
           invoke<BackendTicket[]>("list_recent_tickets"),
+          invoke<BackendSlot[]>("list_unpublished_slots", {
+            input: { from: 0, to: null },
+          }),
         ]);
 
         const previousSelectedTaskId = this.selectedTaskId;
         const previousSelectedSessionId = this.selectedSessionId;
 
         this.tasks = buildTasksFromBackend(slots, tickets);
+        this.allPublishableSlots = allPublishableSlots;
         this.loadedDateKey = dateKey(this.selectedDate);
 
         const selectedSessionExists =
@@ -264,6 +294,7 @@ export const useAllTasksStore = defineStore("allTasks", {
       } catch (error) {
         this.error = error instanceof Error ? error.message : String(error);
         this.tasks = [];
+        this.allPublishableSlots = [];
         this.selectedSessionId = null;
         this.selectedTaskId = null;
       } finally {
@@ -341,7 +372,7 @@ export const useAllTasksStore = defineStore("allTasks", {
       this.activeModal = "edit";
     },
     openPublishModal() {
-      if (this.publishableSessions.length === 0) {
+      if (!this.canOpenPublishModal) {
         return;
       }
 
@@ -543,6 +574,7 @@ export const useAllTasksStore = defineStore("allTasks", {
 
       const { from, to } = dateRangeSeconds(this.selectedDate);
       this.loading = true;
+      this.publishingScope = "day";
       this.error = "";
 
       try {
@@ -559,6 +591,34 @@ export const useAllTasksStore = defineStore("allTasks", {
       } catch (error) {
         this.error = error instanceof Error ? error.message : String(error);
       } finally {
+        this.publishingScope = null;
+        this.loading = false;
+      }
+    },
+    async confirmPublishAllUnpublished() {
+      if (this.loading) {
+        return;
+      }
+
+      this.loading = true;
+      this.publishingScope = "all";
+      this.error = "";
+
+      try {
+        const result = await invoke<BackendPublishResult>("publish_slots", {
+          input: { from: 0, to: null },
+        });
+        await this.loadSelectedDate();
+
+        if (result.failed.length > 0) {
+          this.error = `${result.failed.length} ${result.failed.length === 1 ? "slot" : "slots"} failed to publish.`;
+        } else {
+          this.activeModal = null;
+        }
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : String(error);
+      } finally {
+        this.publishingScope = null;
         this.loading = false;
       }
     },

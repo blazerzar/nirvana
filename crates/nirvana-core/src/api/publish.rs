@@ -4,6 +4,7 @@ use crate::api::errors::TrackingError;
 use crate::credentials;
 use crate::integration;
 use crate::storage::slot_repo::{self, SlotWithTicket};
+use chrono::{Local, TimeZone};
 
 #[derive(Debug, PartialEq, Eq)]
 struct PublishWorklog {
@@ -11,6 +12,13 @@ struct PublishWorklog {
     started_at: i64,
     seconds: i64,
     source_slot_ids: Vec<i64>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct PublishDayGroup {
+    day: chrono::NaiveDate,
+    first_started_at: i64,
+    worklogs: Vec<PublishWorklog>,
 }
 
 impl NirvanaApi {
@@ -69,11 +77,9 @@ impl NirvanaApi {
 }
 
 fn squash_slots_for_publish(slots: &[SlotWithTicket]) -> Vec<PublishWorklog> {
-    let Some(first_started_at) = slots.iter().map(|slot| slot.started_at).min() else {
-        return Vec::new();
-    };
-
-    let mut groups: Vec<PublishWorklog> = Vec::new();
+    let mut slots = slots.iter().collect::<Vec<_>>();
+    slots.sort_by_key(|slot| slot.started_at);
+    let mut day_groups: Vec<PublishDayGroup> = Vec::new();
 
     for slot in slots {
         let Some(stopped_at) = slot.stopped_at else {
@@ -85,7 +91,23 @@ fn squash_slots_for_publish(slots: &[SlotWithTicket]) -> Vec<PublishWorklog> {
             continue;
         }
 
-        match groups
+        let Some(day) = local_day(slot.started_at) else {
+            continue;
+        };
+        let day_group = match day_groups.iter_mut().find(|group| group.day == day) {
+            Some(group) => group,
+            None => {
+                day_groups.push(PublishDayGroup {
+                    day,
+                    first_started_at: slot.started_at,
+                    worklogs: Vec::new(),
+                });
+                day_groups.last_mut().expect("day group just inserted")
+            }
+        };
+
+        match day_group
+            .worklogs
             .iter_mut()
             .find(|worklog| worklog.ticket_key == slot.ticket_key)
         {
@@ -93,7 +115,7 @@ fn squash_slots_for_publish(slots: &[SlotWithTicket]) -> Vec<PublishWorklog> {
                 worklog.seconds += seconds;
                 worklog.source_slot_ids.push(slot.id);
             }
-            None => groups.push(PublishWorklog {
+            None => day_group.worklogs.push(PublishWorklog {
                 ticket_key: slot.ticket_key.clone(),
                 started_at: 0,
                 seconds,
@@ -102,13 +124,25 @@ fn squash_slots_for_publish(slots: &[SlotWithTicket]) -> Vec<PublishWorklog> {
         }
     }
 
-    let mut cursor = first_started_at;
-    for worklog in &mut groups {
-        worklog.started_at = cursor;
-        cursor += worklog.seconds;
-    }
+    day_groups
+        .into_iter()
+        .flat_map(|mut group| {
+            let mut cursor = group.first_started_at;
+            for worklog in &mut group.worklogs {
+                worklog.started_at = cursor;
+                cursor += worklog.seconds;
+            }
+            group.worklogs
+        })
+        .collect()
+}
 
-    groups
+fn local_day(timestamp: i64) -> Option<chrono::NaiveDate> {
+    match Local.timestamp_opt(timestamp, 0) {
+        chrono::LocalResult::Single(date_time) => Some(date_time.date_naive()),
+        chrono::LocalResult::Ambiguous(earliest, _) => Some(earliest.date_naive()),
+        chrono::LocalResult::None => None,
+    }
 }
 
 fn slots_for_publish(slots: &[SlotWithTicket]) -> Vec<PublishWorklog> {
@@ -146,6 +180,14 @@ mod tests {
             stopped_at: Some(stopped_at),
             published_at: None,
         }
+    }
+
+    fn local_ts(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> i64 {
+        Local
+            .with_ymd_and_hms(year, month, day, hour, minute, 0)
+            .single()
+            .expect("test timestamp should be valid in local timezone")
+            .timestamp()
     }
 
     #[test]
@@ -217,14 +259,78 @@ mod tests {
     }
 
     #[test]
-    fn anchors_to_earliest_start_even_if_input_is_not_sorted() {
+    fn orders_worklogs_by_slot_start_even_if_input_is_not_sorted() {
         let slots = vec![slot(1, "DES-1", 200, 260), slot(2, "DES-2", 100, 130)];
 
         let worklogs = squash_slots_for_publish(&slots);
 
-        assert_eq!(worklogs[0].ticket_key, "DES-1");
+        assert_eq!(worklogs[0].ticket_key, "DES-2");
         assert_eq!(worklogs[0].started_at, 100);
-        assert_eq!(worklogs[1].started_at, 160);
+        assert_eq!(worklogs[1].ticket_key, "DES-1");
+        assert_eq!(worklogs[1].started_at, 130);
+    }
+
+    #[test]
+    fn squashes_same_ticket_within_each_local_day_only() {
+        let monday_9 = local_ts(2026, 5, 18, 9, 0);
+        let monday_10 = local_ts(2026, 5, 18, 10, 0);
+        let tuesday_9 = local_ts(2026, 5, 19, 9, 0);
+        let slots = vec![
+            slot(1, "DES-1", monday_9, monday_9 + 30 * 60),
+            slot(2, "DES-1", monday_10, monday_10 + 15 * 60),
+            slot(3, "DES-1", tuesday_9, tuesday_9 + 45 * 60),
+        ];
+
+        let worklogs = squash_slots_for_publish(&slots);
+
+        assert_eq!(
+            worklogs,
+            vec![
+                PublishWorklog {
+                    ticket_key: "DES-1".to_string(),
+                    started_at: monday_9,
+                    seconds: 45 * 60,
+                    source_slot_ids: vec![1, 2],
+                },
+                PublishWorklog {
+                    ticket_key: "DES-1".to_string(),
+                    started_at: tuesday_9,
+                    seconds: 45 * 60,
+                    source_slot_ids: vec![3],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn sequences_squashed_worklogs_independently_per_local_day() {
+        let monday_9 = local_ts(2026, 5, 18, 9, 0);
+        let monday_10 = local_ts(2026, 5, 18, 10, 0);
+        let tuesday_9 = local_ts(2026, 5, 19, 9, 0);
+        let tuesday_10 = local_ts(2026, 5, 19, 10, 0);
+        let slots = vec![
+            slot(1, "DES-1", monday_9, monday_9 + 30 * 60),
+            slot(2, "DES-2", monday_10, monday_10 + 15 * 60),
+            slot(3, "DES-1", monday_10 + 15 * 60, monday_10 + 30 * 60),
+            slot(4, "DES-2", tuesday_9, tuesday_9 + 20 * 60),
+            slot(5, "DES-1", tuesday_10, tuesday_10 + 40 * 60),
+            slot(6, "DES-2", tuesday_10 + 40 * 60, tuesday_10 + 50 * 60),
+        ];
+
+        let worklogs = squash_slots_for_publish(&slots);
+
+        assert_eq!(worklogs[0].ticket_key, "DES-1");
+        assert_eq!(worklogs[0].started_at, monday_9);
+        assert_eq!(worklogs[0].seconds, 45 * 60);
+        assert_eq!(worklogs[1].ticket_key, "DES-2");
+        assert_eq!(worklogs[1].started_at, monday_9 + 45 * 60);
+        assert_eq!(worklogs[1].seconds, 15 * 60);
+        assert_eq!(worklogs[2].ticket_key, "DES-2");
+        assert_eq!(worklogs[2].started_at, tuesday_9);
+        assert_eq!(worklogs[2].seconds, 30 * 60);
+        assert_eq!(worklogs[3].ticket_key, "DES-1");
+        assert_eq!(worklogs[3].started_at, tuesday_9 + 30 * 60);
+        assert_eq!(worklogs[3].seconds, 40 * 60);
     }
 
     #[test]

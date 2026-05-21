@@ -43,7 +43,7 @@ const actions = computed(() => [
         key: "p",
         label: "Publish",
         fn: () => tasks.openPublishModal(),
-        disabled: tasks.loading || tasks.publishableSessions.length === 0,
+        disabled: tasks.loading || !tasks.canOpenPublishModal,
     },
 ]);
 </script>

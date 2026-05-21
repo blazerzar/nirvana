@@ -53,6 +53,14 @@ pub struct Slot {
     pub issue_url: Option<String>,
 }
 
+#[derive(Debug)]
+pub struct SlotCreate {
+    pub ticket_key: String,
+    pub note: Option<String>,
+    pub started_at: i64,
+    pub stopped_at: i64,
+}
+
 impl Slot {
     pub(crate) fn from_record(record: SlotWithTicket, issue_url: Option<String>) -> Self {
         Self {
@@ -100,6 +108,11 @@ pub struct PublishResult {
 pub struct PublishFailure {
     pub ticket_key: String,
     pub error: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AppSettings {
+    pub publish_squashed_worklogs: bool,
 }
 
 #[derive(Debug, Default)]

@@ -1,9 +1,11 @@
 import { computed, nextTick, ref } from "vue";
-import { formatDuration, useAllTasksStore } from "../stores/allTasks";
+import { useAllTasksStore } from "../stores/allTasks";
 import {
   applyTimeParts,
+  formatDurationInput,
   formatTimeInput,
   formatTimeParts,
+  parseDurationInput,
   parseTimeParts,
   wrapTimePart,
 } from "./dateTimeInputs";
@@ -16,6 +18,7 @@ export const useEditTaskModal = () => {
   const ticketKey = ref("");
   const start = ref("");
   const stop = ref("");
+  const durationInput = ref("");
   const note = ref("");
   const error = ref("");
 
@@ -51,12 +54,7 @@ export const useEditTaskModal = () => {
     );
   });
 
-  const duration = computed(() => {
-    if (!parsedStart.value || (stop.value && !parsedStop.value)) return "Invalid";
-
-    const end = parsedStop.value ?? tasks.now;
-    return formatDuration(end.getTime() - parsedStart.value.getTime());
-  });
+  const parsedDurationMs = computed(() => parseDurationInput(durationInput.value));
 
   const computedError = computed(() => {
     if (tasks.activeModal !== "edit") return "";
@@ -65,6 +63,10 @@ export const useEditTaskModal = () => {
 
     if (!start.value.trim()) return "Start time is required.";
     if (!parsedStart.value) return "Start time is invalid.";
+    if (!durationInput.value.trim()) return "Duration is required.";
+    if (!parsedDurationMs.value || parsedDurationMs.value <= 0) {
+      return "Duration is invalid.";
+    }
 
     if (stop.value) {
       if (!parsedStop.value) return "Stop time is invalid.";
@@ -85,6 +87,7 @@ export const useEditTaskModal = () => {
       start.value = "";
       stop.value = "";
       note.value = "";
+      durationInput.value = "";
       return;
     }
 
@@ -93,6 +96,10 @@ export const useEditTaskModal = () => {
     stop.value = selectedEntry.session.end
       ? formatTimeInput(selectedEntry.session.end)
       : "";
+    durationInput.value = formatDurationInput(
+      (selectedEntry.session.end ?? tasks.now).getTime() -
+        selectedEntry.session.start.getTime(),
+    );
     note.value = selectedEntry.session.note ?? "";
   };
 
@@ -125,6 +132,9 @@ export const useEditTaskModal = () => {
     if (!time) return;
 
     start.value = formatTimeParts(time.hours, time.minutes);
+    if (stop.value) {
+      syncDurationFromTimes();
+    }
   };
 
   const normalizeStopTime = () => {
@@ -134,6 +144,45 @@ export const useEditTaskModal = () => {
     if (!time) return;
 
     stop.value = formatTimeParts(time.hours, time.minutes);
+    syncDurationFromTimes();
+  };
+
+  const syncDurationFromTimes = () => {
+    if (!parsedStart.value) return;
+
+    const end = parsedStop.value ?? tasks.now;
+    durationInput.value = formatDurationInput(
+      end.getTime() - parsedStart.value.getTime(),
+    );
+  };
+
+  const applyDurationToStop = () => {
+    if (!parsedStart.value || !parsedDurationMs.value) return;
+
+    stop.value = formatTimeInput(
+      new Date(parsedStart.value.getTime() + parsedDurationMs.value),
+    );
+  };
+
+  const normalizeDuration = () => {
+    if (!parsedDurationMs.value) return;
+
+    durationInput.value = formatDurationInput(parsedDurationMs.value);
+    applyDurationToStop();
+  };
+
+  const handleDurationKeydown = (event: KeyboardEvent) => {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+
+    event.preventDefault();
+
+    const direction = event.key === "ArrowUp" ? 1 : -1;
+    const currentMs = parsedDurationMs.value ?? 30 * 60 * 1000;
+    const stepMs = 5 * 60 * 1000;
+    const nextMs = Math.max(60 * 1000, currentMs + direction * stepMs);
+
+    durationInput.value = formatDurationInput(nextMs);
+    applyDurationToStop();
   };
 
   const handleTimeKeydown = async (
@@ -192,14 +241,17 @@ export const useEditTaskModal = () => {
   return {
     computedError,
     deleteSession,
-    duration,
+    durationInput,
     entry,
     error,
     firstField,
+    handleDurationKeydown,
     handleStartKeydown,
     handleStopKeydown,
     knownTask,
     note,
+    applyDurationToStop,
+    normalizeDuration,
     normalizeStartTime,
     normalizeStopTime,
     readOnly,

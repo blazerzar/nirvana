@@ -1,7 +1,7 @@
-use crate::api::domain::Slot;
-use crate::api::errors::TrackingError;
 use crate::api::NirvanaApi;
 use crate::api::NirvanaError;
+use crate::api::domain::Slot;
+use crate::api::errors::TrackingError;
 use crate::integration;
 use crate::storage::slot_repo;
 

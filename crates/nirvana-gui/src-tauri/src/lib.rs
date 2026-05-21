@@ -1,5 +1,6 @@
 use nirvana_core::api::domain::{
-    Change, Connection, ConnectionData, PublishFailure, PublishResult, Slot, SlotEdit, Ticket,
+    AppSettings, Change, Connection, ConnectionData, PublishFailure, PublishResult, Slot,
+    SlotCreate, SlotEdit, Ticket,
 };
 use nirvana_core::api::{NirvanaApi, SlotSort};
 use serde::{Deserialize, Serialize};
@@ -22,6 +23,12 @@ struct CreateConnectionInput {
     hostname: String,
     username: String,
     token: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConnectionIdInput {
+    connection_id: i64,
 }
 
 #[derive(Serialize)]
@@ -61,6 +68,15 @@ struct StartSlotInput {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct CreateSlotInput {
+    ticket_key: String,
+    note: Option<String>,
+    started_at: i64,
+    stopped_at: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct EditSlotInput {
     slot_id: i64,
     note: String,
@@ -78,6 +94,12 @@ struct DeleteSlotInput {
 struct PublishSlotsInput {
     from: i64,
     to: Option<i64>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GuiSettings {
+    publish_squashed_worklogs: bool,
 }
 
 #[derive(Serialize)]
@@ -154,6 +176,22 @@ impl From<PublishResult> for GuiPublishResult {
     }
 }
 
+impl From<AppSettings> for GuiSettings {
+    fn from(settings: AppSettings) -> Self {
+        Self {
+            publish_squashed_worklogs: settings.publish_squashed_worklogs,
+        }
+    }
+}
+
+impl From<GuiSettings> for AppSettings {
+    fn from(settings: GuiSettings) -> Self {
+        Self {
+            publish_squashed_worklogs: settings.publish_squashed_worklogs,
+        }
+    }
+}
+
 #[tauri::command]
 fn get_app_info(app: tauri::AppHandle) -> serde_json::Value {
     let info = app.package_info();
@@ -167,8 +205,50 @@ fn get_app_info(app: tauri::AppHandle) -> serde_json::Value {
 }
 
 #[tauri::command]
+fn get_settings() -> Result<GuiSettings, String> {
+    let api = NirvanaApi::new().map_err(|error| error.to_string())?;
+    Ok(api.get_settings().into())
+}
+
+#[tauri::command]
+fn update_settings(input: GuiSettings) -> Result<GuiSettings, String> {
+    let mut api = NirvanaApi::new().map_err(|error| error.to_string())?;
+    api.update_settings(input.into())
+        .map(GuiSettings::from)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn get_active_connection() -> Result<Option<GuiConnection>, String> {
     let api = NirvanaApi::new().map_err(|error| error.to_string())?;
+    api.get_active_connection()
+        .map(|connection| connection.map(GuiConnection::from))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn list_connections() -> Result<Vec<GuiConnection>, String> {
+    let api = NirvanaApi::new().map_err(|error| error.to_string())?;
+    api.list_connections()
+        .map(|connections| connections.into_iter().map(GuiConnection::from).collect())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn set_active_connection(input: ConnectionIdInput) -> Result<Option<GuiConnection>, String> {
+    let mut api = NirvanaApi::new().map_err(|error| error.to_string())?;
+    api.set_active_connection(input.connection_id)
+        .map_err(|error| error.to_string())?;
+    api.get_active_connection()
+        .map(|connection| connection.map(GuiConnection::from))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn delete_connection(input: ConnectionIdInput) -> Result<Option<GuiConnection>, String> {
+    let mut api = NirvanaApi::new().map_err(|error| error.to_string())?;
+    api.delete_connection(input.connection_id)
+        .map_err(|error| error.to_string())?;
     api.get_active_connection()
         .map(|connection| connection.map(GuiConnection::from))
         .map_err(|error| error.to_string())
@@ -235,6 +315,19 @@ fn start_slot(input: StartSlotInput) -> Result<GuiSlot, String> {
 }
 
 #[tauri::command]
+fn create_slot(input: CreateSlotInput) -> Result<GuiSlot, String> {
+    let api = NirvanaApi::new().map_err(|error| error.to_string())?;
+    api.create_slot(SlotCreate {
+        ticket_key: input.ticket_key,
+        note: input.note,
+        started_at: input.started_at,
+        stopped_at: input.stopped_at,
+    })
+    .map(GuiSlot::from)
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn edit_slot(input: EditSlotInput) -> Result<GuiSlot, String> {
     let api = NirvanaApi::new().map_err(|error| error.to_string())?;
     let note = input.note.trim();
@@ -283,11 +376,17 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             get_app_info,
+            get_settings,
+            update_settings,
             get_active_connection,
+            list_connections,
+            set_active_connection,
+            delete_connection,
             create_connection,
             list_slots,
             list_recent_tickets,
             start_slot,
+            create_slot,
             edit_slot,
             delete_slot,
             stop_slot,

@@ -21,6 +21,10 @@ pub enum NirvanaError {
 pub enum TrackingError {
     #[error("no active connection")]
     NoActiveConnection,
+    #[error("connection not found: {0}")]
+    ConnectionNotFound(i64),
+    #[error("cannot delete a connection with local history")]
+    ConnectionHasHistory,
     #[error("ticket not found: {0}")]
     TicketNotFound(String),
     #[error("slot not found: {0}")]
@@ -31,4 +35,8 @@ pub enum TrackingError {
     CannotDeletePublished,
     #[error("stopped_at must be null or after started_at")]
     InvalidTimeRange,
+    #[error("slot time cannot be in the future")]
+    FutureTime,
+    #[error("slot overlaps an existing slot")]
+    SlotOverlap,
 }

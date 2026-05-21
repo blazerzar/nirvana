@@ -1,9 +1,9 @@
+use crate::api::NirvanaApi;
+use crate::api::NirvanaError;
 use crate::api::domain::Slot;
 use crate::api::errors::TrackingError;
-use crate::api::NirvanaApi;
 use crate::integration;
 use crate::storage::slot_repo::{self, SlotSort};
-use crate::api::NirvanaError;
 
 impl NirvanaApi {
     pub fn get_slots(
@@ -20,8 +20,7 @@ impl NirvanaApi {
         let connection = self.get_connection(connection_id)?;
         let integ = integration::Integration::build_for_url(&connection)?;
 
-        let records =
-            slot_repo::get_slots(&self.db, connection_id, from, to, sort)?;
+        let records = slot_repo::get_slots(&self.db, connection_id, from, to, sort)?;
         Ok(records
             .into_iter()
             .map(|r| {

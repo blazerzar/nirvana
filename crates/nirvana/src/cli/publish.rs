@@ -33,7 +33,10 @@ pub(crate) fn run(args: PublishArgs) -> anyhow::Result<()> {
     }
 
     for failure in &result.failed {
-        term.write_line(&format!("Failed: {} — {}", failure.ticket_key, failure.error))?;
+        term.write_line(&format!(
+            "Failed: {} — {}",
+            failure.ticket_key, failure.error
+        ))?;
     }
 
     Ok(())

@@ -13,10 +13,25 @@ pub enum ConfigError {
     Save(#[from] toml::ser::Error),
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct AppConfig {
     #[serde(default)]
     pub active_connection: Option<i64>,
+    #[serde(default = "default_publish_squashed_worklogs")]
+    pub publish_squashed_worklogs: bool,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            active_connection: None,
+            publish_squashed_worklogs: default_publish_squashed_worklogs(),
+        }
+    }
+}
+
+fn default_publish_squashed_worklogs() -> bool {
+    true
 }
 
 impl AppConfig {
@@ -33,5 +48,17 @@ impl AppConfig {
         std::fs::create_dir_all(&paths.config_dir)?;
         fs::write(&paths.config_file, content)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_publish_squashed_worklogs_to_enabled() {
+        let config: AppConfig = toml::from_str("active_connection = 1\n").unwrap();
+
+        assert!(config.publish_squashed_worklogs);
     }
 }

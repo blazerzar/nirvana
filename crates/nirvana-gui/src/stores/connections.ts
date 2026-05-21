@@ -22,6 +22,7 @@ export const normalizeHostname = (value: string) => {
 
 export const useConnectionsStore = defineStore("connections", {
   state: () => ({
+    connections: [] as GuiConnection[],
     activeConnection: null as GuiConnection | null,
     initialized: false,
     loading: false,
@@ -60,8 +61,7 @@ export const useConnectionsStore = defineStore("connections", {
       this.error = "";
 
       try {
-        this.activeConnection =
-          await invoke<GuiConnection | null>("get_active_connection");
+        await this.refreshConnections();
       } catch (error) {
         this.error =
           error instanceof Error ? error.message : String(error);
@@ -69,6 +69,14 @@ export const useConnectionsStore = defineStore("connections", {
         this.loading = false;
         this.initialized = true;
       }
+    },
+    async refreshConnections() {
+      const [connections, activeConnection] = await Promise.all([
+        invoke<GuiConnection[]>("list_connections"),
+        invoke<GuiConnection | null>("get_active_connection"),
+      ]);
+      this.connections = connections;
+      this.activeConnection = activeConnection;
     },
     setConnectionType(type: ConnectionType) {
       this.draftType = type;
@@ -102,7 +110,9 @@ export const useConnectionsStore = defineStore("connections", {
         this.activeConnection = await invoke<GuiConnection>("create_connection", {
           input,
         });
+        await this.refreshConnections();
         this.draftToken = "";
+        this.resetSetup();
         return true;
       } catch (error) {
         this.error =
@@ -120,6 +130,52 @@ export const useConnectionsStore = defineStore("connections", {
       this.draftUsername = "";
       this.draftToken = "";
       this.error = "";
+    },
+    async setActiveConnection(connectionId: number) {
+      if (this.activeConnection?.id === connectionId || this.loading) {
+        return true;
+      }
+
+      this.loading = true;
+      this.error = "";
+
+      try {
+        this.activeConnection = await invoke<GuiConnection | null>(
+          "set_active_connection",
+          { input: { connectionId } },
+        );
+        await this.refreshConnections();
+        return true;
+      } catch (error) {
+        this.error =
+          error instanceof Error ? error.message : String(error);
+        return false;
+      } finally {
+        this.loading = false;
+      }
+    },
+    async deleteConnection(connectionId: number) {
+      if (this.loading) {
+        return false;
+      }
+
+      this.loading = true;
+      this.error = "";
+
+      try {
+        this.activeConnection = await invoke<GuiConnection | null>(
+          "delete_connection",
+          { input: { connectionId } },
+        );
+        await this.refreshConnections();
+        return true;
+      } catch (error) {
+        this.error =
+          error instanceof Error ? error.message : String(error);
+        return false;
+      } finally {
+        this.loading = false;
+      }
     },
   },
 });

@@ -33,6 +33,41 @@ pub(crate) fn list(db: &Database) -> Result<Vec<ConnectionRecord>, DbError> {
     rows.collect::<Result<_, _>>().map_err(DbError::from)
 }
 
+pub(crate) fn exists(db: &Database, id: i64) -> Result<bool, DbError> {
+    db.conn()
+        .query_row(
+            "select exists(select 1 from connections where id = ?1)",
+            [id],
+            |row| row.get(0),
+        )
+        .map_err(DbError::from)
+}
+
+pub(crate) fn has_history(db: &Database, id: i64) -> Result<bool, DbError> {
+    let ticket_count: i64 = db.conn().query_row(
+        "select count(*) from tickets where connection_id = ?1",
+        [id],
+        |row| row.get(0),
+    )?;
+    if ticket_count > 0 {
+        return Ok(true);
+    }
+
+    let slot_count: i64 = db.conn().query_row(
+        "select count(*) from slots where connection_id = ?1",
+        [id],
+        |row| row.get(0),
+    )?;
+    Ok(slot_count > 0)
+}
+
+pub(crate) fn delete(db: &Database, id: i64) -> Result<bool, DbError> {
+    let affected = db
+        .conn()
+        .execute("delete from connections where id = ?1", [id])?;
+    Ok(affected > 0)
+}
+
 pub(crate) fn add(db: &Database, data: ConnectionData) -> Result<ConnectionRecord, DbError> {
     if data.secret_store != "plaintext" {
         unimplemented!("only plaintext secret store is currently supported");

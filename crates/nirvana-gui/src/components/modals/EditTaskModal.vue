@@ -10,13 +10,16 @@ const editModal = useEditTaskModal();
 const {
   computedError,
   deleteSession,
-  duration,
+  durationInput,
   error,
   firstField,
+  handleDurationKeydown,
   handleStartKeydown,
   handleStopKeydown,
   knownTask,
   note,
+  applyDurationToStop,
+  normalizeDuration,
   normalizeStartTime,
   normalizeStopTime,
   readOnly,
@@ -83,7 +86,17 @@ onMounted(async () => {
 
         <label class="flex min-w-0 flex-col gap-1.5">
           <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Duration</span>
-          <output class="inline-flex min-h-[34px] w-full items-center rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--muted) tabular-nums">{{ duration }}</output>
+          <input
+            v-model="durationInput"
+            class="min-h-[34px] w-full rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-[rgba(149,222,200,0.7)] focus:shadow-[0_0_0_2px_rgba(149,222,200,0.1)]"
+            type="text"
+            inputmode="text"
+            placeholder="30m"
+            autocomplete="off"
+            @input="applyDurationToStop"
+            @blur="normalizeDuration"
+            @keydown="handleDurationKeydown"
+          />
         </label>
 
         <label class="flex min-w-0 flex-col gap-1.5">

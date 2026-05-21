@@ -50,6 +50,52 @@ export const formatTimeParts = (hours: number, minutes: number) =>
     .toString()
     .padStart(2, "0")}`;
 
+export const formatDurationInput = (durationMs: number) => {
+  const totalMinutes = Math.max(0, Math.round(durationMs / 60000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours === 0) {
+    return `${minutes}m`;
+  }
+
+  if (minutes === 0) {
+    return `${hours}h`;
+  }
+
+  return `${hours}h ${minutes}m`;
+};
+
+export const parseDurationInput = (value: string) => {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+
+  const clockMatch = normalized.match(/^(\d{1,3}):(\d{2})$/);
+  if (clockMatch) {
+    const hours = Number(clockMatch[1]);
+    const minutes = Number(clockMatch[2]);
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes) || minutes > 59) {
+      return null;
+    }
+    return (hours * 60 + minutes) * 60 * 1000;
+  }
+
+  const unitMatch = normalized.match(/^(?:(\d+)h)?\s*(?:(\d+)m)?$/);
+  if (unitMatch && (unitMatch[1] || unitMatch[2])) {
+    const hours = unitMatch[1] ? Number(unitMatch[1]) : 0;
+    const minutes = unitMatch[2] ? Number(unitMatch[2]) : 0;
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
+    return (hours * 60 + minutes) * 60 * 1000;
+  }
+
+  const minutes = Number(normalized);
+  if (Number.isInteger(minutes) && minutes >= 0) {
+    return minutes * 60 * 1000;
+  }
+
+  return null;
+};
+
 export const wrapTimePart = (value: number, maxExclusive: number) =>
   ((value % maxExclusive) + maxExclusive) % maxExclusive;
 

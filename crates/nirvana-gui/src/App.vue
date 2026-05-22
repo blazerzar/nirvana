@@ -15,7 +15,7 @@ import SettingsIcon from "./assets/icons/settings.svg?raw";
 const tasks = useAllTasksStore();
 const connections = useConnectionsStore();
 const settings = useSettingsStore();
-const appInfo = ref<AppInfo>({ name: "nirvana", version: "0.1.0-pre-alpha" });
+const appInfo = ref<AppInfo>({ name: "nirvana", version: "0.1.1-pre-alpha" });
 const currentView = ref<AppView>("tracker");
 
 const viewModes: { label: string; value: ViewMode }[] = [
@@ -40,10 +40,10 @@ const getAppInfo = async () => {
         const response = await invoke<AppInfo>("get_app_info");
         appInfo.value = {
             name: response.name || "nirvana",
-            version: response.version || "0.1.0-pre-alpha",
+            version: response.version || "0.1.1-pre-alpha",
         };
     } catch {
-        appInfo.value = { name: "nirvana", version: "0.1.0-pre-alpha" };
+        appInfo.value = { name: "nirvana", version: "0.1.1-pre-alpha" };
     }
 };
 

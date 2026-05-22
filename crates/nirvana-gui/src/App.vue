@@ -118,6 +118,8 @@ watch(
     (connection) => {
         if (connection) {
             void tasks.loadSelectedDate();
+        } else {
+            tasks.setRunningSlot(null);
         }
     },
 );
@@ -224,9 +226,10 @@ watch(
                         </span>
                     </button>
                     <button
-                        class="inline-flex h-4 min-w-4 items-center justify-center rounded px-1.5 text-[12px] leading-none text-(--faint) transition-[color,background] duration-150 ease-(--ease) hover:bg-[rgba(255,255,255,0.04)] hover:text-(--muted)"
+                        class="inline-flex h-4 min-w-4 items-center justify-center rounded px-1.5 text-[12px] leading-none text-(--faint) transition-[color,background] duration-150 ease-(--ease) hover:bg-[rgba(255,255,255,0.04)] hover:text-(--muted) disabled:cursor-default disabled:text-(--very-faint) disabled:hover:bg-transparent disabled:hover:text-(--very-faint)"
                         type="button"
                         aria-label="Next day"
+                        :disabled="!tasks.canNavigateNextDay"
                         @click="tasks.nextDay()"
                     >
                         ›

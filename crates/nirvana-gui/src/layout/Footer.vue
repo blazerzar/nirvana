@@ -22,7 +22,7 @@ const actions = computed(() => [
         key: "x",
         label: "Stop",
         fn: () => tasks.stopActiveTask(),
-        disabled: tasks.loading || tasks.activeTask === null,
+        disabled: tasks.loading || tasks.footerActiveTask === null,
     },
     {
         key: "w",
@@ -30,7 +30,7 @@ const actions = computed(() => [
         fn: () => tasks.switchToPreviousTask(),
         disabled:
             tasks.loading ||
-            tasks.activeTask === null ||
+            tasks.footerActiveTask === null ||
             tasks.previousTask === null,
     },
     {
@@ -46,6 +46,18 @@ const actions = computed(() => [
         disabled: tasks.loading || !tasks.canOpenPublishModal,
     },
 ]);
+
+const showUnpublishedTotal = computed(
+    () =>
+        tasks.selectedDateUnpublishedTotalMs > 0 &&
+        tasks.selectedDateTotalMs !== tasks.selectedDateUnpublishedTotalMs,
+);
+
+const totalLabel = computed(() =>
+    tasks.selectedDateTotalMs === tasks.selectedDateUnpublishedTotalMs
+        ? "Tracked"
+        : "Day",
+);
 </script>
 
 <template>
@@ -56,18 +68,18 @@ const actions = computed(() => [
         <div
             class="flex min-w-0 items-center gap-[7px] overflow-hidden whitespace-nowrap text-[11px] text-(--muted)"
         >
-            <template v-if="tasks.activeTask && tasks.activeSession">
+            <template v-if="tasks.footerActiveTask && tasks.footerActiveSession">
                 <div
                     class="h-1.5 w-1.5 shrink-0 animate-[dot-pulse_2s_var(--ease)_infinite] rounded-full bg-(--success) shadow-[0_0_6px_rgba(131,210,158,0.45)]"
                 ></div>
                 <span class="shrink-0 font-semibold text-(--accent)">{{
-                    tasks.activeTask.key
+                    tasks.footerActiveTask.key
                 }}</span>
                 <span class="shrink-0 text-(--faint)">
                     +{{
                         formatDuration(
                             tasks.now.getTime() -
-                                tasks.activeSession.start.getTime(),
+                                tasks.footerActiveSession.start.getTime(),
                         )
                     }}
                 </span>
@@ -109,15 +121,17 @@ const actions = computed(() => [
             <div
                 class="flex items-center gap-[5px] whitespace-nowrap text-[11px] text-(--faint)"
             >
-                <span>Day</span>
+                <span>{{ totalLabel }}</span>
                 <strong class="font-semibold text-(--muted)">{{
                     formatDuration(tasks.selectedDateTotalMs)
                 }}</strong>
-                <span class="text-(--very-faint)">·</span>
-                <span>Unpublished</span>
-                <strong class="font-semibold text-(--muted)">{{
-                    formatDuration(tasks.selectedDateUnpublishedTotalMs)
-                }}</strong>
+                <template v-if="showUnpublishedTotal">
+                    <span class="text-(--very-faint)">·</span>
+                    <span>Unpublished</span>
+                    <strong class="font-semibold text-(--muted)">{{
+                        formatDuration(tasks.selectedDateUnpublishedTotalMs)
+                    }}</strong>
+                </template>
             </div>
         </div>
     </footer>

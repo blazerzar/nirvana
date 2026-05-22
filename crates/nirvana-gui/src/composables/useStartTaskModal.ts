@@ -153,9 +153,8 @@ export const useStartTaskModal = () => {
       : "Select a ticket or type a new key.";
   });
 
-  const error = computed(() => {
+  const validationError = computed(() => {
     if (tasks.activeModal !== "start") return "";
-    if (tasks.error) return tasks.error;
     if (!normalizeTicketKey(ticketKey.value)) return "Ticket key is required.";
     if (!start.value.trim()) return "Start time is required.";
     if (!parsedStart.value) return "Start time is invalid.";
@@ -167,6 +166,12 @@ export const useStartTaskModal = () => {
     }
     return "";
   });
+
+  const error = computed(() => tasks.error || validationError.value);
+
+  const clearSubmitError = () => {
+    tasks.error = "";
+  };
 
   const reset = () => {
     ticketKey.value = tasks.selectedTask?.key ?? "";
@@ -184,9 +189,11 @@ export const useStartTaskModal = () => {
   });
 
   watch(ticketKey, () => {
+    clearSubmitError();
     searchOpen.value = true;
     highlightedResultIndex.value = 0;
   });
+  watch([note, start], clearSubmitError);
 
   const selectSearchResult = async (task: Task) => {
     ticketKey.value = task.key;
@@ -231,7 +238,7 @@ export const useStartTaskModal = () => {
   };
 
   const submit = async () => {
-    if (error.value) return;
+    if (validationError.value) return;
 
     await tasks.startTaskFromInput({
       ticketKey: ticketKey.value,
@@ -308,5 +315,6 @@ export const useStartTaskModal = () => {
     statusText,
     submit,
     ticketKey,
+    validationError,
   };
 };

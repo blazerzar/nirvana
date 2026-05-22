@@ -125,9 +125,22 @@ const buildTasksFromBackend = (
   );
 };
 
+const runningEntryFromBackendSlot = (slot: BackendSlot | null) => {
+  if (!slot) {
+    return { task: null, session: null };
+  }
+
+  const task = buildTasksFromBackend([slot], [])[0] ?? null;
+  const session = task?.sessions.find((candidate) => candidate.id === slot.id) ?? null;
+
+  return { task, session };
+};
+
 export const useAllTasksStore = defineStore("allTasks", {
   state: () => ({
     tasks: [] as Task[],
+    runningTask: null as Task | null,
+    runningSession: null as TaskSession | null,
     selectedTaskId: null as number | null,
     expandedTaskIds: [] as number[],
     selectedSessionId: null as number | null,
@@ -149,8 +162,14 @@ export const useAllTasksStore = defineStore("allTasks", {
     activeSession(state): TaskSession | null {
       return activeSessionFor(state.tasks);
     },
+    footerActiveTask(state): Task | null {
+      return activeTaskFor(state.tasks) ?? state.runningTask;
+    },
+    footerActiveSession(state): TaskSession | null {
+      return activeSessionFor(state.tasks) ?? state.runningSession;
+    },
     previousTask(state): Task | null {
-      const activeTask = activeTaskFor(state.tasks);
+      const activeTask = activeTaskFor(state.tasks) ?? state.runningTask;
       return previousTaskFor(state.tasks, activeTask?.id ?? null);
     },
     summaries(state): TaskSummary[] {
@@ -161,6 +180,12 @@ export const useAllTasksStore = defineStore("allTasks", {
     },
     selectedDateLabel(state): string {
       return formatDayLabel(state.selectedDate);
+    },
+    canNavigateNextDay(state): boolean {
+      return (
+        startOfDay(state.selectedDate).getTime() <
+        startOfDay(new Date(state.now)).getTime()
+      );
     },
     selectedDateTotalMs(state): number {
       return totalDurationForDay(state.tasks, state.selectedDate, state.now);
@@ -202,7 +227,10 @@ export const useAllTasksStore = defineStore("allTasks", {
       this.viewMode = viewMode;
     },
     async setSelectedDate(date: Date) {
-      const nextDate = startOfDay(date);
+      const today = startOfDay(new Date(this.now));
+      const requestedDate = startOfDay(date);
+      const nextDate =
+        requestedDate.getTime() > today.getTime() ? today : requestedDate;
       const currentTime = this.selectedDate.getTime();
       const nextTime = nextDate.getTime();
       if (currentTime === nextTime) {
@@ -222,6 +250,10 @@ export const useAllTasksStore = defineStore("allTasks", {
       void this.loadSelectedDate();
     },
     nextDay() {
+      if (!this.canNavigateNextDay) {
+        return;
+      }
+
       this.dayTransitionDirection = "next";
       this.selectedDate = startOfDay(addDays(this.selectedDate, 1));
       this.selectedSessionId = null;
@@ -240,13 +272,26 @@ export const useAllTasksStore = defineStore("allTasks", {
     tick() {
       this.now = new Date();
     },
+    setRunningSlot(slot: BackendSlot | null) {
+      const { task, session } = runningEntryFromBackendSlot(slot);
+      this.runningTask = task;
+      this.runningSession = session;
+    },
+    async refreshRunningSlot() {
+      try {
+        const slot = await invoke<BackendSlot | null>("get_running_slot");
+        this.setRunningSlot(slot);
+      } catch {
+        this.setRunningSlot(null);
+      }
+    },
     async loadSelectedDate() {
       const { from, to } = dateRangeSeconds(this.selectedDate);
       this.loading = true;
       this.error = "";
 
       try {
-        const [slots, tickets, allPublishableSlots] = await Promise.all([
+        const [slots, tickets, allPublishableSlots, runningSlot] = await Promise.all([
           invoke<BackendSlot[]>("list_slots", {
             input: { from, to, sort: "started" },
           }),
@@ -254,6 +299,7 @@ export const useAllTasksStore = defineStore("allTasks", {
           invoke<BackendSlot[]>("list_unpublished_slots", {
             input: { from: 0, to: null },
           }),
+          invoke<BackendSlot | null>("get_running_slot"),
         ]);
 
         const previousSelectedTaskId = this.selectedTaskId;
@@ -261,6 +307,7 @@ export const useAllTasksStore = defineStore("allTasks", {
 
         this.tasks = buildTasksFromBackend(slots, tickets);
         this.allPublishableSlots = allPublishableSlots;
+        this.setRunningSlot(runningSlot);
         this.loadedDateKey = dateKey(this.selectedDate);
 
         const selectedSessionExists =
@@ -303,6 +350,7 @@ export const useAllTasksStore = defineStore("allTasks", {
       } catch (error) {
         this.error = error instanceof Error ? error.message : String(error);
         this.tasks = [];
+        this.setRunningSlot(null);
         this.allPublishableSlots = [];
         this.selectedSessionId = null;
         this.selectedTaskId = null;
@@ -496,7 +544,7 @@ export const useAllTasksStore = defineStore("allTasks", {
       }
     },
     async switchToPreviousTask() {
-      if (!this.previousTask || !this.activeTask) {
+      if (!this.previousTask || !this.footerActiveTask) {
         return false;
       }
 

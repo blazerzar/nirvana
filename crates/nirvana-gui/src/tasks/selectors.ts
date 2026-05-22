@@ -74,10 +74,7 @@ export const summariesForDay = (
         0,
       );
       const unpublishedMs = sessions
-        .filter(
-          (session) =>
-            session.publishState === "unpublished" && session.end !== null,
-        )
+        .filter((session) => session.publishState === "unpublished")
         .reduce((sum, session) => sum + durationMs(session, now), 0);
 
       return {
@@ -132,7 +129,6 @@ export const unpublishedDurationForDay = (
     .filter(
       (session) =>
         session.publishState === "unpublished" &&
-        session.end !== null &&
         isSameDay(session.start, selectedDate),
     )
     .reduce((sum, session) => sum + durationMs(session, now), 0);

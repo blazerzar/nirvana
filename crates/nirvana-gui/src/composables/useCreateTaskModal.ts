@@ -225,6 +225,11 @@ export const useCreateTaskModal = () => {
     tasks.error = "";
   };
 
+  const clearSubmitError = () => {
+    localError.value = "";
+    tasks.error = "";
+  };
+
   watch(searchResults, (results) => {
     if (highlightedResultIndex.value >= results.length) {
       highlightedResultIndex.value = Math.max(0, results.length - 1);
@@ -232,9 +237,11 @@ export const useCreateTaskModal = () => {
   });
 
   watch(ticketKey, () => {
+    clearSubmitError();
     searchOpen.value = true;
     highlightedResultIndex.value = 0;
   });
+  watch([note, dateInput, start, stop, durationInput], clearSubmitError);
 
   const selectSearchResult = async (task: Task) => {
     ticketKey.value = task.key;
@@ -290,7 +297,7 @@ export const useCreateTaskModal = () => {
     if (!date) return;
 
     dateInput.value = formatDateInput(date);
-    localError.value = "";
+    clearSubmitError();
     await tasks.setSelectedDate(date);
   };
 

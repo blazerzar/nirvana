@@ -6,6 +6,25 @@ use crate::integration;
 use crate::storage::slot_repo::{self, SlotSort};
 
 impl NirvanaApi {
+    pub fn get_running_slot(&self) -> Result<Option<Slot>, NirvanaError> {
+        let Some(connection_id) = self.config.active_connection else {
+            return Ok(None);
+        };
+
+        let Some(record) = slot_repo::find_running_with_ticket(&self.db)? else {
+            return Ok(None);
+        };
+
+        if record.connection_id != connection_id {
+            return Ok(None);
+        }
+
+        let connection = self.get_connection(connection_id)?;
+        let integ = integration::Integration::build_for_url(&connection)?;
+        let issue_url = Some(integ.get_issue_link(&record.ticket_key));
+        Ok(Some(Slot::from_record(record, issue_url)))
+    }
+
     pub fn get_slots(
         &self,
         from: i64,

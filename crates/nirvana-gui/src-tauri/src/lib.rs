@@ -15,6 +15,7 @@ use tauri::{
 };
 
 const MAIN_WINDOW_LABEL: &str = "main";
+const TRAY_ID: &str = "main";
 const TRAY_SHOW_ID: &str = "show";
 const TRAY_QUIT_ID: &str = "quit";
 
@@ -254,27 +255,44 @@ fn list_connections() -> Result<Vec<GuiConnection>, String> {
 }
 
 #[tauri::command]
-fn set_active_connection(input: ConnectionIdInput) -> Result<Option<GuiConnection>, String> {
+fn set_active_connection(
+    app: tauri::AppHandle,
+    input: ConnectionIdInput,
+) -> Result<Option<GuiConnection>, String> {
     let mut api = NirvanaApi::new().map_err(|error| error.to_string())?;
     api.set_active_connection(input.connection_id)
         .map_err(|error| error.to_string())?;
-    api.get_active_connection()
+
+    let connection = api
+        .get_active_connection()
         .map(|connection| connection.map(GuiConnection::from))
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    refresh_tray_status(&app);
+    Ok(connection)
 }
 
 #[tauri::command]
-fn delete_connection(input: ConnectionIdInput) -> Result<Option<GuiConnection>, String> {
+fn delete_connection(
+    app: tauri::AppHandle,
+    input: ConnectionIdInput,
+) -> Result<Option<GuiConnection>, String> {
     let mut api = NirvanaApi::new().map_err(|error| error.to_string())?;
     api.delete_connection(input.connection_id)
         .map_err(|error| error.to_string())?;
-    api.get_active_connection()
+
+    let connection = api
+        .get_active_connection()
         .map(|connection| connection.map(GuiConnection::from))
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    refresh_tray_status(&app);
+    Ok(connection)
 }
 
 #[tauri::command]
-fn create_connection(input: CreateConnectionInput) -> Result<GuiConnection, String> {
+fn create_connection(
+    app: tauri::AppHandle,
+    input: CreateConnectionInput,
+) -> Result<GuiConnection, String> {
     let mut api = NirvanaApi::new().map_err(|error| error.to_string())?;
     let data = ConnectionData {
         name: input.name,
@@ -301,6 +319,7 @@ fn create_connection(input: CreateConnectionInput) -> Result<GuiConnection, Stri
     api.set_active_connection(connection.id)
         .map_err(|error| error.to_string())?;
 
+    refresh_tray_status(&app);
     Ok(connection.into())
 }
 
@@ -334,11 +353,14 @@ fn list_recent_tickets() -> Result<Vec<GuiTicket>, String> {
 }
 
 #[tauri::command]
-fn start_slot(input: StartSlotInput) -> Result<GuiSlot, String> {
+fn start_slot(app: tauri::AppHandle, input: StartSlotInput) -> Result<GuiSlot, String> {
     let api = NirvanaApi::new().map_err(|error| error.to_string())?;
-    api.start_slot(&input.ticket_key, input.started_at, input.note.as_deref())
+    let slot = api
+        .start_slot(&input.ticket_key, input.started_at, input.note.as_deref())
         .map(GuiSlot::from)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    refresh_tray_status(&app);
+    Ok(slot)
 }
 
 #[tauri::command]
@@ -374,19 +396,25 @@ fn edit_slot(input: EditSlotInput) -> Result<GuiSlot, String> {
 }
 
 #[tauri::command]
-fn delete_slot(input: DeleteSlotInput) -> Result<GuiSlot, String> {
+fn delete_slot(app: tauri::AppHandle, input: DeleteSlotInput) -> Result<GuiSlot, String> {
     let api = NirvanaApi::new().map_err(|error| error.to_string())?;
-    api.delete_slot(input.slot_id)
+    let slot = api
+        .delete_slot(input.slot_id)
         .map(GuiSlot::from)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    refresh_tray_status(&app);
+    Ok(slot)
 }
 
 #[tauri::command]
-fn stop_slot() -> Result<Option<GuiSlot>, String> {
+fn stop_slot(app: tauri::AppHandle) -> Result<Option<GuiSlot>, String> {
     let api = NirvanaApi::new().map_err(|error| error.to_string())?;
-    api.stop_slot(None)
+    let slot = api
+        .stop_slot(None)
         .map(|slot| slot.map(GuiSlot::from))
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    refresh_tray_status(&app);
+    Ok(slot)
 }
 
 #[tauri::command]
@@ -413,6 +441,32 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+fn refresh_tray_status(app: &tauri::AppHandle) {
+    let running_slot = NirvanaApi::new()
+        .and_then(|api| api.get_running_slot())
+        .map_err(|error| {
+            eprintln!("failed to load running slot for tray status: {error}");
+            error
+        })
+        .ok()
+        .flatten();
+
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let title = running_slot.as_ref().map(|slot| slot.ticket_key.as_str());
+        if let Err(error) = tray.set_title(title) {
+            eprintln!("failed to set tray title: {error}");
+        }
+
+        let tooltip = running_slot
+            .as_ref()
+            .map(|slot| format!("nirvana · {}", slot.ticket_key))
+            .unwrap_or_else(|| "nirvana".to_string());
+        if let Err(error) = tray.set_tooltip(Some(tooltip.as_str())) {
+            eprintln!("failed to set tray tooltip: {error}");
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let is_quitting = Arc::new(AtomicBool::new(false));
@@ -428,7 +482,7 @@ pub fn run() {
             let separator = PredefinedMenuItem::separator(app)?;
             let menu = Menu::with_items(app, &[&show_item, &separator, &quit_item])?;
 
-            let mut tray = TrayIconBuilder::with_id("main")
+            let mut tray = TrayIconBuilder::with_id(TRAY_ID)
                 .tooltip("nirvana")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
@@ -456,6 +510,7 @@ pub fn run() {
             }
 
             tray.build(app)?;
+            refresh_tray_status(app.handle());
 
             Ok(())
         })

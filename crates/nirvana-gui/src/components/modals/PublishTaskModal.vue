@@ -230,12 +230,12 @@ const worklogRange = (worklog: PublishPreviewWorklog) => {
 
       <div
         v-if="previewWorklogs.length > 0"
-        class="max-h-[min(320px,46vh)] overflow-auto rounded-md border border-(--border) bg-[rgba(0,0,0,0.16)]"
+        class="max-h-[min(320px,46vh)] overflow-auto rounded-md border border-(--border) bg-(--surface-inset)"
       >
         <div
           v-for="worklog in previewWorklogs"
           :key="worklog.id"
-          class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-[rgba(255,255,255,0.04)] px-3 py-2 text-[11px] first:border-t-0 max-[760px]:grid-cols-1 max-[760px]:gap-1"
+          class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-(--border) px-3 py-2 text-[11px] first:border-t-0 max-[760px]:grid-cols-1 max-[760px]:gap-1"
         >
           <div class="min-w-0">
             <div class="flex min-w-0 items-center gap-2">
@@ -271,7 +271,7 @@ const worklogRange = (worklog: PublishPreviewWorklog) => {
       </p>
 
       <div
-        class="rounded-md border border-[rgba(149,222,200,0.16)] bg-[rgba(149,222,200,0.045)] px-3 py-2"
+        class="rounded-md border border-(--border) bg-(--surface-selected) px-3 py-2"
       >
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
           <span class="font-semibold text-(--text)">All unpublished</span>
@@ -286,15 +286,15 @@ const worklogRange = (worklog: PublishPreviewWorklog) => {
         </div>
       </div>
 
-      <p class="m-0 min-h-4 text-[11px] text-[#ff9a86]">{{ tasks.error }}</p>
+      <p class="m-0 min-h-4 text-[11px] text-(--danger)">{{ tasks.error }}</p>
     </div>
 
     <template #footer>
       <footer
-        class="flex min-h-[46px] items-center justify-end gap-2 border-t border-(--border) bg-[rgba(255,255,255,0.012)] px-3.5 py-2.5 max-[760px]:flex-wrap"
+        class="flex min-h-[46px] items-center justify-end gap-2 border-t border-(--border) bg-(--surface-inset) px-3.5 py-2.5 max-[760px]:flex-wrap"
       >
         <span class="mr-auto text-[11px] text-(--faint) max-[760px]:mr-0">
-          <kbd class="mr-1 rounded border border-[rgba(149,222,200,0.22)] bg-[rgba(149,222,200,0.1)] px-[5px] py-px font-[family-name:var(--font-mono)] text-[10px] text-(--accent)">esc</kbd>
+          <kbd class="mr-1 rounded border border-(--accent) bg-(--surface-selected) px-[5px] py-px font-[family-name:var(--font-mono)] text-[10px] text-(--accent)">esc</kbd>
           cancel
         </span>
         <button
@@ -306,7 +306,7 @@ const worklogRange = (worklog: PublishPreviewWorklog) => {
           Cancel
         </button>
         <button
-          class="inline-flex min-h-[30px] min-w-[102px] items-center justify-center gap-1.5 rounded-md border border-[rgba(149,222,200,0.42)] bg-[rgba(149,222,200,0.08)] px-3 py-1.5 text-[11px] font-bold text-(--accent) transition-[color,background,border-color] duration-150 ease-[var(--ease)] hover:bg-[rgba(149,222,200,0.13)] disabled:cursor-default disabled:opacity-[0.42]"
+          class="inline-flex min-h-[30px] min-w-[102px] items-center justify-center gap-1.5 rounded-md border border-(--accent) bg-(--surface-selected) px-3 py-1.5 text-[11px] font-bold text-(--accent) transition-[color,background,border-color] duration-150 ease-[var(--ease)] hover:bg-(--surface-hover) disabled:cursor-default disabled:opacity-[0.42]"
           type="button"
           :disabled="tasks.loading || allPreviewSources.length === 0"
           :aria-busy="tasks.publishingScope === 'all' ? 'true' : 'false'"

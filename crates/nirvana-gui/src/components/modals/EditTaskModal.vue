@@ -56,7 +56,7 @@ onMounted(async () => {
       class="flex min-h-[260px] flex-col items-center justify-center px-8 py-10 text-center"
     >
       <div
-        class="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-[rgba(255,154,134,0.22)] bg-[rgba(255,154,134,0.08)] text-[#ff9a86] [&>svg]:h-8 [&>svg]:w-8"
+        class="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-(--danger-border) bg-(--danger-surface) text-(--danger) [&>svg]:h-8 [&>svg]:w-8"
         aria-hidden="true"
         v-html="EditIcon"
       ></div>
@@ -79,7 +79,7 @@ onMounted(async () => {
             v-model="ticketKey"
             readonly
             title="Ticket changes are not supported yet."
-            class="min-h-[34px] w-full rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) read-only:cursor-default read-only:text-(--muted) focus:border-[rgba(149,222,200,0.7)] focus:shadow-[0_0_0_2px_rgba(149,222,200,0.1)]"
+            class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) read-only:cursor-default read-only:text-(--muted) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
             autocomplete="off"
           />
         </label>
@@ -88,7 +88,7 @@ onMounted(async () => {
           <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Duration</span>
           <input
             v-model="durationInput"
-            class="min-h-[34px] w-full rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-[rgba(149,222,200,0.7)] focus:shadow-[0_0_0_2px_rgba(149,222,200,0.1)]"
+            class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
             type="text"
             inputmode="text"
             placeholder="30m"
@@ -104,7 +104,7 @@ onMounted(async () => {
           <input
             ref="firstField"
             v-model="start"
-            class="min-h-[34px] w-full rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) read-only:cursor-default read-only:text-(--muted) focus:border-[rgba(149,222,200,0.7)] focus:shadow-[0_0_0_2px_rgba(149,222,200,0.1)]"
+            class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) read-only:cursor-default read-only:text-(--muted) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
             type="text"
             inputmode="numeric"
             pattern="[0-9]{1,2}:[0-9]{2}"
@@ -119,7 +119,7 @@ onMounted(async () => {
           <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Stop time</span>
           <input
             v-model="stop"
-            class="min-h-[34px] w-full rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) read-only:cursor-default read-only:text-(--muted) focus:border-[rgba(149,222,200,0.7)] focus:shadow-[0_0_0_2px_rgba(149,222,200,0.1)]"
+            class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) read-only:cursor-default read-only:text-(--muted) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
             type="text"
             inputmode="numeric"
             pattern="[0-9]{1,2}:[0-9]{2}"
@@ -135,7 +135,7 @@ onMounted(async () => {
         <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Note</span>
         <input
           v-model="note"
-          class="min-h-[34px] w-full rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) read-only:cursor-default read-only:text-(--muted) focus:border-[rgba(149,222,200,0.7)] focus:shadow-[0_0_0_2px_rgba(149,222,200,0.1)]"
+          class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) read-only:cursor-default read-only:text-(--muted) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
           placeholder="Focused work"
           autocomplete="off"
         />
@@ -146,15 +146,15 @@ onMounted(async () => {
       >
         {{ knownTask ? `Saving ${knownTask.key}` : "Ticket changes are not supported yet." }}
       </p>
-      <p class="m-0 min-h-4 text-[11px] text-[#ff9a86]">{{ error || computedError }}</p>
+      <p class="m-0 min-h-4 text-[11px] text-(--danger)">{{ error || computedError }}</p>
     </div>
 
     <template v-if="!readOnly" #footer>
       <footer
-        class="flex min-h-[46px] items-center justify-end gap-2 border-t border-(--border) bg-[rgba(255,255,255,0.012)] px-3.5 py-2.5 max-[760px]:flex-wrap"
+        class="flex min-h-[46px] items-center justify-end gap-2 border-t border-(--border) bg-(--surface-inset) px-3.5 py-2.5 max-[760px]:flex-wrap"
       >
         <button
-          class="mr-auto min-h-[30px] rounded-md border border-[rgba(255,154,134,0.22)] bg-[rgba(255,154,134,0.06)] px-3 py-1.5 text-[11px] text-[#ff9a86] transition-[color,background,border-color] duration-150 ease-[var(--ease)] disabled:cursor-default disabled:opacity-[0.42] max-[760px]:mr-0"
+          class="mr-auto min-h-[30px] rounded-md border border-(--danger-border) bg-(--danger-surface) px-3 py-1.5 text-[11px] text-(--danger) transition-[color,background,border-color] duration-150 ease-[var(--ease)] disabled:cursor-default disabled:opacity-[0.42] max-[760px]:mr-0"
           type="button"
           :disabled="tasks.loading"
           @click="deleteSession"
@@ -162,7 +162,7 @@ onMounted(async () => {
           Delete
         </button>
         <span class="mr-auto text-[11px] text-(--faint) max-[760px]:mr-0">
-          <kbd class="mr-1 rounded border border-[rgba(149,222,200,0.22)] bg-[rgba(149,222,200,0.1)] px-[5px] py-px font-[family-name:var(--font-mono)] text-[10px] text-(--accent)">esc</kbd>
+          <kbd class="mr-1 rounded border border-(--accent) bg-(--surface-selected) px-[5px] py-px font-[family-name:var(--font-mono)] text-[10px] text-(--accent)">esc</kbd>
           cancel
         </span>
         <button

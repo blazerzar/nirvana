@@ -68,7 +68,7 @@ onMounted(async () => {
             <input
               ref="firstField"
               v-model="ticketKey"
-              class="min-h-[34px] w-full rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-[rgba(149,222,200,0.7)] focus:shadow-[0_0_0_2px_rgba(149,222,200,0.1)]"
+              class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
               placeholder="NIR-12"
               autocomplete="off"
               aria-autocomplete="list"
@@ -81,15 +81,15 @@ onMounted(async () => {
             <div
               v-if="shouldShowSearch"
               id="create-ticket-results"
-              class="absolute top-[calc(100%+5px)] right-0 left-0 z-40 max-h-[min(238px,48vh)] overflow-auto rounded-[7px] border border-(--border) bg-[#0b0d0e] shadow-[0_16px_36px_rgba(0,0,0,0.36)]"
+              class="absolute top-[calc(100%+5px)] right-0 left-0 z-40 max-h-[min(238px,48vh)] overflow-auto rounded-[7px] border border-(--border) bg-(--panel) shadow-[0_16px_36px_rgba(0,0,0,0.36)]"
               role="listbox"
               aria-label="Matching tickets"
             >
               <button
                 v-for="(result, index) in searchResults"
                 :key="result.task.id"
-                class="grid min-h-[34px] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-[9px] border-b border-[rgba(255,255,255,0.04)] px-[9px] py-[7px] text-left text-[11px] last:border-b-0 hover:bg-[rgba(149,222,200,0.08)] hover:text-(--text) max-[760px]:grid-cols-[auto_minmax(0,1fr)]"
-                :class="index === highlightedResultIndex ? 'bg-[rgba(149,222,200,0.08)] text-(--text)' : 'text-(--muted)'"
+                class="grid min-h-[34px] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-[9px] border-b border-(--border) px-[9px] py-[7px] text-left text-[11px] last:border-b-0 hover:bg-(--surface-selected) hover:text-(--text) max-[760px]:grid-cols-[auto_minmax(0,1fr)]"
+                :class="index === highlightedResultIndex ? 'bg-(--surface-selected) text-(--text)' : 'text-(--muted)'"
                 type="button"
                 role="option"
                 :aria-selected="index === highlightedResultIndex"
@@ -111,7 +111,7 @@ onMounted(async () => {
           <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Duration</span>
           <input
             v-model="durationInput"
-            class="min-h-[34px] w-full rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-[rgba(149,222,200,0.7)] focus:shadow-[0_0_0_2px_rgba(149,222,200,0.1)]"
+            class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
             type="text"
             inputmode="text"
             placeholder="30m"
@@ -136,7 +136,7 @@ onMounted(async () => {
           <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Date</span>
           <input
             v-model="dateInput"
-            class="min-h-[34px] w-full rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-[rgba(149,222,200,0.7)] focus:shadow-[0_0_0_2px_rgba(149,222,200,0.1)]"
+            class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
             type="date"
             autocomplete="off"
             :disabled="tasks.loading"
@@ -149,7 +149,7 @@ onMounted(async () => {
           <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Start time</span>
           <input
             v-model="start"
-            class="min-h-[34px] w-full rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-[rgba(149,222,200,0.7)] focus:shadow-[0_0_0_2px_rgba(149,222,200,0.1)]"
+            class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
             type="text"
             inputmode="numeric"
             pattern="[0-9]{1,2}:[0-9]{2}"
@@ -164,7 +164,7 @@ onMounted(async () => {
           <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Stop time</span>
           <input
             v-model="stop"
-            class="min-h-[34px] w-full rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-[rgba(149,222,200,0.7)] focus:shadow-[0_0_0_2px_rgba(149,222,200,0.1)]"
+            class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
             type="text"
             inputmode="numeric"
             pattern="[0-9]{1,2}:[0-9]{2}"
@@ -181,7 +181,7 @@ onMounted(async () => {
         <input
           ref="noteField"
           v-model="note"
-          class="min-h-[34px] w-full rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-[rgba(149,222,200,0.7)] focus:shadow-[0_0_0_2px_rgba(149,222,200,0.1)]"
+          class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
           placeholder="Focused work"
           autocomplete="off"
           @keydown="handleNoteKeydown"
@@ -193,17 +193,17 @@ onMounted(async () => {
       >
         {{ statusText }}
       </p>
-      <p class="m-0 min-h-4 text-[11px] text-[#ff9a86]">
+      <p class="m-0 min-h-4 text-[11px] text-(--danger)">
         {{ localError || tasks.error || computedError }}
       </p>
     </div>
 
     <template #footer>
       <footer
-        class="flex min-h-[46px] items-center justify-end gap-2 border-t border-(--border) bg-[rgba(255,255,255,0.012)] px-3.5 py-2.5 max-[760px]:flex-wrap"
+        class="flex min-h-[46px] items-center justify-end gap-2 border-t border-(--border) bg-(--surface-inset) px-3.5 py-2.5 max-[760px]:flex-wrap"
       >
         <span class="mr-auto text-[11px] text-(--faint) max-[760px]:mr-0">
-          <kbd class="mr-1 rounded border border-[rgba(149,222,200,0.22)] bg-[rgba(149,222,200,0.1)] px-[5px] py-px font-[family-name:var(--font-mono)] text-[10px] text-(--accent)">esc</kbd>
+          <kbd class="mr-1 rounded border border-(--accent) bg-(--surface-selected) px-[5px] py-px font-[family-name:var(--font-mono)] text-[10px] text-(--accent)">esc</kbd>
           cancel
         </span>
         <button

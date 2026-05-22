@@ -219,6 +219,8 @@ mod tests {
                 config: AppConfig {
                     active_connection: Some(connection.id),
                     publish_squashed_worklogs: true,
+                    font_scale: 1.0,
+                    theme: "high-contrast-dark".to_string(),
                 },
                 db,
             }),

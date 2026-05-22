@@ -19,6 +19,10 @@ pub(crate) struct AppConfig {
     pub active_connection: Option<i64>,
     #[serde(default = "default_publish_squashed_worklogs")]
     pub publish_squashed_worklogs: bool,
+    #[serde(default = "default_font_scale")]
+    pub font_scale: f64,
+    #[serde(default = "default_theme")]
+    pub theme: String,
 }
 
 impl Default for AppConfig {
@@ -26,12 +30,37 @@ impl Default for AppConfig {
         Self {
             active_connection: None,
             publish_squashed_worklogs: default_publish_squashed_worklogs(),
+            font_scale: default_font_scale(),
+            theme: default_theme(),
         }
     }
 }
 
 fn default_publish_squashed_worklogs() -> bool {
     true
+}
+
+fn default_font_scale() -> f64 {
+    1.0
+}
+
+pub(crate) fn normalize_font_scale(font_scale: f64) -> f64 {
+    if font_scale.is_finite() {
+        font_scale.clamp(0.9, 1.25)
+    } else {
+        default_font_scale()
+    }
+}
+
+pub(crate) fn default_theme() -> String {
+    "high-contrast-dark".to_string()
+}
+
+pub(crate) fn normalize_theme(theme: &str) -> String {
+    match theme {
+        "nirvana-dark" | "high-contrast-dark" | "soft-light" => theme.to_string(),
+        _ => default_theme(),
+    }
 }
 
 impl AppConfig {

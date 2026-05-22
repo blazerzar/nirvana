@@ -100,6 +100,8 @@ struct PublishSlotsInput {
 #[serde(rename_all = "camelCase")]
 struct GuiSettings {
     publish_squashed_worklogs: bool,
+    font_scale: f64,
+    theme: String,
 }
 
 #[derive(Serialize)]
@@ -180,6 +182,8 @@ impl From<AppSettings> for GuiSettings {
     fn from(settings: AppSettings) -> Self {
         Self {
             publish_squashed_worklogs: settings.publish_squashed_worklogs,
+            font_scale: settings.font_scale,
+            theme: settings.theme,
         }
     }
 }
@@ -188,6 +192,8 @@ impl From<GuiSettings> for AppSettings {
     fn from(settings: GuiSettings) -> Self {
         Self {
             publish_squashed_worklogs: settings.publish_squashed_worklogs,
+            font_scale: settings.font_scale,
+            theme: settings.theme,
         }
     }
 }

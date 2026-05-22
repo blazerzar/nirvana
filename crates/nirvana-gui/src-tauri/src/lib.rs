@@ -16,8 +16,13 @@ use tauri::{
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const TRAY_ID: &str = "main";
+const TRAY_STATUS_ID: &str = "status";
 const TRAY_SHOW_ID: &str = "show";
 const TRAY_QUIT_ID: &str = "quit";
+
+struct TrayStatusState {
+    item: MenuItem<tauri::Wry>,
+}
 
 #[derive(Serialize)]
 struct GuiConnection {
@@ -451,18 +456,29 @@ fn refresh_tray_status(app: &tauri::AppHandle) {
         .ok()
         .flatten();
 
+    let title = running_slot.as_ref().map(|slot| slot.ticket_key.as_str());
+    let tooltip = running_slot
+        .as_ref()
+        .map(|slot| format!("nirvana · {}", slot.ticket_key))
+        .unwrap_or_else(|| "nirvana".to_string());
+    let menu_status = running_slot
+        .as_ref()
+        .map(|slot| format!("Running: {}", slot.ticket_key))
+        .unwrap_or_else(|| "No running ticket".to_string());
+
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let title = running_slot.as_ref().map(|slot| slot.ticket_key.as_str());
         if let Err(error) = tray.set_title(title) {
             eprintln!("failed to set tray title: {error}");
         }
 
-        let tooltip = running_slot
-            .as_ref()
-            .map(|slot| format!("nirvana · {}", slot.ticket_key))
-            .unwrap_or_else(|| "nirvana".to_string());
         if let Err(error) = tray.set_tooltip(Some(tooltip.as_str())) {
             eprintln!("failed to set tray tooltip: {error}");
+        }
+    }
+
+    if let Some(status) = app.try_state::<TrayStatusState>() {
+        if let Err(error) = status.item.set_text(menu_status) {
+            eprintln!("failed to set tray status menu item: {error}");
         }
     }
 }
@@ -476,11 +492,31 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(move |app| {
+            let status_item = MenuItem::with_id(
+                app,
+                TRAY_STATUS_ID,
+                "No running ticket",
+                false,
+                None::<&str>,
+            )?;
             let show_item =
                 MenuItem::with_id(app, TRAY_SHOW_ID, "Show nirvana", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, TRAY_QUIT_ID, "Quit", true, None::<&str>)?;
-            let separator = PredefinedMenuItem::separator(app)?;
-            let menu = Menu::with_items(app, &[&show_item, &separator, &quit_item])?;
+            let status_separator = PredefinedMenuItem::separator(app)?;
+            let action_separator = PredefinedMenuItem::separator(app)?;
+            let menu = Menu::with_items(
+                app,
+                &[
+                    &status_item,
+                    &status_separator,
+                    &show_item,
+                    &action_separator,
+                    &quit_item,
+                ],
+            )?;
+            app.manage(TrayStatusState {
+                item: status_item.clone(),
+            });
 
             let mut tray = TrayIconBuilder::with_id(TRAY_ID)
                 .tooltip("nirvana")

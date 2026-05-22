@@ -498,6 +498,9 @@ pub fn run() {
     let tray_is_quitting = Arc::clone(&is_quitting);
 
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main_window(app);
+        }))
         .plugin(tauri_plugin_opener::init())
         .setup(move |app| {
             let status_item = MenuItem::with_id(

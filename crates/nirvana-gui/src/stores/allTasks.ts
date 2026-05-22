@@ -274,14 +274,23 @@ export const useAllTasksStore = defineStore("allTasks", {
           previousSelectedTaskId !== null &&
           this.tasks.some((task) => task.id === previousSelectedTaskId);
 
-        this.selectedSessionId = selectedSessionExists
-          ? previousSelectedSessionId
-          : null;
-        this.selectedTaskId = selectedSessionExists
+        const fallbackSelectedTaskId = selectedSessionExists
           ? this.selectedSessionEntry?.task.id ?? null
           : selectedTaskExists
             ? previousSelectedTaskId
             : this.timelineSessions[0]?.task.id ?? this.tasks[0]?.id ?? null;
+
+        if (this.viewMode === "day") {
+          const firstTimelineEntry = this.timelineSessions[0];
+          this.selectedSessionId = firstTimelineEntry?.session.id ?? null;
+          this.selectedTaskId =
+            firstTimelineEntry?.task.id ?? fallbackSelectedTaskId;
+        } else {
+          this.selectedSessionId = selectedSessionExists
+            ? previousSelectedSessionId
+            : null;
+          this.selectedTaskId = fallbackSelectedTaskId;
+        }
 
         this.expandedTaskIds = Array.from(
           new Set([

@@ -97,8 +97,8 @@ onMounted(async () => {
             class="rounded px-2.5 py-2 text-[11px] leading-none transition-[color,background] duration-150 ease-[var(--ease)]"
             :class="
               connections.draftType === type.value
-                ? 'bg-[rgba(149,222,200,0.12)] font-semibold text-(--accent)'
-                : 'text-(--faint) hover:bg-[rgba(255,255,255,0.035)] hover:text-(--muted)'
+                ? 'bg-(--surface-selected) font-semibold text-(--accent)'
+                : 'text-(--faint) hover:bg-(--surface-hover) hover:text-(--muted)'
             "
             type="button"
             @click="connections.setConnectionType(type.value)"
@@ -113,7 +113,7 @@ onMounted(async () => {
           <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Name</span>
           <input
             v-model="connections.draftName"
-            class="min-h-[34px] w-full rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--text) outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-[rgba(149,222,200,0.7)] focus:shadow-[0_0_0_2px_rgba(149,222,200,0.1)]"
+            class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
             placeholder="work"
             autocomplete="organization-title"
           />
@@ -124,14 +124,14 @@ onMounted(async () => {
           <input
             ref="hostnameField"
             v-model="connections.draftHostname"
-            class="min-h-[34px] w-full rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--text) outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-[rgba(149,222,200,0.7)] focus:shadow-[0_0_0_2px_rgba(149,222,200,0.1)]"
+            class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
             placeholder="acme.atlassian.net"
             autocomplete="url"
           />
         </label>
       </div>
 
-      <p class="m-0 min-h-4 text-[11px] text-[#ff9a86]">
+      <p class="m-0 min-h-4 text-[11px] text-(--danger)">
         {{ connections.error || detailsError }}
       </p>
     </div>
@@ -154,7 +154,7 @@ onMounted(async () => {
           <input
             ref="usernameField"
             v-model="connections.draftUsername"
-            class="min-h-[34px] w-full rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--text) outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-[rgba(149,222,200,0.7)] focus:shadow-[0_0_0_2px_rgba(149,222,200,0.1)]"
+            class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
             :placeholder="connections.draftType === 'jira-cloud' ? 'you@company.com' : 'you'"
             autocomplete="username"
           />
@@ -164,7 +164,7 @@ onMounted(async () => {
           <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Token</span>
           <input
             v-model="connections.draftToken"
-            class="min-h-[34px] w-full rounded-md border border-(--border) bg-[rgba(0,0,0,0.24)] px-2.5 py-[7px] text-xs text-(--text) outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-[rgba(149,222,200,0.7)] focus:shadow-[0_0_0_2px_rgba(149,222,200,0.1)]"
+            class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
             type="password"
             placeholder="Paste access token"
             autocomplete="current-password"
@@ -172,13 +172,13 @@ onMounted(async () => {
         </label>
       </div>
 
-      <p class="m-0 min-h-4 text-[11px] text-[#ff9a86]">
+      <p class="m-0 min-h-4 text-[11px] text-(--danger)">
         {{ connections.error || credentialsError }}
       </p>
     </div>
 
     <template #footer>
-      <footer class="flex min-h-[46px] items-center justify-end gap-2 border-t border-(--border) bg-[rgba(255,255,255,0.012)] px-3.5 py-2.5 max-[760px]:flex-wrap">
+      <footer class="flex min-h-[46px] items-center justify-end gap-2 border-t border-(--border) bg-(--surface-inset) px-3.5 py-2.5 max-[760px]:flex-wrap">
         <button
           v-if="connections.setupStep === 'credentials'"
           class="mr-auto min-h-[30px] rounded-md border border-(--border) bg-(--surface) px-3 py-1.5 text-[11px] text-(--muted) transition-[color,background,border-color] duration-150 ease-[var(--ease)] hover:bg-(--surface-strong) hover:text-(--text)"

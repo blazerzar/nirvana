@@ -12,7 +12,7 @@ const tasks = useAllTasksStore();
     <Transition name="modal">
         <div
             v-if="tasks.activeModal"
-            class="fixed inset-0 z-20 grid place-items-center bg-[rgba(7,8,9,0.68)] p-[18px] backdrop-blur-[5px]"
+            class="fixed inset-0 z-20 grid place-items-center bg-(--modal-overlay) p-[18px] backdrop-blur-[5px]"
             @click.self="tasks.closeModal()"
         >
             <StartTaskModal v-if="tasks.activeModal === 'start'" />

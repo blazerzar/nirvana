@@ -110,9 +110,11 @@ pub struct PublishFailure {
     pub error: String,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct AppSettings {
     pub publish_squashed_worklogs: bool,
+    pub font_scale: f64,
+    pub theme: String,
 }
 
 #[derive(Debug, Default)]

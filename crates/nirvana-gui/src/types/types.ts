@@ -71,7 +71,11 @@ export type BackendPublishResult = {
 
 export type BackendSettings = {
   publishSquashedWorklogs: boolean;
+  fontScale: number;
+  theme: ThemeId;
 };
+
+export type ThemeId = "nirvana-dark" | "high-contrast-dark" | "soft-light";
 
 export type TaskSession = {
   id: number;

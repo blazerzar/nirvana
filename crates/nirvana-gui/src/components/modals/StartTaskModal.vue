@@ -28,6 +28,7 @@ const {
   statusText,
   submit,
   ticketKey,
+  validationError,
 } = startModal;
 
 onMounted(async () => {
@@ -153,7 +154,7 @@ onMounted(async () => {
         <button
           class="min-h-[30px] rounded-md border border-(--accent) bg-(--accent) px-3 py-1.5 text-[11px] font-bold text-(--bg) transition-[color,background,border-color] duration-150 ease-[var(--ease)] disabled:cursor-default disabled:opacity-[0.42]"
           type="submit"
-          :disabled="Boolean(error) || tasks.loading"
+          :disabled="Boolean(validationError) || tasks.loading"
         >{{ tasks.loading ? "Starting..." : "Start" }}</button>
       </footer>
     </template>

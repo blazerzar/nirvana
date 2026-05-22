@@ -358,6 +358,14 @@ fn list_recent_tickets() -> Result<Vec<GuiTicket>, String> {
 }
 
 #[tauri::command]
+fn get_running_slot() -> Result<Option<GuiSlot>, String> {
+    let api = NirvanaApi::new().map_err(|error| error.to_string())?;
+    api.get_running_slot()
+        .map(|slot| slot.map(GuiSlot::from))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn start_slot(app: tauri::AppHandle, input: StartSlotInput) -> Result<GuiSlot, String> {
     let api = NirvanaApi::new().map_err(|error| error.to_string())?;
     let slot = api
@@ -579,6 +587,7 @@ pub fn run() {
             list_slots,
             list_unpublished_slots,
             list_recent_tickets,
+            get_running_slot,
             start_slot,
             create_slot,
             edit_slot,

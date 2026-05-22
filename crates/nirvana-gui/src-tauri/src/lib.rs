@@ -4,6 +4,19 @@ use nirvana_core::api::domain::{
 };
 use nirvana_core::api::{NirvanaApi, SlotSort};
 use serde::{Deserialize, Serialize};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use tauri::{
+    menu::{Menu, MenuItem, PredefinedMenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Manager, WindowEvent,
+};
+
+const MAIN_WINDOW_LABEL: &str = "main";
+const TRAY_SHOW_ID: &str = "show";
+const TRAY_QUIT_ID: &str = "quit";
 
 #[derive(Serialize)]
 struct GuiConnection {
@@ -384,10 +397,85 @@ fn publish_slots(input: PublishSlotsInput) -> Result<GuiPublishResult, String> {
         .map_err(|error| error.to_string())
 }
 
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        if let Err(error) = window.unminimize() {
+            eprintln!("failed to unminimize main window: {error}");
+        }
+
+        if let Err(error) = window.show() {
+            eprintln!("failed to show main window: {error}");
+        }
+
+        if let Err(error) = window.set_focus() {
+            eprintln!("failed to focus main window: {error}");
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let is_quitting = Arc::new(AtomicBool::new(false));
+    let close_is_quitting = Arc::clone(&is_quitting);
+    let tray_is_quitting = Arc::clone(&is_quitting);
+
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .setup(move |app| {
+            let show_item =
+                MenuItem::with_id(app, TRAY_SHOW_ID, "Show nirvana", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, TRAY_QUIT_ID, "Quit", true, None::<&str>)?;
+            let separator = PredefinedMenuItem::separator(app)?;
+            let menu = Menu::with_items(app, &[&show_item, &separator, &quit_item])?;
+
+            let mut tray = TrayIconBuilder::with_id("main")
+                .tooltip("nirvana")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(move |app, event| match event.id().as_ref() {
+                    TRAY_SHOW_ID => show_main_window(app),
+                    TRAY_QUIT_ID => {
+                        tray_is_quitting.store(true, Ordering::SeqCst);
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        show_main_window(tray.app_handle());
+                    }
+                });
+
+            if let Some(icon) = app.default_window_icon().cloned() {
+                tray = tray.icon(icon);
+            }
+
+            tray.build(app)?;
+
+            Ok(())
+        })
+        .on_window_event(move |window, event| {
+            if window.label() != MAIN_WINDOW_LABEL {
+                return;
+            }
+
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if close_is_quitting.load(Ordering::SeqCst) {
+                    return;
+                }
+
+                api.prevent_close();
+
+                if let Err(error) = window.hide() {
+                    eprintln!("failed to hide main window: {error}");
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             get_app_info,
             get_settings,
@@ -407,6 +495,16 @@ pub fn run() {
             stop_slot,
             publish_slots
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app, event| {
+        if let tauri::RunEvent::Reopen {
+            has_visible_windows: false,
+            ..
+        } = event
+        {
+            show_main_window(app);
+        }
+    });
 }

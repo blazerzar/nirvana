@@ -15,6 +15,7 @@ impl NirvanaApi {
     ) -> Result<Slot, super::NirvanaError> {
         let connection_id = self
             .config
+            .core
             .active_connection
             .ok_or(TrackingError::NoActiveConnection)?;
 
@@ -38,6 +39,7 @@ impl NirvanaApi {
     pub fn create_slot(&self, input: SlotCreate) -> Result<Slot, super::NirvanaError> {
         let connection_id = self
             .config
+            .core
             .active_connection
             .ok_or(TrackingError::NoActiveConnection)?;
 
@@ -138,6 +140,7 @@ impl NirvanaApi {
     pub fn list_recent_tickets(&self) -> Result<Vec<Ticket>, super::NirvanaError> {
         let connection_id = self
             .config
+            .core
             .active_connection
             .ok_or(TrackingError::NoActiveConnection)?;
         let records = ticket_repo::list_by_connection(&self.db, connection_id)?;
@@ -150,7 +153,7 @@ mod tests {
     use super::*;
     use crate::api::NirvanaError;
     use crate::api::domain::ConnectionData;
-    use crate::config::AppConfig;
+    use crate::config::{AppConfig, CoreConfig, GuiConfig};
     use crate::paths::AppPaths;
     use crate::storage::Database;
     use std::ops::Deref;
@@ -217,10 +220,16 @@ mod tests {
             api: Some(NirvanaApi {
                 paths,
                 config: AppConfig {
-                    active_connection: Some(connection.id),
-                    publish_squashed_worklogs: true,
-                    font_scale: 1.0,
-                    theme: "high-contrast-dark".to_string(),
+                    schema_version: Some(1),
+                    core: CoreConfig {
+                        active_connection: Some(connection.id),
+                        publish_squashed_worklogs: true,
+                    },
+                    gui: GuiConfig {
+                        font_scale: 1.0,
+                        theme: "high-contrast-dark".to_string(),
+                        show_tray_icon: false,
+                    },
                 },
                 db,
             }),
@@ -229,7 +238,7 @@ mod tests {
     }
 
     fn insert_ticket(api: &NirvanaApi, key: &str) -> i64 {
-        let connection_id = api.config.active_connection.unwrap();
+        let connection_id = api.config.core.active_connection.unwrap();
         ticket_repo::insert(&api.db, key, Some("Existing ticket"), connection_id, 0)
             .unwrap()
             .id
@@ -303,7 +312,7 @@ mod tests {
     fn does_not_stop_existing_running_slot() {
         let api = test_api();
         let ticket_id = insert_ticket(&api, "DES-1");
-        let connection_id = api.config.active_connection.unwrap();
+        let connection_id = api.config.core.active_connection.unwrap();
         let running = slot_repo::insert(&api.db, ticket_id, connection_id, None, 300).unwrap();
 
         let slot = api.create_slot(slot_create("DES-1", 100, 160)).unwrap();

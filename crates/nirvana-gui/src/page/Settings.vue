@@ -184,6 +184,48 @@ const handleModalKeydown = (event: KeyboardEvent) => {
         <section
           class="rounded-md border border-(--border) bg-(--surface) p-4"
         >
+          <div
+            class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 max-[760px]:grid-cols-1"
+          >
+            <div class="min-w-0">
+              <h3 class="m-0 text-[12px] font-bold text-(--text)">
+                Show tray icon
+              </h3>
+              <p class="mt-1.5 mb-0 max-w-[560px] text-[11px] leading-5 text-(--faint)">
+                Keep the app running in the system tray. Takes effect after
+                restart.
+              </p>
+            </div>
+
+            <button
+              class="relative h-[28px] w-[48px] rounded-full border transition-[background,border-color,opacity] duration-150 ease-[var(--ease)] disabled:cursor-default disabled:opacity-50"
+              :class="
+                settings.showTrayIcon
+                  ? 'border-(--accent) bg-(--surface-selected)'
+                  : 'border-(--border) bg-(--surface-inset)'
+              "
+              type="button"
+              role="switch"
+              :aria-checked="settings.showTrayIcon"
+              :disabled="settings.loading || settings.saving"
+              @click="settings.setShowTrayIcon(!settings.showTrayIcon)"
+            >
+              <span
+                class="absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.28)] transition-[left,background] duration-150 ease-[var(--ease)]"
+                :class="
+                  settings.showTrayIcon
+                    ? 'left-[22px] bg-(--accent)'
+                    : 'left-1 bg-(--muted)'
+                "
+                aria-hidden="true"
+              ></span>
+            </button>
+          </div>
+        </section>
+
+        <section
+          class="rounded-md border border-(--border) bg-(--surface) p-4"
+        >
           <div class="mb-3 flex items-start justify-between gap-3">
             <div class="min-w-0">
               <h3 class="m-0 text-[12px] font-bold text-(--text)">

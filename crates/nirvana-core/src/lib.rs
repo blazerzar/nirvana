@@ -1,5 +1,5 @@
 pub mod api;
-mod config;
+pub mod config;
 mod credentials;
 mod integration;
 mod paths;

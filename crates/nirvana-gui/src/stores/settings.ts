@@ -59,8 +59,10 @@ export const useSettingsStore = defineStore("settings", {
     publishSquashedWorklogs: true,
     fontScale: DEFAULT_FONT_SCALE,
     theme: DEFAULT_THEME as ThemeId,
+    showTrayIcon: false,
     savedFontScale: DEFAULT_FONT_SCALE,
     savedTheme: DEFAULT_THEME as ThemeId,
+    savedShowTrayIcon: false,
   }),
   getters: {
     fontScalePercent(state): number {
@@ -78,8 +80,10 @@ export const useSettingsStore = defineStore("settings", {
       this.publishSquashedWorklogs = settings.publishSquashedWorklogs;
       this.fontScale = normalizeFontScale(settings.fontScale);
       this.theme = themeFor(settings.theme).id;
+      this.showTrayIcon = settings.showTrayIcon;
       this.savedFontScale = this.fontScale;
       this.savedTheme = this.theme;
+      this.savedShowTrayIcon = this.showTrayIcon;
       this.applyCurrentAppearance();
     },
     async initialize() {
@@ -117,6 +121,7 @@ export const useSettingsStore = defineStore("settings", {
             publishSquashedWorklogs: value,
             fontScale: this.fontScale,
             theme: this.theme,
+            showTrayIcon: this.showTrayIcon,
           },
         });
         this.applySettings(settings);
@@ -147,6 +152,7 @@ export const useSettingsStore = defineStore("settings", {
             publishSquashedWorklogs: this.publishSquashedWorklogs,
             fontScale: nextValue,
             theme: this.theme,
+            showTrayIcon: this.showTrayIcon,
           },
         });
         this.applySettings(settings);
@@ -177,6 +183,7 @@ export const useSettingsStore = defineStore("settings", {
             publishSquashedWorklogs: this.publishSquashedWorklogs,
             fontScale: this.fontScale,
             theme: nextTheme,
+            showTrayIcon: this.showTrayIcon,
           },
         });
         this.applySettings(settings);
@@ -184,6 +191,34 @@ export const useSettingsStore = defineStore("settings", {
       } catch (error) {
         this.theme = previousTheme;
         this.applyCurrentAppearance();
+        this.error = error instanceof Error ? error.message : String(error);
+      } finally {
+        this.saving = false;
+      }
+    },
+    async setShowTrayIcon(value: boolean) {
+      if (this.saving || value === this.showTrayIcon) {
+        return;
+      }
+
+      const previousValue = this.showTrayIcon;
+      this.showTrayIcon = value;
+      this.saving = true;
+      this.error = "";
+
+      try {
+        const settings = await invoke<BackendSettings>("update_settings", {
+          input: {
+            publishSquashedWorklogs: this.publishSquashedWorklogs,
+            fontScale: this.fontScale,
+            theme: this.theme,
+            showTrayIcon: value,
+          },
+        });
+        this.applySettings(settings);
+        this.initialized = true;
+      } catch (error) {
+        this.showTrayIcon = previousValue;
         this.error = error instanceof Error ? error.message : String(error);
       } finally {
         this.saving = false;

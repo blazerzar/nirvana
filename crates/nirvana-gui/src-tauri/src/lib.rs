@@ -121,6 +121,7 @@ struct GuiSettings {
     publish_squashed_worklogs: bool,
     font_scale: f64,
     theme: String,
+    show_tray_icon: bool,
 }
 
 #[derive(Serialize)]
@@ -203,6 +204,7 @@ impl From<AppSettings> for GuiSettings {
             publish_squashed_worklogs: settings.publish_squashed_worklogs,
             font_scale: settings.font_scale,
             theme: settings.theme,
+            show_tray_icon: settings.show_tray_icon,
         }
     }
 }
@@ -213,6 +215,7 @@ impl From<GuiSettings> for AppSettings {
             publish_squashed_worklogs: settings.publish_squashed_worklogs,
             font_scale: settings.font_scale,
             theme: settings.theme,
+            show_tray_icon: settings.show_tray_icon,
         }
     }
 }
@@ -497,67 +500,73 @@ pub fn run() {
     let close_is_quitting = Arc::clone(&is_quitting);
     let tray_is_quitting = Arc::clone(&is_quitting);
 
+    let show_tray = nirvana_core::config::AppConfig::load_from_default_path()
+        .gui
+        .show_tray_icon;
+
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main_window(app);
         }))
         .plugin(tauri_plugin_opener::init())
         .setup(move |app| {
-            let status_item = MenuItem::with_id(
-                app,
-                TRAY_STATUS_ID,
-                "No running ticket",
-                false,
-                None::<&str>,
-            )?;
-            let show_item =
-                MenuItem::with_id(app, TRAY_SHOW_ID, "Show nirvana", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, TRAY_QUIT_ID, "Quit", true, None::<&str>)?;
-            let status_separator = PredefinedMenuItem::separator(app)?;
-            let action_separator = PredefinedMenuItem::separator(app)?;
-            let menu = Menu::with_items(
-                app,
-                &[
-                    &status_item,
-                    &status_separator,
-                    &show_item,
-                    &action_separator,
-                    &quit_item,
-                ],
-            )?;
-            app.manage(TrayStatusState {
-                item: status_item.clone(),
-            });
-
-            let mut tray = TrayIconBuilder::with_id(TRAY_ID)
-                .tooltip("nirvana")
-                .menu(&menu)
-                .show_menu_on_left_click(false)
-                .on_menu_event(move |app, event| match event.id().as_ref() {
-                    TRAY_SHOW_ID => show_main_window(app),
-                    TRAY_QUIT_ID => {
-                        tray_is_quitting.store(true, Ordering::SeqCst);
-                        app.exit(0);
-                    }
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        show_main_window(tray.app_handle());
-                    }
+            if show_tray {
+                let status_item = MenuItem::with_id(
+                    app,
+                    TRAY_STATUS_ID,
+                    "No running ticket",
+                    false,
+                    None::<&str>,
+                )?;
+                let show_item =
+                    MenuItem::with_id(app, TRAY_SHOW_ID, "Show nirvana", true, None::<&str>)?;
+                let quit_item = MenuItem::with_id(app, TRAY_QUIT_ID, "Quit", true, None::<&str>)?;
+                let status_separator = PredefinedMenuItem::separator(app)?;
+                let action_separator = PredefinedMenuItem::separator(app)?;
+                let menu = Menu::with_items(
+                    app,
+                    &[
+                        &status_item,
+                        &status_separator,
+                        &show_item,
+                        &action_separator,
+                        &quit_item,
+                    ],
+                )?;
+                app.manage(TrayStatusState {
+                    item: status_item.clone(),
                 });
 
-            if let Some(icon) = app.default_window_icon().cloned() {
-                tray = tray.icon(icon);
-            }
+                let mut tray = TrayIconBuilder::with_id(TRAY_ID)
+                    .tooltip("nirvana")
+                    .menu(&menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(move |app, event| match event.id().as_ref() {
+                        TRAY_SHOW_ID => show_main_window(app),
+                        TRAY_QUIT_ID => {
+                            tray_is_quitting.store(true, Ordering::SeqCst);
+                            app.exit(0);
+                        }
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            show_main_window(tray.app_handle());
+                        }
+                    });
 
-            tray.build(app)?;
-            refresh_tray_status(app.handle());
+                if let Some(icon) = app.default_window_icon().cloned() {
+                    tray = tray.icon(icon);
+                }
+
+                tray.build(app)?;
+                refresh_tray_status(app.handle());
+            }
 
             Ok(())
         })
@@ -571,10 +580,12 @@ pub fn run() {
                     return;
                 }
 
-                api.prevent_close();
+                if show_tray {
+                    api.prevent_close();
 
-                if let Err(error) = window.hide() {
-                    eprintln!("failed to hide main window: {error}");
+                    if let Err(error) = window.hide() {
+                        eprintln!("failed to hide main window: {error}");
+                    }
                 }
             }
         })

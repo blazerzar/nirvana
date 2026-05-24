@@ -613,6 +613,8 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app, event| {
+        #[cfg(target_os = "macos")]
+        // Show application windows when pressing dock icon with no windows
         if let tauri::RunEvent::Reopen {
             has_visible_windows: false,
             ..
@@ -620,5 +622,8 @@ pub fn run() {
         {
             show_main_window(app);
         }
+
+        // Prevent unused variable warning
+        let _ = (app, event);
     });
 }

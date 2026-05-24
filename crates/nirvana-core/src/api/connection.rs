@@ -13,7 +13,7 @@ impl NirvanaApi {
     }
 
     pub fn get_active_connection(&self) -> Result<Option<Connection>, NirvanaError> {
-        let Some(connection_id) = self.config.active_connection else {
+        let Some(connection_id) = self.config.core.active_connection else {
             return Ok(None);
         };
 
@@ -21,7 +21,7 @@ impl NirvanaApi {
     }
 
     pub fn active_connection(&self) -> Option<i64> {
-        self.config.active_connection
+        self.config.core.active_connection
     }
 
     pub fn set_active_connection(&mut self, id: i64) -> Result<(), NirvanaError> {
@@ -29,7 +29,7 @@ impl NirvanaApi {
             return Err(TrackingError::ConnectionNotFound(id).into());
         }
 
-        self.config.active_connection = Some(id);
+        self.config.core.active_connection = Some(id);
         self.config.save(&self.paths)?;
         Ok(())
     }
@@ -45,8 +45,8 @@ impl NirvanaApi {
 
         connection_repo::delete(&self.db, id)?;
 
-        if self.config.active_connection == Some(id) {
-            self.config.active_connection = connection_repo::list(&self.db)?
+        if self.config.core.active_connection == Some(id) {
+            self.config.core.active_connection = connection_repo::list(&self.db)?
                 .into_iter()
                 .map(|connection| connection.id)
                 .min();
@@ -85,6 +85,7 @@ impl NirvanaApi {
     pub fn test_connection(&self) -> Result<(), NirvanaError> {
         let connection_id = self
             .config
+            .core
             .active_connection
             .ok_or(TrackingError::NoActiveConnection)?;
 
@@ -108,7 +109,7 @@ fn normalize_host(url: &str) -> String {
 mod tests {
     use super::*;
     use crate::api::errors::TrackingError;
-    use crate::config::AppConfig;
+    use crate::config::{AppConfig, CoreConfig, GuiConfig};
     use crate::paths::AppPaths;
     use crate::storage::{Database, connection_repo, ticket_repo};
     use std::ops::Deref;
@@ -168,7 +169,18 @@ mod tests {
         TestApi {
             api: Some(NirvanaApi {
                 paths,
-                config: AppConfig::default(),
+                config: AppConfig {
+                    schema_version: Some(1),
+                    core: CoreConfig {
+                        active_connection: None,
+                        publish_squashed_worklogs: true,
+                    },
+                    gui: GuiConfig {
+                        font_scale: 1.0,
+                        theme: "high-contrast-dark".to_string(),
+                        show_tray_icon: false,
+                    },
+                },
                 db,
             }),
             base,

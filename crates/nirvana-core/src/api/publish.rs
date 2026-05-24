@@ -29,6 +29,7 @@ impl NirvanaApi {
     ) -> Result<PublishResult, super::NirvanaError> {
         let connection_id = self
             .config
+            .core
             .active_connection
             .ok_or(TrackingError::NoActiveConnection)?;
 
@@ -45,7 +46,7 @@ impl NirvanaApi {
             });
         }
 
-        let worklogs = if self.config.publish_squashed_worklogs {
+        let worklogs = if self.config.core.publish_squashed_worklogs {
             squash_slots_for_publish(&slots)
         } else {
             slots_for_publish(&slots)

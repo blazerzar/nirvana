@@ -7,7 +7,7 @@ use crate::storage::slot_repo::{self, SlotSort};
 
 impl NirvanaApi {
     pub fn get_running_slot(&self) -> Result<Option<Slot>, NirvanaError> {
-        let Some(connection_id) = self.config.active_connection else {
+        let Some(connection_id) = self.config.core.active_connection else {
             return Ok(None);
         };
 
@@ -33,6 +33,7 @@ impl NirvanaApi {
     ) -> Result<Vec<Slot>, NirvanaError> {
         let connection_id = self
             .config
+            .core
             .active_connection
             .ok_or(TrackingError::NoActiveConnection)?;
 
@@ -56,6 +57,7 @@ impl NirvanaApi {
     ) -> Result<Vec<Slot>, NirvanaError> {
         let connection_id = self
             .config
+            .core
             .active_connection
             .ok_or(TrackingError::NoActiveConnection)?;
 

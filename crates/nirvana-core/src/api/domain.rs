@@ -115,6 +115,7 @@ pub struct AppSettings {
     pub publish_squashed_worklogs: bool,
     pub font_scale: f64,
     pub theme: String,
+    pub show_tray_icon: bool,
 }
 
 #[derive(Debug, Default)]

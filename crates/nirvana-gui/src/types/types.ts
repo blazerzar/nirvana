@@ -73,6 +73,7 @@ export type BackendSettings = {
   publishSquashedWorklogs: boolean;
   fontScale: number;
   theme: ThemeId;
+  showTrayIcon: boolean;
 };
 
 export type ThemeId = "nirvana-dark" | "high-contrast-dark" | "soft-light";

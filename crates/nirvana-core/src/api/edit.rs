@@ -45,10 +45,10 @@ impl NirvanaApi {
             Change::Clear => None,
             Change::Skip => current.stopped_at,
         };
-        if let Some(stopped) = effective_stopped {
-            if stopped <= effective_started {
-                return Err(TrackingError::InvalidTimeRange.into());
-            }
+        if let Some(stopped) = effective_stopped
+            && stopped <= effective_started
+        {
+            return Err(TrackingError::InvalidTimeRange.into());
         }
 
         let update = slot_repo::SlotUpdate {

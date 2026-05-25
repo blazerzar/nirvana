@@ -109,6 +109,9 @@ export type TaskTimelineSession = {
   task: Task;
   session: TaskSession;
   durationMs: number;
+  startsBeforeDay: boolean;
+  endsAfterDay: boolean;
+  isMultiDay: boolean;
   isActive: boolean;
 };
 

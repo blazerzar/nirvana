@@ -6,7 +6,13 @@ import {
   TaskSummary,
   TaskTimelineSession,
 } from "../types/types";
-import { durationMs, isSameDay } from "./time";
+import {
+  dayBounds,
+  sessionEndsAfterDay,
+  sessionOverlapMs,
+  sessionOverlapsDay,
+  sessionStartsBeforeDay,
+} from "./time";
 
 export const activeTaskFor = (tasks: Task[]): Task | null =>
   tasks.find((task) => task.status === TaskStatus.Running) ?? null;
@@ -67,15 +73,18 @@ export const summariesForDay = (
   tasks
     .map((task) => {
       const sessions = task.sessions.filter((session) =>
-        isSameDay(session.start, selectedDate),
+        sessionOverlapsDay(session, selectedDate, now),
       );
       const totalMs = sessions.reduce(
-        (sum, session) => sum + durationMs(session, now),
+        (sum, session) => sum + sessionOverlapMs(session, selectedDate, now),
         0,
       );
       const unpublishedMs = sessions
         .filter((session) => session.publishState === "unpublished")
-        .reduce((sum, session) => sum + durationMs(session, now), 0);
+        .reduce(
+          (sum, session) => sum + sessionOverlapMs(session, selectedDate, now),
+          0,
+        );
 
       return {
         task,
@@ -96,17 +105,36 @@ export const timelineSessionsForDay = (
   tasks
     .flatMap((task) =>
       task.sessions
-        .filter((session) => isSameDay(session.start, selectedDate))
-        .map((session) => ({
-          task,
-          session,
-          durationMs: durationMs(session, now),
-          isActive: session.end === null,
-        })),
+        .filter((session) => sessionOverlapsDay(session, selectedDate, now))
+        .map((session) => {
+          const startsBeforeDay = sessionStartsBeforeDay(session, selectedDate);
+          const endsAfterDay = sessionEndsAfterDay(session, selectedDate, now);
+
+          return {
+            task,
+            session,
+            durationMs: sessionOverlapMs(session, selectedDate, now),
+            startsBeforeDay,
+            endsAfterDay,
+            isMultiDay: startsBeforeDay || endsAfterDay,
+            isActive: session.end === null,
+          };
+        }),
     )
     .sort(
-      (left, right) =>
-        left.session.start.getTime() - right.session.start.getTime(),
+      (left, right) => {
+        const bounds = dayBounds(selectedDate);
+        const leftStart = Math.max(
+          left.session.start.getTime(),
+          bounds.start.getTime(),
+        );
+        const rightStart = Math.max(
+          right.session.start.getTime(),
+          bounds.start.getTime(),
+        );
+
+        return leftStart - rightStart;
+      },
     );
 
 export const totalDurationForDay = (
@@ -116,8 +144,11 @@ export const totalDurationForDay = (
 ) =>
   tasks
     .flatMap((task) => task.sessions)
-    .filter((session) => isSameDay(session.start, selectedDate))
-    .reduce((sum, session) => sum + durationMs(session, now), 0);
+    .filter((session) => sessionOverlapsDay(session, selectedDate, now))
+    .reduce(
+      (sum, session) => sum + sessionOverlapMs(session, selectedDate, now),
+      0,
+    );
 
 export const unpublishedDurationForDay = (
   tasks: Task[],
@@ -129,6 +160,23 @@ export const unpublishedDurationForDay = (
     .filter(
       (session) =>
         session.publishState === "unpublished" &&
-        isSameDay(session.start, selectedDate),
+        sessionOverlapsDay(session, selectedDate, now),
     )
-    .reduce((sum, session) => sum + durationMs(session, now), 0);
+    .reduce(
+      (sum, session) => sum + sessionOverlapMs(session, selectedDate, now),
+      0,
+    );
+
+export const hasMultiDaySessionsForDay = (
+  tasks: Task[],
+  selectedDate: Date,
+  now: Date,
+) =>
+  tasks
+    .flatMap((task) => task.sessions)
+    .some(
+      (session) =>
+        sessionOverlapsDay(session, selectedDate, now) &&
+        (sessionStartsBeforeDay(session, selectedDate) ||
+          sessionEndsAfterDay(session, selectedDate, now)),
+    );

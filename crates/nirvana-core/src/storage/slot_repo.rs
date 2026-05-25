@@ -238,7 +238,9 @@ pub(crate) fn get_slots(
             "select s.id, t.ticket_key, t.summary, s.connection_id, s.note, s.started_at, s.stopped_at, s.published_at
              from slots s
              join tickets t on t.id = s.ticket_id
-             where s.connection_id = ?1 and s.started_at >= ?2 and s.started_at < ?3
+             where s.connection_id = ?1
+               and s.started_at < ?3
+               and coalesce(s.stopped_at, 9223372036854775807) > ?2
              order by {order_by}"
         )
     } else {
@@ -246,7 +248,8 @@ pub(crate) fn get_slots(
             "select s.id, t.ticket_key, t.summary, s.connection_id, s.note, s.started_at, s.stopped_at, s.published_at
              from slots s
              join tickets t on t.id = s.ticket_id
-             where s.connection_id = ?1 and s.started_at >= ?2
+             where s.connection_id = ?1
+               and coalesce(s.stopped_at, 9223372036854775807) > ?2
              order by {order_by}"
         )
     };

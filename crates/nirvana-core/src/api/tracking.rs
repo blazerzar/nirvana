@@ -155,7 +155,7 @@ mod tests {
     use crate::api::domain::ConnectionData;
     use crate::config::{AppConfig, CoreConfig, GuiConfig};
     use crate::paths::AppPaths;
-    use crate::storage::Database;
+    use crate::storage::{Database, slot_repo::SlotSort};
     use std::ops::Deref;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -322,5 +322,39 @@ mod tests {
         assert_eq!(still_running.id, running.id);
         assert_eq!(still_running.started_at, 300);
         assert_eq!(still_running.stopped_at, None);
+    }
+
+    #[test]
+    fn lists_slots_that_overlap_bounded_range() {
+        let api = test_api();
+        insert_ticket(&api, "DES-1");
+        insert_ticket(&api, "DES-2");
+        insert_ticket(&api, "DES-3");
+        api.create_slot(slot_create("DES-1", 100, 140)).unwrap();
+        api.create_slot(slot_create("DES-2", 140, 220)).unwrap();
+        api.create_slot(slot_create("DES-3", 260, 320)).unwrap();
+
+        let slots = api.get_slots(150, Some(260), SlotSort::StartedAt).unwrap();
+
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].ticket_key, "DES-2");
+        assert_eq!(slots[0].started_at, 140);
+        assert_eq!(slots[0].stopped_at, Some(220));
+    }
+
+    #[test]
+    fn lists_open_ended_slots_that_overlap_range_start() {
+        let api = test_api();
+        insert_ticket(&api, "DES-1");
+        insert_ticket(&api, "DES-2");
+        api.create_slot(slot_create("DES-1", 100, 140)).unwrap();
+        api.create_slot(slot_create("DES-2", 140, 220)).unwrap();
+
+        let slots = api.get_slots(200, None, SlotSort::StartedAt).unwrap();
+
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].ticket_key, "DES-2");
+        assert_eq!(slots[0].started_at, 140);
+        assert_eq!(slots[0].stopped_at, Some(220));
     }
 }

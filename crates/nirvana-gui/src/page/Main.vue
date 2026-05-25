@@ -9,6 +9,12 @@ import {
     formatDuration,
     useAllTasksStore,
 } from "../stores/allTasks";
+import {
+    dayBounds,
+    sessionEndsAfterDay,
+    sessionOverlapMs,
+    sessionStartsBeforeDay,
+} from "../tasks/time";
 import { TaskSession, TaskSummary, TaskTimelineSession } from "../types/types";
 
 const tasks = useAllTasksStore();
@@ -16,12 +22,55 @@ const ticketList = ref<HTMLElement | null>(null);
 const timelineList = ref<HTMLElement | null>(null);
 
 const sessionDuration = (session: TaskSession) =>
-    formatDuration(
-        (session.end ?? tasks.now).getTime() - session.start.getTime(),
+    formatDuration(sessionOverlapMs(session, tasks.selectedDate, tasks.now));
+
+const clippedClock = (date: Date, selectedDate: Date, position: "start" | "end") => {
+    const bounds = dayBounds(selectedDate);
+
+    if (date.getTime() === bounds.start.getTime()) {
+        return "00:00";
+    }
+
+    if (position === "end" && date.getTime() === bounds.end.getTime()) {
+        return "24:00";
+    }
+
+    return formatClock(date);
+};
+
+const sessionRange = (session: TaskSession) => {
+    const bounds = dayBounds(tasks.selectedDate);
+    const sessionEnd = session.end ?? tasks.now;
+    const startsBefore = sessionStartsBeforeDay(session, tasks.selectedDate);
+    const endsAfter = sessionEndsAfterDay(session, tasks.selectedDate, tasks.now);
+    const visibleStart = new Date(
+        Math.max(session.start.getTime(), bounds.start.getTime()),
+    );
+    const visibleEnd = new Date(
+        Math.min(sessionEnd.getTime(), bounds.end.getTime()),
     );
 
-const sessionRange = (session: TaskSession) =>
-    `${formatClock(session.start)} – ${session.end ? formatClock(session.end) : "now"}`;
+    return `${startsBefore ? "← " : ""}${clippedClock(
+        visibleStart,
+        tasks.selectedDate,
+        "start",
+    )} – ${clippedClock(visibleEnd, tasks.selectedDate, "end")}${
+        endsAfter ? " →" : ""
+    }`;
+};
+
+const spanLabel = (startsBeforeDay: boolean, endsAfterDay: boolean) => {
+    if (startsBeforeDay && endsAfterDay) return "multi-day";
+    if (startsBeforeDay) return "starts previous day";
+    if (endsAfterDay) return "continues next day";
+    return "";
+};
+
+const sessionSpanLabel = (session: TaskSession) =>
+    spanLabel(
+        sessionStartsBeforeDay(session, tasks.selectedDate),
+        sessionEndsAfterDay(session, tasks.selectedDate, tasks.now),
+    );
 
 const slotLabel = (count: number) =>
     `${count} ${count === 1 ? "slot" : "slots"}`;
@@ -95,6 +144,12 @@ watch(
             class="border-b border-(--border) px-[18px] py-2 text-[11px] text-(--faint) max-[760px]:px-3.5"
         >
             Loading tracked work...
+        </div>
+        <div
+            v-else-if="tasks.hasMultiDaySessions"
+            class="border-b border-[rgba(245,191,107,0.2)] bg-[rgba(245,191,107,0.07)] px-[18px] py-2 text-[11px] text-[#f5bf6b] max-[760px]:px-3.5"
+        >
+            This day includes work sessions that span across midnight. Totals count only the portion within this day.
         </div>
 
         <div class="relative min-h-0 flex-1 overflow-hidden">
@@ -202,7 +257,7 @@ watch(
                                     <div
                                         v-for="session in summary.sessions"
                                         :key="session.id"
-                                        class="grid min-h-[30px] cursor-pointer grid-cols-[112px_minmax(0,1fr)_auto_auto] items-center gap-2 border-t border-[rgba(255,255,255,0.035)] px-[48px] py-1 text-[11px] transition-colors duration-150 ease-(--ease) first:border-t-0 hover:bg-[rgba(255,255,255,0.03)] max-[760px]:grid-cols-[minmax(0,1fr)_auto_auto] max-[760px]:px-8"
+                                        class="grid min-h-[30px] cursor-pointer grid-cols-[112px_minmax(0,1fr)_auto_auto_auto] items-center gap-2 border-t border-[rgba(255,255,255,0.035)] px-[48px] py-1 text-[11px] transition-colors duration-150 ease-(--ease) first:border-t-0 hover:bg-[rgba(255,255,255,0.03)] max-[760px]:grid-cols-[minmax(0,1fr)_auto_auto] max-[760px]:px-8"
                                         :class="
                                             tasks.selectedSessionId === session.id
                                                 ? 'bg-[rgba(149,222,200,0.08)]'
@@ -221,6 +276,12 @@ watch(
                                                 session.note || "Focused work"
                                             }}</span
                                         >
+                                        <span
+                                            v-if="sessionSpanLabel(session)"
+                                            class="shrink-0 rounded-[3px] border border-[rgba(245,191,107,0.24)] bg-[rgba(245,191,107,0.08)] px-1.25 py-px text-[8px] font-bold uppercase tracking-[0.04em] text-[#f5bf6b] max-[760px]:hidden"
+                                        >
+                                            {{ sessionSpanLabel(session) }}
+                                        </span>
                                         <span
                                             class="h-[5px] w-[5px] shrink-0 rounded-full"
                                             :class="
@@ -303,6 +364,12 @@ watch(
                             class="shrink-0 rounded-[3px] bg-(--accent) px-1.25 py-px text-[8px] font-bold uppercase tracking-[0.04em] text-(--bg)"
                             >live</span
                         >
+                        <span
+                            v-if="entry.isMultiDay"
+                            class="shrink-0 rounded-[3px] border border-[rgba(245,191,107,0.24)] bg-[rgba(245,191,107,0.08)] px-1.25 py-px text-[8px] font-bold uppercase tracking-[0.04em] text-[#f5bf6b]"
+                        >
+                            {{ spanLabel(entry.startsBeforeDay, entry.endsAfterDay) }}
+                        </span>
                         <button
                             v-if="entry.task.url"
                             class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-(--very-faint) transition-[color,background] duration-150 ease-(--ease) hover:bg-[rgba(255,255,255,0.04)] hover:text-(--muted) [&>svg]:h-3 [&>svg]:w-3"

@@ -1,14 +1,11 @@
-import { computed, nextTick, ref } from "vue";
+import { computed, ref } from "vue";
 import { useAllTasksStore } from "../stores/allTasks";
+import { formatDurationInput } from "./dateTimeInputs";
 import {
-  applyTimeParts,
-  formatDurationInput,
-  formatTimeInput,
-  formatTimeParts,
-  parseDurationInput,
-  parseTimeParts,
-  wrapTimePart,
-} from "./dateTimeInputs";
+  formatCompletedRangePreview,
+  formatRunningRangePreview,
+  useSessionRangeEditor,
+} from "./useSessionRangeEditor";
 
 const normalizeTicketKey = (value: string) => value.trim().toUpperCase();
 
@@ -16,11 +13,19 @@ export const useEditTaskModal = () => {
   const tasks = useAllTasksStore();
   const firstField = ref<HTMLInputElement | null>(null);
   const ticketKey = ref("");
-  const start = ref("");
-  const stop = ref("");
-  const durationInput = ref("");
   const note = ref("");
   const error = ref("");
+
+  const clearSubmitError = () => {
+    error.value = "";
+    tasks.error = "";
+  };
+
+  const range = useSessionRangeEditor({
+    allowRunningStop: true,
+    clearSubmitError,
+    now: () => tasks.now,
+  });
 
   const entry = computed(() => tasks.selectedSessionEntry);
 
@@ -35,44 +40,49 @@ export const useEditTaskModal = () => {
     () => entry.value?.session.publishState === "published",
   );
 
-  const parsedStart = computed(() => {
-    const selectedEntry = entry.value;
-    const time = parseTimeParts(start.value);
-    if (!selectedEntry || !time) return null;
+  const rangePreview = computed(() => {
+    const key = knownTask.value?.key ?? normalizeTicketKey(ticketKey.value);
+    if (!key || !range.parsedStart.value) return "Ticket changes are not supported yet.";
 
-    return applyTimeParts(selectedEntry.session.start, time);
-  });
+    const duration = range.parsedDurationMs.value
+      ? formatDurationInput(range.parsedDurationMs.value)
+      : range.durationInput.value;
+    if (!range.parsedStop.value) {
+      return `${key} · ${formatRunningRangePreview(range.parsedStart.value)}`;
+    }
 
-  const parsedStop = computed(() => {
-    const selectedEntry = entry.value;
-    const time = stop.value ? parseTimeParts(stop.value) : null;
-    if (!selectedEntry || !time) return null;
-
-    return applyTimeParts(
-      selectedEntry.session.end ?? selectedEntry.session.start,
-      time,
+    const preview = formatCompletedRangePreview(
+      range.parsedStart.value,
+      range.parsedStop.value,
+      duration,
+      range.stopDayOffset.value,
     );
-  });
 
-  const parsedDurationMs = computed(() => parseDurationInput(durationInput.value));
+    return `${key} · ${preview}`;
+  });
 
   const computedError = computed(() => {
     if (tasks.activeModal !== "edit") return "";
     if (readOnly.value) return "Published slots are read-only.";
     if (!normalizeTicketKey(ticketKey.value)) return "Ticket key is required.";
 
-    if (!start.value.trim()) return "Start time is required.";
-    if (!parsedStart.value) return "Start time is invalid.";
-    if (!durationInput.value.trim()) return "Duration is required.";
-    if (!parsedDurationMs.value || parsedDurationMs.value <= 0) {
-      return "Duration is invalid.";
-    }
+    if (!range.startDateInput.value.trim()) return "Start date is required.";
+    if (!range.parsedStartDate.value) return "Start date is invalid.";
+    if (!range.start.value.trim()) return "Start time is required.";
+    if (!range.parsedStart.value) return "Start time is invalid.";
 
-    if (stop.value) {
-      if (!parsedStop.value) return "Stop time is invalid.";
-      if (parsedStop.value.getTime() <= parsedStart.value.getTime()) {
+    if (range.stop.value.trim()) {
+      if (!range.stopDateInput.value.trim()) return "Stop date is required.";
+      if (!range.parsedStopDate.value) return "Stop date is invalid.";
+      if (!range.parsedStop.value) return "Stop time is invalid.";
+      if (range.parsedStop.value.getTime() <= range.parsedStart.value.getTime()) {
         return "Stop must be after start.";
       }
+    }
+
+    if (!range.durationInput.value.trim()) return "Duration is required.";
+    if (!range.parsedDurationMs.value || range.parsedDurationMs.value <= 0) {
+      return "Duration is invalid.";
     }
 
     return "";
@@ -84,30 +94,27 @@ export const useEditTaskModal = () => {
 
     if (!selectedEntry) {
       ticketKey.value = "";
-      start.value = "";
-      stop.value = "";
+      range.setRangeInputs({ start: null, stop: null, durationMs: null });
       note.value = "";
-      durationInput.value = "";
       return;
     }
 
     ticketKey.value = selectedEntry.task.key;
-    start.value = formatTimeInput(selectedEntry.session.start);
-    stop.value = selectedEntry.session.end
-      ? formatTimeInput(selectedEntry.session.end)
-      : "";
-    durationInput.value = formatDurationInput(
-      (selectedEntry.session.end ?? tasks.now).getTime() -
+    range.setRangeInputs({
+      start: selectedEntry.session.start,
+      stop: selectedEntry.session.end,
+      durationMs:
+        (selectedEntry.session.end ?? tasks.now).getTime() -
         selectedEntry.session.start.getTime(),
-    );
+    });
     note.value = selectedEntry.session.note ?? "";
   };
 
   const submit = async () => {
     error.value = computedError.value;
     const selectedEntry = entry.value;
-    const nextStart = parsedStart.value;
-    const nextStop = stop.value ? parsedStop.value : null;
+    const nextStart = range.parsedStart.value;
+    const nextStop = range.stop.value.trim() ? range.parsedStop.value : null;
 
     if (error.value || !selectedEntry || !nextStart) return;
 
@@ -127,106 +134,6 @@ export const useEditTaskModal = () => {
     tasks.closeModal();
   };
 
-  const normalizeStartTime = () => {
-    const time = parseTimeParts(start.value);
-    if (!time) return;
-
-    start.value = formatTimeParts(time.hours, time.minutes);
-    if (stop.value) {
-      syncDurationFromTimes();
-    }
-  };
-
-  const normalizeStopTime = () => {
-    if (!stop.value.trim()) return;
-
-    const time = parseTimeParts(stop.value);
-    if (!time) return;
-
-    stop.value = formatTimeParts(time.hours, time.minutes);
-    syncDurationFromTimes();
-  };
-
-  const syncDurationFromTimes = () => {
-    if (!parsedStart.value) return;
-
-    const end = parsedStop.value ?? tasks.now;
-    durationInput.value = formatDurationInput(
-      end.getTime() - parsedStart.value.getTime(),
-    );
-  };
-
-  const applyDurationToStop = () => {
-    if (!parsedStart.value || !parsedDurationMs.value) return;
-
-    stop.value = formatTimeInput(
-      new Date(parsedStart.value.getTime() + parsedDurationMs.value),
-    );
-  };
-
-  const normalizeDuration = () => {
-    if (!parsedDurationMs.value) return;
-
-    durationInput.value = formatDurationInput(parsedDurationMs.value);
-    applyDurationToStop();
-  };
-
-  const handleDurationKeydown = (event: KeyboardEvent) => {
-    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-
-    event.preventDefault();
-
-    const direction = event.key === "ArrowUp" ? 1 : -1;
-    const currentMs = parsedDurationMs.value ?? 30 * 60 * 1000;
-    const stepMs = 5 * 60 * 1000;
-    const nextMs = Math.max(60 * 1000, currentMs + direction * stepMs);
-
-    durationInput.value = formatDurationInput(nextMs);
-    applyDurationToStop();
-  };
-
-  const handleTimeKeydown = async (
-    event: KeyboardEvent,
-    value: typeof start,
-  ) => {
-    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-
-    event.preventDefault();
-
-    const input = event.currentTarget as HTMLInputElement;
-    const direction = event.key === "ArrowUp" ? 1 : -1;
-    const fallback = value === stop && !value.value ? start.value : value.value;
-    const time = parseTimeParts(value.value) ?? parseTimeParts(fallback);
-    if (!time) return;
-
-    const separatorIndex = value.value.indexOf(":");
-    const editingMinutes =
-      separatorIndex !== -1 &&
-      input.selectionStart !== null &&
-      input.selectionStart > separatorIndex;
-    const nextHours = editingMinutes
-      ? time.hours
-      : wrapTimePart(time.hours + direction, 24);
-    const nextMinutes = editingMinutes
-      ? wrapTimePart(time.minutes + direction, 60)
-      : time.minutes;
-
-    value.value = formatTimeParts(nextHours, nextMinutes);
-    await nextTick();
-
-    if (editingMinutes) {
-      input.setSelectionRange(3, 5);
-    } else {
-      input.setSelectionRange(0, 2);
-    }
-  };
-
-  const handleStartKeydown = (event: KeyboardEvent) =>
-    handleTimeKeydown(event, start);
-
-  const handleStopKeydown = (event: KeyboardEvent) =>
-    handleTimeKeydown(event, stop);
-
   const deleteSession = async () => {
     error.value = "";
 
@@ -240,25 +147,38 @@ export const useEditTaskModal = () => {
 
   return {
     computedError,
+    advancedStopDateVisible: range.advancedStopDateVisible,
     deleteSession,
-    durationInput,
+    durationInput: range.durationInput,
     entry,
     error,
     firstField,
-    handleDurationKeydown,
-    handleStartKeydown,
-    handleStopKeydown,
+    handleDurationKeydown: range.handleDurationKeydown,
+    handleDurationInput: range.handleDurationInput,
+    handleStartDateInput: range.handleStartDateInput,
+    handleStartTimeInput: range.handleStartTimeInput,
+    handleStartKeydown: range.handleStartKeydown,
+    handleStopDateInput: range.handleStopDateInput,
+    handleStopTimeInput: range.handleStopTimeInput,
+    handleStopKeydown: range.handleStopKeydown,
     knownTask,
     note,
-    applyDurationToStop,
-    normalizeDuration,
-    normalizeStartTime,
-    normalizeStopTime,
+    normalizeDuration: range.normalizeDuration,
+    normalizeStartDate: range.normalizeStartDate,
+    normalizeStartTime: range.normalizeStartTime,
+    normalizeStopDate: range.normalizeStopDate,
+    normalizeStopTime: range.normalizeStopTime,
     readOnly,
+    rangePreview,
     reset,
-    start,
-    stop,
+    startDateInput: range.startDateInput,
+    start: range.start,
+    stopDayLabel: range.stopDayLabel,
+    stopDayOffset: range.stopDayOffset,
+    stopDateInput: range.stopDateInput,
+    stop: range.stop,
     submit,
     ticketKey,
+    toggleAdvancedStopDate: range.toggleAdvancedStopDate,
   };
 };

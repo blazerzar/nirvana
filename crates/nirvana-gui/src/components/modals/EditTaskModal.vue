@@ -8,26 +8,38 @@ import ModalShell from "./ModalShell.vue";
 const tasks = useAllTasksStore();
 const editModal = useEditTaskModal();
 const {
+  advancedStopDateVisible,
   computedError,
   deleteSession,
   durationInput,
   error,
   firstField,
+  handleDurationInput,
   handleDurationKeydown,
+  handleStartDateInput,
   handleStartKeydown,
+  handleStartTimeInput,
+  handleStopDateInput,
   handleStopKeydown,
-  knownTask,
+  handleStopTimeInput,
   note,
-  applyDurationToStop,
   normalizeDuration,
+  normalizeStartDate,
   normalizeStartTime,
+  normalizeStopDate,
   normalizeStopTime,
   readOnly,
+  rangePreview,
   reset,
+  startDateInput,
   start,
+  stopDayLabel,
+  stopDayOffset,
+  stopDateInput,
   stop,
   submit,
   ticketKey,
+  toggleAdvancedStopDate,
 } = editModal;
 
 onMounted(async () => {
@@ -93,16 +105,31 @@ onMounted(async () => {
             inputmode="text"
             placeholder="30m"
             autocomplete="off"
-            @input="applyDurationToStop"
+            @input="handleDurationInput"
             @blur="normalizeDuration"
             @keydown="handleDurationKeydown"
           />
         </label>
+      </div>
 
+      <div class="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 max-[760px]:grid-cols-1">
         <label class="flex min-w-0 flex-col gap-1.5">
-          <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Start time</span>
+          <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Date</span>
           <input
             ref="firstField"
+            v-model="startDateInput"
+            class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) read-only:cursor-default read-only:text-(--muted) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
+            type="date"
+            autocomplete="off"
+            @input="handleStartDateInput"
+            @change="normalizeStartDate"
+            @blur="normalizeStartDate"
+          />
+        </label>
+
+        <label class="flex min-w-0 flex-col gap-1.5">
+          <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Start</span>
+          <input
             v-model="start"
             class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) read-only:cursor-default read-only:text-(--muted) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
             type="text"
@@ -110,24 +137,50 @@ onMounted(async () => {
             pattern="[0-9]{1,2}:[0-9]{2}"
             placeholder="14:30"
             autocomplete="off"
+            @input="handleStartTimeInput"
             @blur="normalizeStartTime"
             @keydown="handleStartKeydown"
           />
         </label>
 
         <label class="flex min-w-0 flex-col gap-1.5">
-          <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Stop time</span>
-          <input
-            v-model="stop"
-            class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) read-only:cursor-default read-only:text-(--muted) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
-            type="text"
-            inputmode="numeric"
-            pattern="[0-9]{1,2}:[0-9]{2}"
-            placeholder="Leave empty for running"
-            autocomplete="off"
-            @blur="normalizeStopTime"
-            @keydown="handleStopKeydown"
-          />
+          <span class="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">
+            <span>Stop</span>
+            <button
+              type="button"
+              class="rounded border px-1.5 py-px text-[9px] leading-none transition-[color,background,border-color] duration-150 ease-[var(--ease)]"
+              :class="stopDayOffset === 0 && !advancedStopDateVisible ? 'border-(--border) bg-(--surface) text-(--very-faint) hover:text-(--muted)' : 'border-(--accent) bg-(--surface-selected) text-(--accent)'"
+              title="Edit stop date"
+              @click="toggleAdvancedStopDate"
+            >
+              {{ stopDayLabel }}
+            </button>
+          </span>
+          <div class="grid grid-cols-[minmax(0,1fr)] gap-2" :class="advancedStopDateVisible ? 'grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]' : ''">
+            <input
+              v-model="stop"
+              class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) read-only:cursor-default read-only:text-(--muted) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
+              type="text"
+              inputmode="numeric"
+              pattern="[0-9]{1,2}:[0-9]{2}"
+              placeholder="Leave empty for running"
+              autocomplete="off"
+              @input="handleStopTimeInput"
+              @blur="normalizeStopTime"
+              @keydown="handleStopKeydown"
+            />
+            <input
+              v-if="advancedStopDateVisible"
+              v-model="stopDateInput"
+              class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) read-only:cursor-default read-only:text-(--muted) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
+              type="date"
+              aria-label="Stop date"
+              autocomplete="off"
+              @input="handleStopDateInput"
+              @change="normalizeStopDate"
+              @blur="normalizeStopDate"
+            />
+          </div>
         </label>
       </div>
 
@@ -144,7 +197,7 @@ onMounted(async () => {
       <p
         class="mt-0.5 mb-0 min-h-[18px] rounded-md border border-(--border) bg-(--surface) px-2.5 py-2 text-[11px] text-(--muted)"
       >
-        {{ knownTask ? `Saving ${knownTask.key}` : "Ticket changes are not supported yet." }}
+        {{ rangePreview }}
       </p>
       <p class="m-0 min-h-4 text-[11px] text-(--danger)">{{ error || computedError }}</p>
     </div>

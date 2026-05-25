@@ -8,6 +8,34 @@ export const parseDateTimeInput = (value: string) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+export const formatDateInput = (date: Date) => {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+export const parseDateInput = (value: string) => {
+  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
 export type TimeParts = {
   hours: number;
   minutes: number;
@@ -104,3 +132,6 @@ export const applyTimeParts = (date: Date, time: TimeParts) => {
   nextDate.setHours(time.hours, time.minutes, time.seconds, 0);
   return nextDate;
 };
+
+export const applyDateAndTimeParts = (date: Date, time: TimeParts) =>
+  applyTimeParts(date, time);

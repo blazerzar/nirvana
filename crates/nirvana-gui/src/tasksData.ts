@@ -11,10 +11,18 @@ const dateAt = (dayOffset: number, hour: number, minute = 0) => {
 const minutesAgo = (minutes: number) =>
   new Date(Date.now() - minutes * 60 * 1000);
 
-const task = (item: Omit<Task, "url">): Task => ({
-  ...item,
-  url: ticketUrlForKey(item.key),
-});
+const task = (item: Omit<Task, "url" | "lastWorkedAt">): Task => {
+  const lastWorkedAt = Math.max(
+    0,
+    ...item.sessions.map((session) => session.start.getTime()),
+  );
+
+  return {
+    ...item,
+    lastWorkedAt,
+    url: ticketUrlForKey(item.key),
+  };
+};
 
 export const createTasksData = (): Task[] => [
   task({

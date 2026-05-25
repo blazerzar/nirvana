@@ -95,7 +95,7 @@ export const useSessionRangeEditor = ({
   });
   const stopDayLabel = computed(() => stopDayLabelForOffset(stopDayOffset.value));
 
-  const hasStopInput = () => Boolean(stopDateInput.value || stop.value);
+  const hasStopInput = () => Boolean(stop.value.trim());
 
   const syncDurationFromTimes = () => {
     if (!parsedStart.value) return;
@@ -155,6 +155,13 @@ export const useSessionRangeEditor = ({
 
   const handleStopTimeInput = () => {
     clearSubmitError();
+    if (!stop.value.trim()) {
+      if (allowRunningStop) {
+        stopDateInput.value = "";
+      }
+      return;
+    }
+
     if (!parseTimeParts(stop.value)) return;
 
     preserveStopDateFromTime();

@@ -4,6 +4,7 @@ import { normalizeTicketKey, normalizedNote } from "../tasks/operations";
 import {
   activeSessionFor,
   activeTaskFor,
+  hasMultiDaySessionsForDay,
   previousTaskFor,
   selectedSessionEntryFor,
   selectedTaskFor,
@@ -17,7 +18,9 @@ import {
   formatClock,
   formatDayLabel,
   formatDuration,
+  isSameDay,
   startOfDay,
+  timestampRangeOverlapsDay,
 } from "../tasks/time";
 import {
   BackendSlot,
@@ -61,6 +64,12 @@ const dateRangeSeconds = (selectedDate: Date) => {
 };
 
 const dateKey = (date: Date) => startOfDay(date).toISOString();
+
+const slotOverlapsDate = (slot: BackendSlot, date: Date, now: Date) => {
+  const start = new Date(slot.started_at * 1000);
+  const end = slot.stopped_at !== null ? new Date(slot.stopped_at * 1000) : now;
+  return timestampRangeOverlapsDay(start, end, date);
+};
 
 const buildTasksFromBackend = (
   slots: BackendSlot[],
@@ -193,6 +202,9 @@ export const useAllTasksStore = defineStore("allTasks", {
     selectedDateUnpublishedTotalMs(state): number {
       return unpublishedDurationForDay(state.tasks, state.selectedDate, state.now);
     },
+    hasMultiDaySessions(state): boolean {
+      return hasMultiDaySessionsForDay(state.tasks, state.selectedDate, state.now);
+    },
     selectedTask(state): Task | null {
       return selectedTaskFor(state.tasks, state.selectedTaskId);
     },
@@ -204,7 +216,8 @@ export const useAllTasksStore = defineStore("allTasks", {
         .filter(
           (entry) =>
             entry.session.publishState === "unpublished" &&
-            entry.session.end !== null,
+            entry.session.end !== null &&
+            isSameDay(entry.session.start, state.selectedDate),
         );
     },
     canOpenPublishModal(state): boolean {
@@ -213,7 +226,8 @@ export const useAllTasksStore = defineStore("allTasks", {
         timelineSessionsForDay(state.tasks, state.selectedDate, state.now).some(
           (entry) =>
             entry.session.publishState === "unpublished" &&
-            entry.session.end !== null,
+            entry.session.end !== null &&
+            isSameDay(entry.session.start, state.selectedDate),
         )
       );
     },
@@ -579,6 +593,9 @@ export const useAllTasksStore = defineStore("allTasks", {
               : null,
           },
         });
+        if (!slotOverlapsDate(slot, this.selectedDate, this.now)) {
+          this.selectedDate = startOfDay(new Date(slot.started_at * 1000));
+        }
         await this.loadSelectedDate();
         this.selectSession(slot.id);
         this.expandedTaskIds = Array.from(

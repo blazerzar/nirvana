@@ -7,36 +7,46 @@ import ModalShell from "./ModalShell.vue";
 const tasks = useAllTasksStore();
 const createModal = useCreateTaskModal();
 const {
+  advancedStopDateVisible,
   computedError,
-  dateInput,
   durationInput,
   firstField,
+  handleDurationInput,
   handleDurationKeydown,
   handleNoteKeydown,
+  handleStartDateInput,
   handleStartKeydown,
+  handleStartTimeInput,
+  handleStopDateInput,
   handleStopKeydown,
+  handleStopTimeInput,
   handleTicketKeydown,
   highlightedResultIndex,
   knownTask,
   localError,
   note,
   noteField,
-  applyDurationToStop,
-  normalizeDate,
+  normalizeStartDate,
+  normalizeStopDate,
   normalizeStartTime,
   normalizeStopTime,
   normalizeDuration,
   reset,
+  rangePreview,
   searchOpen,
   searchResults,
   selectSearchResult,
   shouldShowSearch,
   slotCountLabel,
+  startDateInput,
   start,
-  statusText,
+  stopDayLabel,
+  stopDayOffset,
+  stopDateInput,
   stop,
   submit,
   ticketKey,
+  toggleAdvancedStopDate,
 } = createModal;
 
 onMounted(async () => {
@@ -116,7 +126,7 @@ onMounted(async () => {
             inputmode="text"
             placeholder="30m"
             autocomplete="off"
-            @input="applyDurationToStop"
+            @input="handleDurationInput"
             @blur="normalizeDuration"
             @keydown="handleDurationKeydown"
           />
@@ -135,18 +145,19 @@ onMounted(async () => {
         <label class="flex min-w-0 flex-col gap-1.5">
           <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Date</span>
           <input
-            v-model="dateInput"
+            v-model="startDateInput"
             class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
             type="date"
             autocomplete="off"
             :disabled="tasks.loading"
-            @change="normalizeDate"
-            @blur="normalizeDate"
+            @input="handleStartDateInput"
+            @change="normalizeStartDate"
+            @blur="normalizeStartDate"
           />
         </label>
 
         <label class="flex min-w-0 flex-col gap-1.5">
-          <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Start time</span>
+          <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Start</span>
           <input
             v-model="start"
             class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
@@ -155,24 +166,51 @@ onMounted(async () => {
             pattern="[0-9]{1,2}:[0-9]{2}"
             placeholder="14:30"
             autocomplete="off"
+            @input="handleStartTimeInput"
             @blur="normalizeStartTime"
             @keydown="handleStartKeydown"
           />
         </label>
 
         <label class="flex min-w-0 flex-col gap-1.5">
-          <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Stop time</span>
-          <input
-            v-model="stop"
-            class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
-            type="text"
-            inputmode="numeric"
-            pattern="[0-9]{1,2}:[0-9]{2}"
-            placeholder="15:00"
-            autocomplete="off"
-            @blur="normalizeStopTime"
-            @keydown="handleStopKeydown"
-          />
+          <span class="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">
+            <span>Stop</span>
+            <button
+              type="button"
+              class="rounded border px-1.5 py-px text-[9px] leading-none transition-[color,background,border-color] duration-150 ease-[var(--ease)]"
+              :class="stopDayOffset === 0 && !advancedStopDateVisible ? 'border-(--border) bg-(--surface) text-(--very-faint) hover:text-(--muted)' : 'border-(--accent) bg-(--surface-selected) text-(--accent)'"
+              title="Edit stop date"
+              @click="toggleAdvancedStopDate"
+            >
+              {{ stopDayLabel }}
+            </button>
+          </span>
+          <div class="grid grid-cols-[minmax(0,1fr)] gap-2" :class="advancedStopDateVisible ? 'grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]' : ''">
+            <input
+              v-model="stop"
+              class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
+              type="text"
+              inputmode="numeric"
+              pattern="[0-9]{1,2}:[0-9]{2}"
+              placeholder="15:00"
+              autocomplete="off"
+              @input="handleStopTimeInput"
+              @blur="normalizeStopTime"
+              @keydown="handleStopKeydown"
+            />
+            <input
+              v-if="advancedStopDateVisible"
+              v-model="stopDateInput"
+              class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
+              type="date"
+              aria-label="Stop date"
+              autocomplete="off"
+              :disabled="tasks.loading"
+              @input="handleStopDateInput"
+              @change="normalizeStopDate"
+              @blur="normalizeStopDate"
+            />
+          </div>
         </label>
       </div>
 
@@ -191,7 +229,7 @@ onMounted(async () => {
       <p
         class="mt-0.5 mb-0 min-h-[18px] rounded-md border border-(--border) bg-(--surface) px-2.5 py-2 text-[11px] text-(--muted)"
       >
-        {{ statusText }}
+        {{ rangePreview }}
       </p>
       <p class="m-0 min-h-4 text-[11px] text-(--danger)">
         {{ localError || tasks.error || computedError }}

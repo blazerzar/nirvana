@@ -1,16 +1,12 @@
 import { computed, nextTick, ref, watch } from "vue";
-import { formatClock, useAllTasksStore } from "../stores/allTasks";
+import { useAllTasksStore } from "../stores/allTasks";
 import { startOfDay } from "../tasks/time";
 import { Task } from "../types/types";
+import { formatDurationInput } from "./dateTimeInputs";
 import {
-  applyTimeParts,
-  formatDurationInput,
-  formatTimeInput,
-  formatTimeParts,
-  parseDurationInput,
-  parseTimeParts,
-  wrapTimePart,
-} from "./dateTimeInputs";
+  formatCompletedRangePreview,
+  useSessionRangeEditor,
+} from "./useSessionRangeEditor";
 
 type TicketSearchResult = {
   task: Task;
@@ -18,33 +14,6 @@ type TicketSearchResult = {
 };
 
 const normalizeTicketKey = (value: string) => value.trim().toUpperCase();
-
-const formatDateInput = (date: Date) => {
-  const year = date.getFullYear();
-  const month = (date.getMonth() + 1).toString().padStart(2, "0");
-  const day = date.getDate().toString().padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const parseDateInput = (value: string) => {
-  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const date = new Date(year, month - 1, day);
-
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day
-  ) {
-    return null;
-  }
-
-  return startOfDay(date);
-};
 
 const fuzzyScore = (query: string, candidate: string) => {
   const normalizedQuery = query.trim().toLowerCase();
@@ -81,13 +50,20 @@ export const useCreateTaskModal = () => {
   const noteField = ref<HTMLInputElement | null>(null);
   const ticketKey = ref("");
   const note = ref("");
-  const dateInput = ref("");
-  const start = ref("");
-  const stop = ref("");
-  const durationInput = ref("");
   const localError = ref("");
   const searchOpen = ref(false);
   const highlightedResultIndex = ref(0);
+
+  const clearSubmitError = () => {
+    localError.value = "";
+    tasks.error = "";
+  };
+
+  const range = useSessionRangeEditor({
+    allowRunningStop: false,
+    clearSubmitError,
+    now: () => tasks.now,
+  });
 
   const knownTask = computed(
     () =>
@@ -123,31 +99,9 @@ export const useCreateTaskModal = () => {
       searchResults.value.length > 0,
   );
 
-  const parsedDate = computed(() => parseDateInput(dateInput.value));
-
-  const parsedStart = computed(() => {
-    if (!parsedDate.value) return null;
-
-    const time = parseTimeParts(start.value);
-    if (!time) return null;
-
-    return applyTimeParts(parsedDate.value, time);
-  });
-
-  const parsedStop = computed(() => {
-    if (!parsedDate.value) return null;
-
-    const time = parseTimeParts(stop.value);
-    if (!time) return null;
-
-    return applyTimeParts(parsedDate.value, time);
-  });
-
-  const parsedDurationMs = computed(() => parseDurationInput(durationInput.value));
-
   const overlapsExistingSlot = computed(() => {
-    const proposedStart = parsedStart.value;
-    const proposedStop = parsedStop.value;
+    const proposedStart = range.parsedStart.value;
+    const proposedStop = range.parsedStop.value;
     if (!proposedStart || !proposedStop) return false;
 
     const proposedStartMs = proposedStart.getTime();
@@ -166,22 +120,24 @@ export const useCreateTaskModal = () => {
   const computedError = computed(() => {
     if (tasks.activeModal !== "create") return "";
     if (!normalizeTicketKey(ticketKey.value)) return "Ticket key is required.";
-    if (!dateInput.value.trim()) return "Date is required.";
-    if (!parsedDate.value) return "Date is invalid.";
-    if (!start.value.trim()) return "Start time is required.";
-    if (!stop.value.trim()) return "Stop time is required.";
-    if (!parsedStart.value) return "Start time is invalid.";
-    if (!parsedStop.value) return "Stop time is invalid.";
-    if (!durationInput.value.trim()) return "Duration is required.";
-    if (!parsedDurationMs.value || parsedDurationMs.value <= 0) {
-      return "Duration is invalid.";
-    }
-    if (parsedStop.value.getTime() <= parsedStart.value.getTime()) {
+    if (!range.startDateInput.value.trim()) return "Start date is required.";
+    if (!range.parsedStartDate.value) return "Start date is invalid.";
+    if (!range.stopDateInput.value.trim()) return "Stop date is required.";
+    if (!range.parsedStopDate.value) return "Stop date is invalid.";
+    if (!range.start.value.trim()) return "Start time is required.";
+    if (!range.stop.value.trim()) return "Stop time is required.";
+    if (!range.parsedStart.value) return "Start time is invalid.";
+    if (!range.parsedStop.value) return "Stop time is invalid.";
+    if (range.parsedStop.value.getTime() <= range.parsedStart.value.getTime()) {
       return "Stop must be after start.";
     }
+    if (!range.durationInput.value.trim()) return "Duration is required.";
+    if (!range.parsedDurationMs.value || range.parsedDurationMs.value <= 0) {
+      return "Duration is invalid.";
+    }
     if (
-      parsedStart.value.getTime() > tasks.now.getTime() ||
-      parsedStop.value.getTime() > tasks.now.getTime()
+      range.parsedStart.value.getTime() > tasks.now.getTime() ||
+      range.parsedStop.value.getTime() > tasks.now.getTime()
     ) {
       return "Slot time cannot be in the future.";
     }
@@ -191,11 +147,18 @@ export const useCreateTaskModal = () => {
     return "";
   });
 
-  const statusText = computed(() => {
+  const rangePreview = computed(() => {
     const key = normalizeTicketKey(ticketKey.value);
 
-    if (key && parsedStart.value && parsedStop.value && !computedError.value) {
-      return `Adding ${knownTask.value?.key ?? key} on ${dateInput.value} from ${formatClock(parsedStart.value)} to ${formatClock(parsedStop.value)}.`;
+    if (key && range.parsedStart.value && range.parsedStop.value && !computedError.value) {
+      const preview = formatCompletedRangePreview(
+        range.parsedStart.value,
+        range.parsedStop.value,
+        formatDurationInput(range.parsedDurationMs.value ?? 0),
+        range.stopDayOffset.value,
+      );
+
+      return `${knownTask.value?.key ?? key} · ${preview}`;
     }
 
     return key
@@ -213,20 +176,14 @@ export const useCreateTaskModal = () => {
 
     ticketKey.value = tasks.selectedTask?.key ?? "";
     note.value = "";
-    dateInput.value = formatDateInput(tasks.selectedDate);
-    start.value = formatTimeInput(fallbackStart);
-    stop.value = formatTimeInput(fallbackStop);
-    durationInput.value = formatDurationInput(
-      fallbackStop.getTime() - fallbackStart.getTime(),
-    );
+    range.setRangeInputs({
+      start: fallbackStart,
+      stop: fallbackStop,
+      durationMs: fallbackStop.getTime() - fallbackStart.getTime(),
+    });
     localError.value = "";
     searchOpen.value = true;
     highlightedResultIndex.value = 0;
-    tasks.error = "";
-  };
-
-  const clearSubmitError = () => {
-    localError.value = "";
     tasks.error = "";
   };
 
@@ -241,7 +198,10 @@ export const useCreateTaskModal = () => {
     searchOpen.value = true;
     highlightedResultIndex.value = 0;
   });
-  watch([note, dateInput, start, stop, durationInput], clearSubmitError);
+  watch(
+    [note, range.startDateInput, range.stopDateInput, range.start, range.stop, range.durationInput],
+    clearSubmitError,
+  );
 
   const selectSearchResult = async (task: Task) => {
     ticketKey.value = task.key;
@@ -292,117 +252,22 @@ export const useCreateTaskModal = () => {
     submit();
   };
 
-  const normalizeDate = async () => {
-    const date = parsedDate.value;
+  const normalizeStartDate = async () => {
+    const date = range.normalizeStartDate();
     if (!date) return;
 
-    dateInput.value = formatDateInput(date);
-    clearSubmitError();
     await tasks.setSelectedDate(date);
   };
 
-  const normalizeTime = (value: typeof start) => {
-    const time = parseTimeParts(value.value);
-    if (!time) return;
-
-    value.value = formatTimeParts(time.hours, time.minutes);
-  };
-
-  const syncDurationFromTimes = () => {
-    if (!parsedStart.value || !parsedStop.value) return;
-
-    durationInput.value = formatDurationInput(
-      parsedStop.value.getTime() - parsedStart.value.getTime(),
-    );
-  };
-
-  const applyDurationToStop = () => {
-    if (!parsedStart.value || !parsedDurationMs.value) return;
-
-    stop.value = formatTimeInput(
-      new Date(parsedStart.value.getTime() + parsedDurationMs.value),
-    );
-  };
-
-  const normalizeDuration = () => {
-    if (!parsedDurationMs.value) return;
-
-    durationInput.value = formatDurationInput(parsedDurationMs.value);
-    applyDurationToStop();
-  };
-
-  const handleDurationKeydown = (event: KeyboardEvent) => {
-    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-
-    event.preventDefault();
-
-    const direction = event.key === "ArrowUp" ? 1 : -1;
-    const currentMs = parsedDurationMs.value ?? 30 * 60 * 1000;
-    const stepMs = 5 * 60 * 1000;
-    const nextMs = Math.max(60 * 1000, currentMs + direction * stepMs);
-
-    durationInput.value = formatDurationInput(nextMs);
-    applyDurationToStop();
-  };
-
-  const handleTimeKeydown = async (
-    event: KeyboardEvent,
-    value: typeof start,
-  ) => {
-    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-
-    event.preventDefault();
-
-    const input = event.currentTarget as HTMLInputElement;
-    const direction = event.key === "ArrowUp" ? 1 : -1;
-    const fallback = value.value || (value === stop ? start.value : stop.value);
-    const time = parseTimeParts(value.value) ?? parseTimeParts(fallback);
-    if (!time) return;
-
-    const separatorIndex = value.value.indexOf(":");
-    const editingMinutes =
-      separatorIndex !== -1 &&
-      input.selectionStart !== null &&
-      input.selectionStart > separatorIndex;
-    const nextHours = editingMinutes
-      ? time.hours
-      : wrapTimePart(time.hours + direction, 24);
-    const nextMinutes = editingMinutes
-      ? wrapTimePart(time.minutes + direction, 60)
-      : time.minutes;
-
-    value.value = formatTimeParts(nextHours, nextMinutes);
-    await nextTick();
-
-    if (editingMinutes) {
-      input.setSelectionRange(3, 5);
-    } else {
-      input.setSelectionRange(0, 2);
-    }
-  };
-
-  const normalizeStartTime = () => {
-    normalizeTime(start);
-    applyDurationToStop();
-  };
-  const normalizeStopTime = () => {
-    normalizeTime(stop);
-    syncDurationFromTimes();
-  };
-  const handleStartKeydown = (event: KeyboardEvent) =>
-    handleTimeKeydown(event, start);
-  const handleStopKeydown = (event: KeyboardEvent) =>
-    handleTimeKeydown(event, stop);
-
   const submit = async () => {
     localError.value = computedError.value;
-    if (localError.value || !parsedStart.value || !parsedStop.value) return;
+    if (localError.value || !range.parsedStart.value || !range.parsedStop.value) return;
 
     const saved = await tasks.createSession({
       ticketKey: ticketKey.value,
       note: note.value,
-      start: parsedStart.value,
-      end: parsedStop.value,
+      start: range.parsedStart.value,
+      end: range.parsedStop.value,
     });
 
     if (!saved) {
@@ -414,35 +279,45 @@ export const useCreateTaskModal = () => {
     `${task.sessions.length} ${task.sessions.length === 1 ? "slot" : "slots"}`;
 
   return {
+    advancedStopDateVisible: range.advancedStopDateVisible,
     computedError,
-    dateInput,
-    durationInput,
+    durationInput: range.durationInput,
     firstField,
-    normalizeDate,
+    normalizeStartDate,
+    normalizeStopDate: range.normalizeStopDate,
+    handleDurationInput: range.handleDurationInput,
     handleNoteKeydown,
-    handleDurationKeydown,
-    handleStartKeydown,
-    handleStopKeydown,
+    handleStartDateInput: range.handleStartDateInput,
+    handleDurationKeydown: range.handleDurationKeydown,
+    handleStartTimeInput: range.handleStartTimeInput,
+    handleStartKeydown: range.handleStartKeydown,
+    handleStopDateInput: range.handleStopDateInput,
+    handleStopTimeInput: range.handleStopTimeInput,
+    handleStopKeydown: range.handleStopKeydown,
     handleTicketKeydown,
     highlightedResultIndex,
     knownTask,
     localError,
     note,
     noteField,
-    applyDurationToStop,
-    normalizeStartTime,
-    normalizeStopTime,
-    normalizeDuration,
+    normalizeStartTime: range.normalizeStartTime,
+    normalizeStopTime: range.normalizeStopTime,
+    normalizeDuration: range.normalizeDuration,
     reset,
+    rangePreview,
     searchOpen,
     searchResults,
     selectSearchResult,
     shouldShowSearch,
     slotCountLabel,
-    start,
-    statusText,
-    stop,
+    startDateInput: range.startDateInput,
+    start: range.start,
+    stopDayLabel: range.stopDayLabel,
+    stopDayOffset: range.stopDayOffset,
+    stopDateInput: range.stopDateInput,
+    stop: range.stop,
     submit,
     ticketKey,
+    toggleAdvancedStopDate: range.toggleAdvancedStopDate,
   };
 };

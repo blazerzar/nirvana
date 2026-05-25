@@ -55,6 +55,7 @@ export type BackendTicket = {
   id: number;
   ticket_key: string;
   summary: string | null;
+  last_worked_at: number;
   issue_url: string | null;
 };
 
@@ -92,6 +93,7 @@ export type Task = {
   key: string;
   title: string;
   status: TaskStatus;
+  lastWorkedAt: number;
   url?: string;
   sessions: TaskSession[];
 };

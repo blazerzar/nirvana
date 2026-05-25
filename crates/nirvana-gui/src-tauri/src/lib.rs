@@ -67,6 +67,7 @@ struct GuiTicket {
     id: i64,
     ticket_key: String,
     summary: Option<String>,
+    last_worked_at: i64,
     issue_url: Option<String>,
 }
 
@@ -171,6 +172,7 @@ impl From<Ticket> for GuiTicket {
             id: ticket.id,
             ticket_key: ticket.ticket_key.clone(),
             summary: ticket.summary,
+            last_worked_at: ticket.last_worked_at,
             issue_url: None,
         }
     }

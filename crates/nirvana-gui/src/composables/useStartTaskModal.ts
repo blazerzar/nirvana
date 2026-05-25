@@ -27,12 +27,16 @@ export const useStartTaskModal = () => {
     ticketKey,
     focusAfterSelect: noteField,
     onTicketInput: clearSubmitError,
+    sortByRecent: true,
   });
 
   const activeTaskWarning = computed(() => {
+    const key = normalizeTicketKey(ticketKey.value);
+
     if (
+      !key ||
       !tasks.activeTask ||
-      tasks.activeTask.key === normalizeTicketKey(ticketKey.value)
+      tasks.activeTask.key === key
     ) {
       return "";
     }
@@ -109,7 +113,7 @@ export const useStartTaskModal = () => {
   const error = computed(() => tasks.error || validationError.value);
 
   const reset = () => {
-    ticketKey.value = tasks.selectedTask?.key ?? "";
+    ticketKey.value = "";
     note.value = "";
     start.value = formatTimeInput(new Date(tasks.now));
     ticketSearch.searchOpen.value = true;

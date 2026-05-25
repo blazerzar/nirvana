@@ -12,6 +12,7 @@ type TicketKeySearchOptions = {
   ticketKey: Ref<string>;
   focusAfterSelect?: Ref<HTMLElement | null>;
   onTicketInput?: () => void;
+  sortByRecent?: boolean;
 };
 
 export const normalizeTicketKey = (value: string) => value.trim().toUpperCase();
@@ -50,6 +51,7 @@ export const useTicketKeySearch = ({
   ticketKey,
   focusAfterSelect,
   onTicketInput,
+  sortByRecent = false,
 }: TicketKeySearchOptions) => {
   const tasks = useAllTasksStore();
   const searchOpen = ref(false);
@@ -77,6 +79,9 @@ export const useTicketKeySearch = ({
       .filter((result) => result.score > 0)
       .sort((left, right) => {
         if (right.score !== left.score) return right.score - left.score;
+        if (sortByRecent && right.task.lastWorkedAt !== left.task.lastWorkedAt) {
+          return right.task.lastWorkedAt - left.task.lastWorkedAt;
+        }
         return left.task.key.localeCompare(right.task.key);
       })
       .slice(0, 6);

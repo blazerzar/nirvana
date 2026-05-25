@@ -81,6 +81,7 @@ const buildTasksFromBackend = (
     ticketKey: string,
     title?: string | null,
     url?: string | null,
+    lastWorkedAt = 0,
   ) => {
     const key = normalizeTicketKey(ticketKey);
     const existing = tasksByKey.get(key);
@@ -92,6 +93,7 @@ const buildTasksFromBackend = (
       if (url) {
         existing.url = url;
       }
+      existing.lastWorkedAt = Math.max(existing.lastWorkedAt, lastWorkedAt);
       return existing;
     }
 
@@ -100,6 +102,7 @@ const buildTasksFromBackend = (
       key,
       title: title || key,
       status: TaskStatus.Idle,
+      lastWorkedAt,
       url: url ?? undefined,
       sessions: [],
     };
@@ -109,11 +112,21 @@ const buildTasksFromBackend = (
   };
 
   tickets.forEach((ticket) => {
-    ensureTask(ticket.ticket_key, ticket.summary, ticket.issue_url);
+    ensureTask(
+      ticket.ticket_key,
+      ticket.summary,
+      ticket.issue_url,
+      ticket.last_worked_at * 1000,
+    );
   });
 
   slots.forEach((slot) => {
-    const task = ensureTask(slot.ticket_key, slot.summary, slot.issue_url);
+    const task = ensureTask(
+      slot.ticket_key,
+      slot.summary,
+      slot.issue_url,
+      slot.started_at * 1000,
+    );
     const session: TaskSession = {
       id: slot.id,
       taskId: task.id,

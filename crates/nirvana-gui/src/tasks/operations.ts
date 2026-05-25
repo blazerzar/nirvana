@@ -42,6 +42,7 @@ export const ensureTaskForKey = (
     key,
     title: title?.trim() || key,
     status: TaskStatus.Idle,
+    lastWorkedAt: 0,
     url: ticketUrlForKey(key),
     sessions: [],
   };
@@ -89,6 +90,7 @@ export const startTaskSession = (
   };
 
   task.status = TaskStatus.Running;
+  task.lastWorkedAt = Math.max(task.lastWorkedAt, session.start.getTime());
   task.sessions.push(session);
   return { task, session };
 };
@@ -109,6 +111,10 @@ export const updateSession = (tasks: Task[], input: EditSessionInput) => {
   session.start = new Date(input.start);
   session.end = input.end ? new Date(input.end) : null;
   session.note = normalizedNote(input.note);
+  targetTask.lastWorkedAt = Math.max(
+    targetTask.lastWorkedAt,
+    session.start.getTime(),
+  );
 
   if (targetTask.id !== currentTask.id) {
     currentTask.sessions = currentTask.sessions.filter(

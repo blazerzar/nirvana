@@ -71,6 +71,9 @@ struct StopArgs {
 struct EditArgs {
     /// Slot ID to edit
     slot_id: i64,
+    /// Move the slot to a different ticket key
+    #[arg(long)]
+    ticket: Option<String>,
     /// Set or clear the note (use empty string to clear)
     #[arg(long)]
     note: Option<String>,
@@ -197,6 +200,7 @@ pub(crate) fn run() -> anyhow::Result<()> {
             };
             edit::run(edit::EditArgs {
                 slot_id: args.slot_id,
+                ticket_key: args.ticket,
                 note,
                 started_at,
                 stopped_at,

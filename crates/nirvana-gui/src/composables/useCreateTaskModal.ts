@@ -1,48 +1,12 @@
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useAllTasksStore } from "../stores/allTasks";
 import { startOfDay } from "../tasks/time";
-import { Task } from "../types/types";
 import { formatDurationInput } from "./dateTimeInputs";
 import {
   formatCompletedRangePreview,
   useSessionRangeEditor,
 } from "./useSessionRangeEditor";
-
-type TicketSearchResult = {
-  task: Task;
-  score: number;
-};
-
-const normalizeTicketKey = (value: string) => value.trim().toUpperCase();
-
-const fuzzyScore = (query: string, candidate: string) => {
-  const normalizedQuery = query.trim().toLowerCase();
-  const normalizedCandidate = candidate.toLowerCase();
-
-  if (!normalizedQuery) return 1;
-  if (normalizedCandidate === normalizedQuery) return 1000;
-  if (normalizedCandidate.startsWith(normalizedQuery)) {
-    return 800 - normalizedCandidate.length;
-  }
-  if (normalizedCandidate.includes(normalizedQuery)) {
-    return 600 - normalizedCandidate.indexOf(normalizedQuery);
-  }
-
-  let score = 0;
-  let searchIndex = 0;
-  let consecutive = 0;
-
-  for (const character of normalizedQuery) {
-    const foundIndex = normalizedCandidate.indexOf(character, searchIndex);
-    if (foundIndex === -1) return 0;
-
-    consecutive = foundIndex === searchIndex ? consecutive + 1 : 0;
-    score += 12 + consecutive * 8 - foundIndex;
-    searchIndex = foundIndex + 1;
-  }
-
-  return Math.max(1, score);
-};
+import { normalizeTicketKey, useTicketKeySearch } from "./useTicketKeySearch";
 
 export const useCreateTaskModal = () => {
   const tasks = useAllTasksStore();
@@ -51,8 +15,6 @@ export const useCreateTaskModal = () => {
   const ticketKey = ref("");
   const note = ref("");
   const localError = ref("");
-  const searchOpen = ref(false);
-  const highlightedResultIndex = ref(0);
 
   const clearSubmitError = () => {
     localError.value = "";
@@ -65,39 +27,12 @@ export const useCreateTaskModal = () => {
     now: () => tasks.now,
   });
 
-  const knownTask = computed(
-    () =>
-      tasks.tasks.find(
-        (task) => task.key.toUpperCase() === normalizeTicketKey(ticketKey.value),
-      ) ?? null,
-  );
-
-  const searchResults = computed<TicketSearchResult[]>(() => {
-    const query = ticketKey.value.trim();
-
-    return tasks.tasks
-      .map((task) => {
-        const keyScore = fuzzyScore(query, task.key) * 2;
-        const titleScore = fuzzyScore(query, task.title);
-        return {
-          task,
-          score: Math.max(keyScore, titleScore),
-        };
-      })
-      .filter((result) => result.score > 0)
-      .sort((left, right) => {
-        if (right.score !== left.score) return right.score - left.score;
-        return left.task.key.localeCompare(right.task.key);
-      })
-      .slice(0, 6);
+  const ticketSearch = useTicketKeySearch({
+    activeModal: "create",
+    ticketKey,
+    focusAfterSelect: noteField,
+    onTicketInput: clearSubmitError,
   });
-
-  const shouldShowSearch = computed(
-    () =>
-      tasks.activeModal === "create" &&
-      searchOpen.value &&
-      searchResults.value.length > 0,
-  );
 
   const overlapsExistingSlot = computed(() => {
     const proposedStart = range.parsedStart.value;
@@ -158,11 +93,11 @@ export const useCreateTaskModal = () => {
         range.stopDayOffset.value,
       );
 
-      return `${knownTask.value?.key ?? key} · ${preview}`;
+      return `${ticketSearch.knownTask.value?.key ?? key} · ${preview}`;
     }
 
     return key
-      ? `Add completed work for ${knownTask.value?.key ?? key}.`
+      ? `Add completed work for ${ticketSearch.knownTask.value?.key ?? key}.`
       : "Select a ticket or type a new key.";
   });
 
@@ -182,68 +117,15 @@ export const useCreateTaskModal = () => {
       durationMs: fallbackStop.getTime() - fallbackStart.getTime(),
     });
     localError.value = "";
-    searchOpen.value = true;
-    highlightedResultIndex.value = 0;
+    ticketSearch.searchOpen.value = true;
+    ticketSearch.highlightedResultIndex.value = 0;
     tasks.error = "";
   };
 
-  watch(searchResults, (results) => {
-    if (highlightedResultIndex.value >= results.length) {
-      highlightedResultIndex.value = Math.max(0, results.length - 1);
-    }
-  });
-
-  watch(ticketKey, () => {
-    clearSubmitError();
-    searchOpen.value = true;
-    highlightedResultIndex.value = 0;
-  });
   watch(
     [note, range.startDateInput, range.stopDateInput, range.start, range.stop, range.durationInput],
     clearSubmitError,
   );
-
-  const selectSearchResult = async (task: Task) => {
-    ticketKey.value = task.key;
-    highlightedResultIndex.value = 0;
-    await nextTick();
-    searchOpen.value = false;
-    noteField.value?.focus();
-  };
-
-  const handleTicketKeydown = async (event: KeyboardEvent) => {
-    if (event.key === "Escape" && searchOpen.value) {
-      event.preventDefault();
-      searchOpen.value = false;
-      return;
-    }
-
-    if (event.key === "ArrowDown" && searchResults.value.length > 0) {
-      event.preventDefault();
-      searchOpen.value = true;
-      highlightedResultIndex.value =
-        (highlightedResultIndex.value + 1) % searchResults.value.length;
-      return;
-    }
-
-    if (event.key === "ArrowUp" && searchResults.value.length > 0) {
-      event.preventDefault();
-      searchOpen.value = true;
-      highlightedResultIndex.value =
-        (highlightedResultIndex.value - 1 + searchResults.value.length) %
-        searchResults.value.length;
-      return;
-    }
-
-    if (
-      event.key === "Enter" &&
-      shouldShowSearch.value &&
-      searchResults.value[highlightedResultIndex.value]
-    ) {
-      event.preventDefault();
-      await selectSearchResult(searchResults.value[highlightedResultIndex.value].task);
-    }
-  };
 
   const handleNoteKeydown = (event: KeyboardEvent) => {
     if (event.key !== "Enter" || event.isComposing) return;
@@ -275,9 +157,6 @@ export const useCreateTaskModal = () => {
     }
   };
 
-  const slotCountLabel = (task: Task) =>
-    `${task.sessions.length} ${task.sessions.length === 1 ? "slot" : "slots"}`;
-
   return {
     advancedStopDateVisible: range.advancedStopDateVisible,
     computedError,
@@ -294,9 +173,10 @@ export const useCreateTaskModal = () => {
     handleStopDateInput: range.handleStopDateInput,
     handleStopTimeInput: range.handleStopTimeInput,
     handleStopKeydown: range.handleStopKeydown,
-    handleTicketKeydown,
-    highlightedResultIndex,
-    knownTask,
+    handleTicketFocusout: ticketSearch.handleTicketFocusout,
+    handleTicketKeydown: ticketSearch.handleTicketKeydown,
+    highlightedResultIndex: ticketSearch.highlightedResultIndex,
+    knownTask: ticketSearch.knownTask,
     localError,
     note,
     noteField,
@@ -305,11 +185,11 @@ export const useCreateTaskModal = () => {
     normalizeDuration: range.normalizeDuration,
     reset,
     rangePreview,
-    searchOpen,
-    searchResults,
-    selectSearchResult,
-    shouldShowSearch,
-    slotCountLabel,
+    searchOpen: ticketSearch.searchOpen,
+    searchResults: ticketSearch.searchResults,
+    selectSearchResult: ticketSearch.selectSearchResult,
+    shouldShowSearch: ticketSearch.shouldShowSearch,
+    slotCountLabel: ticketSearch.slotCountLabel,
     startDateInput: range.startDateInput,
     start: range.start,
     stopDayLabel: range.stopDayLabel,
@@ -318,6 +198,7 @@ export const useCreateTaskModal = () => {
     stop: range.stop,
     submit,
     ticketKey,
+    ticketSearchRoot: ticketSearch.ticketSearchRoot,
     toggleAdvancedStopDate: range.toggleAdvancedStopDate,
   };
 };

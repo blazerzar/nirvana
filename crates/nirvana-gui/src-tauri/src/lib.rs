@@ -98,6 +98,7 @@ struct CreateSlotInput {
 #[serde(rename_all = "camelCase")]
 struct EditSlotInput {
     slot_id: i64,
+    ticket_key: String,
     note: String,
     started_at: i64,
     stopped_at: Option<i64>,
@@ -397,6 +398,7 @@ fn edit_slot(input: EditSlotInput) -> Result<GuiSlot, String> {
     let api = NirvanaApi::new().map_err(|error| error.to_string())?;
     let note = input.note.trim();
     let edit = SlotEdit {
+        ticket_key: Some(input.ticket_key),
         note: if note.is_empty() {
             Change::Clear
         } else {

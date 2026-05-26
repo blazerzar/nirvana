@@ -105,7 +105,7 @@ impl NirvanaApi {
             ))
     }
 
-    fn resolve_ticket_for_work(
+    pub(crate) fn resolve_ticket_for_work(
         &self,
         connection: &Connection,
         connection_id: i64,
@@ -153,9 +153,11 @@ mod tests {
     use super::*;
     use crate::api::NirvanaError;
     use crate::api::domain::ConnectionData;
+    use crate::api::domain::SlotEdit;
     use crate::config::{AppConfig, CoreConfig, GuiConfig};
     use crate::paths::AppPaths;
-    use crate::storage::{Database, slot_repo::SlotSort};
+    use crate::storage::Database;
+    use crate::storage::slot_repo::{Change, SlotSort};
     use std::ops::Deref;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -356,5 +358,80 @@ mod tests {
         assert_eq!(slots[0].ticket_key, "DES-2");
         assert_eq!(slots[0].started_at, 140);
         assert_eq!(slots[0].stopped_at, Some(220));
+    }
+
+    #[test]
+    fn edits_slot_ticket_to_existing_ticket() {
+        let api = test_api();
+        insert_ticket(&api, "DES-1");
+        insert_ticket(&api, "DES-2");
+        let slot = api.create_slot(slot_create("DES-1", 100, 160)).unwrap();
+
+        let edited = api
+            .edit_slot(
+                slot.id,
+                SlotEdit {
+                    ticket_key: Some("des-2".to_string()),
+                    note: Change::Skip,
+                    started_at: None,
+                    stopped_at: Change::Skip,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(edited.id, slot.id);
+        assert_eq!(edited.ticket_key, "DES-2");
+        assert_eq!(edited.started_at, 100);
+        assert_eq!(edited.stopped_at, Some(160));
+    }
+
+    #[test]
+    fn rejects_ticket_edit_for_published_slot() {
+        let api = test_api();
+        insert_ticket(&api, "DES-1");
+        insert_ticket(&api, "DES-2");
+        let slot = api.create_slot(slot_create("DES-1", 100, 160)).unwrap();
+        slot_repo::mark_published(&api.db, &[slot.id], 200).unwrap();
+
+        let error = api
+            .edit_slot(
+                slot.id,
+                SlotEdit {
+                    ticket_key: Some("DES-2".to_string()),
+                    note: Change::Skip,
+                    started_at: None,
+                    stopped_at: Change::Skip,
+                },
+            )
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            NirvanaError::Tracking(TrackingError::SlotAlreadyPublished)
+        ));
+    }
+
+    #[test]
+    fn edits_slot_note_and_times() {
+        let api = test_api();
+        insert_ticket(&api, "DES-1");
+        let slot = api.create_slot(slot_create("DES-1", 100, 160)).unwrap();
+
+        let edited = api
+            .edit_slot(
+                slot.id,
+                SlotEdit {
+                    ticket_key: None,
+                    note: Change::Set("updated note".to_string()),
+                    started_at: Some(90),
+                    stopped_at: Change::Set(170),
+                },
+            )
+            .unwrap();
+
+        assert_eq!(edited.ticket_key, "DES-1");
+        assert_eq!(edited.note.as_deref(), Some("updated note"));
+        assert_eq!(edited.started_at, 90);
+        assert_eq!(edited.stopped_at, Some(170));
     }
 }

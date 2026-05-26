@@ -52,7 +52,6 @@ export const useTicketKeySearch = ({
   onTicketInput,
 }: TicketKeySearchOptions) => {
   const tasks = useAllTasksStore();
-  const ticketSearchRoot = ref<HTMLElement | null>(null);
   const searchOpen = ref(false);
   const highlightedResultIndex = ref(0);
 
@@ -110,16 +109,6 @@ export const useTicketKeySearch = ({
     focusAfterSelect?.value?.focus();
   };
 
-  const handleTicketFocusout = (event: FocusEvent) => {
-    const nextTarget = event.relatedTarget;
-
-    if (nextTarget instanceof Node && ticketSearchRoot.value?.contains(nextTarget)) {
-      return;
-    }
-
-    searchOpen.value = false;
-  };
-
   const handleTicketKeydown = async (event: KeyboardEvent) => {
     if (event.key === "Escape" && searchOpen.value) {
       event.preventDefault();
@@ -158,7 +147,6 @@ export const useTicketKeySearch = ({
     `${task.sessions.length} ${task.sessions.length === 1 ? "slot" : "slots"}`;
 
   return {
-    handleTicketFocusout,
     handleTicketKeydown,
     highlightedResultIndex,
     knownTask,
@@ -167,6 +155,5 @@ export const useTicketKeySearch = ({
     selectSearchResult,
     shouldShowSearch,
     slotCountLabel,
-    ticketSearchRoot,
   };
 };

@@ -178,7 +178,6 @@ export const useStartTaskModal = () => {
     firstField,
     handleNoteKeydown,
     handleStartKeydown,
-    handleTicketFocusout: ticketSearch.handleTicketFocusout,
     handleTicketKeydown: ticketSearch.handleTicketKeydown,
     highlightedResultIndex: ticketSearch.highlightedResultIndex,
     knownTask: ticketSearch.knownTask,
@@ -195,7 +194,6 @@ export const useStartTaskModal = () => {
     statusText,
     submit,
     ticketKey,
-    ticketSearchRoot: ticketSearch.ticketSearchRoot,
     validationError,
   };
 };

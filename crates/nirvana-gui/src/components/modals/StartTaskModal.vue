@@ -2,6 +2,7 @@
 import { nextTick, onMounted } from "vue";
 import { useStartTaskModal } from "../../composables/useStartTaskModal";
 import { useAllTasksStore } from "../../stores/allTasks";
+import TicketKeyCombobox from "../TicketKeyCombobox.vue";
 import ModalShell from "./ModalShell.vue";
 
 const tasks = useAllTasksStore();
@@ -22,7 +23,6 @@ const {
   searchOpen,
   searchResults,
   selectSearchResult,
-  shouldShowSearch,
   slotCountLabel,
   start,
   statusText,
@@ -53,47 +53,17 @@ onMounted(async () => {
     <div class="flex flex-col gap-3 p-4">
       <label class="flex min-w-0 flex-col gap-1.5">
         <span class="text-[10px] font-bold uppercase tracking-[0.04em] text-(--faint)">Ticket</span>
-        <div class="relative">
-          <input
-            ref="firstField"
-            v-model="ticketKey"
-            class="min-h-[34px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-[7px] text-xs text-(--text) tabular-nums outline-none transition-[border-color,box-shadow] duration-150 ease-[var(--ease)] placeholder:text-(--very-faint) focus:border-(--input-focus) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
-            placeholder="NIR-12"
-            autocomplete="off"
-            aria-autocomplete="list"
-            :aria-expanded="shouldShowSearch"
-            aria-controls="start-ticket-results"
-            @focus="searchOpen = true"
-            @keydown="handleTicketKeydown"
-          />
-
-          <div
-            v-if="shouldShowSearch"
-            id="start-ticket-results"
-            class="absolute top-[calc(100%+5px)] right-0 left-0 z-40 max-h-[min(238px,48vh)] overflow-auto rounded-[7px] border border-(--border) bg-(--panel) shadow-[0_16px_36px_rgba(0,0,0,0.36)]"
-            role="listbox"
-            aria-label="Matching tickets"
-          >
-            <button
-              v-for="(result, index) in searchResults"
-              :key="result.task.id"
-              class="grid min-h-[34px] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-[9px] border-b border-(--border) px-[9px] py-[7px] text-left text-[11px] last:border-b-0 hover:bg-(--surface-selected) hover:text-(--text) max-[760px]:grid-cols-[auto_minmax(0,1fr)]"
-              :class="index === highlightedResultIndex ? 'bg-(--surface-selected) text-(--text)' : 'text-(--muted)'"
-              type="button"
-              role="option"
-              :aria-selected="index === highlightedResultIndex"
-              @mousedown.prevent="selectSearchResult(result.task)"
-              @mouseenter="highlightedResultIndex = index"
-            >
-              <span class="whitespace-nowrap font-[family-name:var(--font-mono)] font-bold text-(--accent)">{{ result.task.key }}</span>
-              <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-inherit">{{ result.task.title }}</span>
-              <span class="whitespace-nowrap text-[10px] text-(--faint) max-[760px]:hidden">
-                {{ slotCountLabel(result.task) }}
-                <span v-if="result.task.status === 'running'">· running</span>
-              </span>
-            </button>
-          </div>
-        </div>
+        <TicketKeyCombobox
+          ref="firstField"
+          v-model="ticketKey"
+          v-model:search-open="searchOpen"
+          v-model:highlighted-result-index="highlightedResultIndex"
+          results-id="start-ticket-results"
+          :search-results="searchResults"
+          :handle-ticket-keydown="handleTicketKeydown"
+          :select-search-result="selectSearchResult"
+          :slot-count-label="slotCountLabel"
+        />
       </label>
 
       <div

@@ -173,7 +173,6 @@ export const useCreateTaskModal = () => {
     handleStopDateInput: range.handleStopDateInput,
     handleStopTimeInput: range.handleStopTimeInput,
     handleStopKeydown: range.handleStopKeydown,
-    handleTicketFocusout: ticketSearch.handleTicketFocusout,
     handleTicketKeydown: ticketSearch.handleTicketKeydown,
     highlightedResultIndex: ticketSearch.highlightedResultIndex,
     knownTask: ticketSearch.knownTask,
@@ -198,7 +197,6 @@ export const useCreateTaskModal = () => {
     stop: range.stop,
     submit,
     ticketKey,
-    ticketSearchRoot: ticketSearch.ticketSearchRoot,
     toggleAdvancedStopDate: range.toggleAdvancedStopDate,
   };
 };

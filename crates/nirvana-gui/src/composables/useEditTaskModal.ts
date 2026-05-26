@@ -168,7 +168,6 @@ export const useEditTaskModal = () => {
     handleStopDateInput: range.handleStopDateInput,
     handleStopTimeInput: range.handleStopTimeInput,
     handleStopKeydown: range.handleStopKeydown,
-    handleTicketFocusout: ticketSearch.handleTicketFocusout,
     handleTicketKeydown: ticketSearch.handleTicketKeydown,
     highlightedResultIndex: ticketSearch.highlightedResultIndex,
     knownTask: ticketSearch.knownTask,
@@ -195,7 +194,6 @@ export const useEditTaskModal = () => {
     stop: range.stop,
     submit,
     ticketKey,
-    ticketSearchRoot: ticketSearch.ticketSearchRoot,
     toggleAdvancedStopDate: range.toggleAdvancedStopDate,
   };
 };

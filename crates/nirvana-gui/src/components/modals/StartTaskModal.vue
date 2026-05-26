@@ -12,19 +12,16 @@ const {
   error,
   firstField,
   handleNoteKeydown,
-  handleStartKeydown,
   handleTicketKeydown,
   highlightedResultIndex,
   knownTask,
   note,
   noteField,
-  normalizeStartTime,
   reset,
   searchOpen,
   searchResults,
   selectSearchResult,
   slotCountLabel,
-  start,
   statusText,
   submit,
   ticketKey,
@@ -83,21 +80,6 @@ onMounted(async () => {
           placeholder="What are you working on?"
           autocomplete="off"
           @keydown="handleNoteKeydown"
-        />
-      </label>
-
-      <label class="flex min-w-0 flex-col gap-1 opacity-70 transition-opacity duration-150 ease-[var(--ease)] focus-within:opacity-100">
-        <span class="text-[9px] font-bold uppercase tracking-[0.04em] text-(--very-faint)">Start time</span>
-        <input
-          v-model="start"
-          class="min-h-[30px] w-full rounded-md border border-(--border) bg-(--input-bg) px-2.5 py-1.5 text-[11px] text-(--faint) tabular-nums outline-none transition-[border-color,box-shadow,color] duration-150 ease-[var(--ease)] focus:border-(--input-focus) focus:text-(--muted) focus:shadow-[0_0_0_2px_var(--input-focus-ring)]"
-          type="text"
-          inputmode="numeric"
-          pattern="[0-9]{1,2}:[0-9]{2}"
-          placeholder="14:30"
-          autocomplete="off"
-          @blur="normalizeStartTime"
-          @keydown="handleStartKeydown"
         />
       </label>
 

@@ -1,7 +1,7 @@
 {
     "$schema": "https://schema.tauri.app/config/2",
     "productName": "nirvana",
-    "version": "0.2.0-pre-alpha",
+    "version": "0.2.1-pre-alpha",
     "identifier": "io.github.blazerzar.nirvana",
     "build": {
         "beforeDevCommand": "bun run dev",
@@ -27,7 +27,7 @@
         "targets": "all",
         "windows": {
             "wix": {
-                "version": "0.2.0.1"
+                "version": "0.2.1.1"
             }
         },
         "icon": [

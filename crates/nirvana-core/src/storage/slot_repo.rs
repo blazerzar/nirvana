@@ -318,6 +318,7 @@ fn map_slot_with_ticket(row: &rusqlite::Row<'_>) -> rusqlite::Result<SlotWithTic
 }
 
 pub(crate) struct SlotUpdate {
+    pub ticket_id: Option<i64>,
     pub note: Change<String>,
     pub started_at: Option<i64>,
     pub stopped_at: Change<i64>,
@@ -336,6 +337,12 @@ pub(crate) fn update(db: &Database, slot_id: i64, changes: &SlotUpdate) -> Resul
     let mut set_clauses: Vec<String> = Vec::new();
     let mut params: Vec<Value> = Vec::new();
     let mut param_idx = 1;
+
+    if let Some(ticket_id) = changes.ticket_id {
+        set_clauses.push(format!("ticket_id = ?{param_idx}"));
+        params.push(Value::Integer(ticket_id));
+        param_idx += 1;
+    }
 
     match &changes.note {
         Change::Skip => {}

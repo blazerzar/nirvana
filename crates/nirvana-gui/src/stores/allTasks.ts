@@ -574,11 +574,6 @@ export const useAllTasksStore = defineStore("allTasks", {
         return false;
       }
 
-      if (normalizeTicketKey(input.ticketKey) !== currentEntry.task.key) {
-        this.error = "Changing a slot's ticket is not supported yet.";
-        return false;
-      }
-
       this.loading = true;
       this.error = "";
 
@@ -586,6 +581,7 @@ export const useAllTasksStore = defineStore("allTasks", {
         const slot = await invoke<BackendSlot>("edit_slot", {
           input: {
             slotId: input.sessionId,
+            ticketKey: input.ticketKey,
             note: normalizedNote(input.note) ?? "",
             startedAt: Math.floor(input.start.getTime() / 1000),
             stoppedAt: input.end

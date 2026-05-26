@@ -1,4 +1,4 @@
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useAllTasksStore } from "../stores/allTasks";
 import { formatDurationInput } from "./dateTimeInputs";
 import {
@@ -6,12 +6,12 @@ import {
   formatRunningRangePreview,
   useSessionRangeEditor,
 } from "./useSessionRangeEditor";
-
-const normalizeTicketKey = (value: string) => value.trim().toUpperCase();
+import { normalizeTicketKey, useTicketKeySearch } from "./useTicketKeySearch";
 
 export const useEditTaskModal = () => {
   const tasks = useAllTasksStore();
   const firstField = ref<HTMLInputElement | null>(null);
+  const noteField = ref<HTMLInputElement | null>(null);
   const ticketKey = ref("");
   const note = ref("");
   const error = ref("");
@@ -29,20 +29,20 @@ export const useEditTaskModal = () => {
 
   const entry = computed(() => tasks.selectedSessionEntry);
 
-  const knownTask = computed(
-    () =>
-      tasks.tasks.find(
-        (task) => task.key.toUpperCase() === normalizeTicketKey(ticketKey.value),
-      ) ?? null,
-  );
+  const ticketSearch = useTicketKeySearch({
+    activeModal: "edit",
+    ticketKey,
+    focusAfterSelect: noteField,
+    onTicketInput: clearSubmitError,
+  });
 
   const readOnly = computed(
     () => entry.value?.session.publishState === "published",
   );
 
   const rangePreview = computed(() => {
-    const key = knownTask.value?.key ?? normalizeTicketKey(ticketKey.value);
-    if (!key || !range.parsedStart.value) return "Ticket changes are not supported yet.";
+    const key = ticketSearch.knownTask.value?.key ?? normalizeTicketKey(ticketKey.value);
+    if (!key || !range.parsedStart.value) return "Select a ticket or type a new key.";
 
     const duration = range.parsedDurationMs.value
       ? formatDurationInput(range.parsedDurationMs.value)
@@ -108,7 +108,14 @@ export const useEditTaskModal = () => {
         selectedEntry.session.start.getTime(),
     });
     note.value = selectedEntry.session.note ?? "";
+    ticketSearch.searchOpen.value = true;
+    ticketSearch.highlightedResultIndex.value = 0;
   };
+
+  watch(
+    [note, range.startDateInput, range.stopDateInput, range.start, range.stop, range.durationInput],
+    clearSubmitError,
+  );
 
   const submit = async () => {
     error.value = computedError.value;
@@ -161,8 +168,12 @@ export const useEditTaskModal = () => {
     handleStopDateInput: range.handleStopDateInput,
     handleStopTimeInput: range.handleStopTimeInput,
     handleStopKeydown: range.handleStopKeydown,
-    knownTask,
+    handleTicketFocusout: ticketSearch.handleTicketFocusout,
+    handleTicketKeydown: ticketSearch.handleTicketKeydown,
+    highlightedResultIndex: ticketSearch.highlightedResultIndex,
+    knownTask: ticketSearch.knownTask,
     note,
+    noteField,
     normalizeDuration: range.normalizeDuration,
     normalizeStartDate: range.normalizeStartDate,
     normalizeStartTime: range.normalizeStartTime,
@@ -171,6 +182,11 @@ export const useEditTaskModal = () => {
     readOnly,
     rangePreview,
     reset,
+    searchOpen: ticketSearch.searchOpen,
+    searchResults: ticketSearch.searchResults,
+    selectSearchResult: ticketSearch.selectSearchResult,
+    shouldShowSearch: ticketSearch.shouldShowSearch,
+    slotCountLabel: ticketSearch.slotCountLabel,
     startDateInput: range.startDateInput,
     start: range.start,
     stopDayLabel: range.stopDayLabel,
@@ -179,6 +195,7 @@ export const useEditTaskModal = () => {
     stop: range.stop,
     submit,
     ticketKey,
+    ticketSearchRoot: ticketSearch.ticketSearchRoot,
     toggleAdvancedStopDate: range.toggleAdvancedStopDate,
   };
 };

@@ -75,9 +75,17 @@ export type BackendSettings = {
   fontScale: number;
   theme: ThemeId;
   showTrayIcon: boolean;
+  idleEnabled: boolean;
+  idleMethods: string[];
+  idleThresholdSecs: number;
 };
 
 export type ThemeId = "nirvana-dark" | "high-contrast-dark" | "soft-light";
+
+export type IdlePeriod = {
+  from: number;
+  to: number;
+};
 
 export type TaskSession = {
   id: number;

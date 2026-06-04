@@ -60,6 +60,9 @@ export const useSettingsStore = defineStore("settings", {
     fontScale: DEFAULT_FONT_SCALE,
     theme: DEFAULT_THEME as ThemeId,
     showTrayIcon: false,
+    idleEnabled: true,
+    idleMethods: ["lock", "sleep", "input"],
+    idleThresholdSecs: 300,
     savedFontScale: DEFAULT_FONT_SCALE,
     savedTheme: DEFAULT_THEME as ThemeId,
     savedShowTrayIcon: false,
@@ -73,6 +76,18 @@ export const useSettingsStore = defineStore("settings", {
     },
   },
   actions: {
+    buildInput(overrides: Partial<Record<string, unknown>> = {}) {
+      return {
+        publishSquashedWorklogs: this.publishSquashedWorklogs,
+        fontScale: this.fontScale,
+        theme: this.theme,
+        showTrayIcon: this.showTrayIcon,
+        idleEnabled: this.idleEnabled,
+        idleMethods: this.idleMethods,
+        idleThresholdSecs: this.idleThresholdSecs,
+        ...overrides,
+      };
+    },
     applyCurrentAppearance() {
       applyAppearance(this.theme, this.fontScale);
     },
@@ -81,10 +96,20 @@ export const useSettingsStore = defineStore("settings", {
       this.fontScale = normalizeFontScale(settings.fontScale);
       this.theme = themeFor(settings.theme).id;
       this.showTrayIcon = settings.showTrayIcon;
+      this.idleEnabled = settings.idleEnabled;
+      this.idleMethods = settings.idleMethods;
+      this.idleThresholdSecs = settings.idleThresholdSecs;
       this.savedFontScale = this.fontScale;
       this.savedTheme = this.theme;
       this.savedShowTrayIcon = this.showTrayIcon;
       this.applyCurrentAppearance();
+    },
+    async save(overrides: Partial<Record<string, unknown>> = {}) {
+      const settings = await invoke<BackendSettings>("update_settings", {
+        input: this.buildInput(overrides),
+      });
+      this.applySettings(settings);
+      this.initialized = true;
     },
     async initialize() {
       if (this.initialized || this.loading) {
@@ -116,16 +141,7 @@ export const useSettingsStore = defineStore("settings", {
       this.error = "";
 
       try {
-        const settings = await invoke<BackendSettings>("update_settings", {
-          input: {
-            publishSquashedWorklogs: value,
-            fontScale: this.fontScale,
-            theme: this.theme,
-            showTrayIcon: this.showTrayIcon,
-          },
-        });
-        this.applySettings(settings);
-        this.initialized = true;
+        await this.save();
       } catch (error) {
         this.publishSquashedWorklogs = previousValue;
         this.applyCurrentAppearance();
@@ -147,16 +163,7 @@ export const useSettingsStore = defineStore("settings", {
       this.error = "";
 
       try {
-        const settings = await invoke<BackendSettings>("update_settings", {
-          input: {
-            publishSquashedWorklogs: this.publishSquashedWorklogs,
-            fontScale: nextValue,
-            theme: this.theme,
-            showTrayIcon: this.showTrayIcon,
-          },
-        });
-        this.applySettings(settings);
-        this.initialized = true;
+        await this.save();
       } catch (error) {
         this.fontScale = previousValue;
         this.applyCurrentAppearance();
@@ -178,16 +185,7 @@ export const useSettingsStore = defineStore("settings", {
       this.error = "";
 
       try {
-        const settings = await invoke<BackendSettings>("update_settings", {
-          input: {
-            publishSquashedWorklogs: this.publishSquashedWorklogs,
-            fontScale: this.fontScale,
-            theme: nextTheme,
-            showTrayIcon: this.showTrayIcon,
-          },
-        });
-        this.applySettings(settings);
-        this.initialized = true;
+        await this.save();
       } catch (error) {
         this.theme = previousTheme;
         this.applyCurrentAppearance();
@@ -207,18 +205,66 @@ export const useSettingsStore = defineStore("settings", {
       this.error = "";
 
       try {
-        const settings = await invoke<BackendSettings>("update_settings", {
-          input: {
-            publishSquashedWorklogs: this.publishSquashedWorklogs,
-            fontScale: this.fontScale,
-            theme: this.theme,
-            showTrayIcon: value,
-          },
-        });
-        this.applySettings(settings);
-        this.initialized = true;
+        await this.save();
       } catch (error) {
         this.showTrayIcon = previousValue;
+        this.error = error instanceof Error ? error.message : String(error);
+      } finally {
+        this.saving = false;
+      }
+    },
+    async setIdleEnabled(value: boolean) {
+      if (this.saving || value === this.idleEnabled) {
+        return;
+      }
+
+      const previousValue = this.idleEnabled;
+      this.idleEnabled = value;
+      this.saving = true;
+      this.error = "";
+
+      try {
+        await this.save();
+      } catch (error) {
+        this.idleEnabled = previousValue;
+        this.error = error instanceof Error ? error.message : String(error);
+      } finally {
+        this.saving = false;
+      }
+    },
+    async setIdleMethods(methods: string[]) {
+      if (this.saving) {
+        return;
+      }
+
+      const previousValue = this.idleMethods;
+      this.idleMethods = methods;
+      this.saving = true;
+      this.error = "";
+
+      try {
+        await this.save();
+      } catch (error) {
+        this.idleMethods = previousValue;
+        this.error = error instanceof Error ? error.message : String(error);
+      } finally {
+        this.saving = false;
+      }
+    },
+    async setIdleThresholdSecs(secs: number) {
+      if (this.saving) {
+        return;
+      }
+
+      const previousValue = this.idleThresholdSecs;
+      this.idleThresholdSecs = secs;
+      this.saving = true;
+      this.error = "";
+
+      try {
+        await this.save();
+      } catch (error) {
+        this.idleThresholdSecs = previousValue;
         this.error = error instanceof Error ? error.message : String(error);
       } finally {
         this.saving = false;

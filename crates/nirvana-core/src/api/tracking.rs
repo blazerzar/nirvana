@@ -154,7 +154,7 @@ mod tests {
     use crate::api::NirvanaError;
     use crate::api::domain::ConnectionData;
     use crate::api::domain::SlotEdit;
-    use crate::config::{AppConfig, CoreConfig, GuiConfig};
+    use crate::config::{AppConfig, CoreConfig, GuiConfig, IdleConfig};
     use crate::paths::AppPaths;
     use crate::storage::Database;
     use crate::storage::slot_repo::{Change, SlotSort};
@@ -231,6 +231,11 @@ mod tests {
                         font_scale: 1.0,
                         theme: "high-contrast-dark".to_string(),
                         show_tray_icon: false,
+                    },
+                    idle: IdleConfig {
+                        enabled: false,
+                        methods: vec!["lock".into(), "sleep".into(), "input".into()],
+                        threshold_secs: 300,
                     },
                 },
                 db,

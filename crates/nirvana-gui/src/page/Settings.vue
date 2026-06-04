@@ -15,6 +15,22 @@ const settings = useSettingsStore();
 const connections = useConnectionsStore();
 const showAddConnectionModal = ref(false);
 
+const idleMethodOptions = [
+  { id: "lock", name: "Lock" },
+  { id: "sleep", name: "Sleep" },
+  { id: "input", name: "Input" },
+] as const;
+
+const toggleIdleMethod = (method: string) => {
+  const current = settings.idleMethods;
+  const next = current.includes(method)
+    ? current.filter((m) => m !== method)
+    : [...current, method];
+  if (next.length > 0) {
+    settings.setIdleMethods(next);
+  }
+};
+
 const openAddConnectionModal = () => {
   connections.resetSetup();
   showAddConnectionModal.value = true;
@@ -184,42 +200,106 @@ const handleModalKeydown = (event: KeyboardEvent) => {
         <section
           class="rounded-md border border-(--border) bg-(--surface) p-4"
         >
-          <div
-            class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 max-[760px]:grid-cols-1"
-          >
-            <div class="min-w-0">
-              <h3 class="m-0 text-[12px] font-bold text-(--text)">
-                Show tray icon
-              </h3>
-              <p class="mt-1.5 mb-0 max-w-[560px] text-[11px] leading-5 text-(--faint)">
-                Keep the app running in the system tray. Takes effect after
-                restart.
-              </p>
+          <div class="mb-4 grid gap-4">
+            <div
+              class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 max-[760px]:grid-cols-1"
+            >
+              <div class="min-w-0">
+                <h3 class="m-0 text-[12px] font-bold text-(--text)">
+                  Idle detection
+                </h3>
+                <p class="mt-1.5 mb-0 max-w-[560px] text-[11px] leading-5 text-(--faint)">
+                  Detect idle periods and prompt to review untracked time.
+                </p>
+                <p class="mt-1.5 mb-0 max-w-[560px] text-[11px] leading-5 text-(--warning)">
+                  Changes require an app restart to take effect.
+                </p>
+              </div>
+
+              <button
+                class="relative h-[28px] w-[48px] rounded-full border transition-[background,border-color,opacity] duration-150 ease-[var(--ease)] disabled:cursor-default disabled:opacity-50"
+                :class="
+                  settings.idleEnabled
+                    ? 'border-(--accent) bg-(--surface-selected)'
+                    : 'border-(--border) bg-(--surface-inset)'
+                "
+                type="button"
+                role="switch"
+                :aria-checked="settings.idleEnabled"
+                :disabled="settings.loading || settings.saving"
+                @click="settings.setIdleEnabled(!settings.idleEnabled)"
+              >
+                <span
+                  class="absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.28)] transition-[left,background] duration-150 ease-[var(--ease)]"
+                  :class="
+                    settings.idleEnabled
+                      ? 'left-[22px] bg-(--accent)'
+                      : 'left-1 bg-(--muted)'
+                  "
+                  aria-hidden="true"
+                ></span>
+              </button>
             </div>
 
-            <button
-              class="relative h-[28px] w-[48px] rounded-full border transition-[background,border-color,opacity] duration-150 ease-[var(--ease)] disabled:cursor-default disabled:opacity-50"
-              :class="
-                settings.showTrayIcon
-                  ? 'border-(--accent) bg-(--surface-selected)'
-                  : 'border-(--border) bg-(--surface-inset)'
-              "
-              type="button"
-              role="switch"
-              :aria-checked="settings.showTrayIcon"
-              :disabled="settings.loading || settings.saving"
-              @click="settings.setShowTrayIcon(!settings.showTrayIcon)"
-            >
-              <span
-                class="absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.28)] transition-[left,background] duration-150 ease-[var(--ease)]"
-                :class="
-                  settings.showTrayIcon
-                    ? 'left-[22px] bg-(--accent)'
-                    : 'left-1 bg-(--muted)'
-                "
-                aria-hidden="true"
-              ></span>
-            </button>
+            <template v-if="settings.idleEnabled">
+              <div
+                class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 max-[760px]:grid-cols-1"
+              >
+                <div class="min-w-0">
+                  <h3 class="m-0 text-[12px] font-bold text-(--text)">
+                    Threshold
+                  </h3>
+                  <p class="mt-1.5 mb-0 max-w-[560px] text-[11px] leading-5 text-(--faint)">
+                    Seconds of inactivity before an idle period is detected.
+                  </p>
+                </div>
+
+                <input
+                  class="h-[28px] w-[80px] rounded-md border border-(--border) bg-(--surface-inset) px-2 text-center text-[11px] text-(--text) outline-none focus:border-(--accent)"
+                  type="number"
+                  :value="settings.idleThresholdSecs"
+                  min="10"
+                  :disabled="settings.loading || settings.saving"
+                  aria-label="Idle threshold in seconds"
+                  @change="(e: Event) => {
+                    const secs = Number((e.target as HTMLInputElement).value);
+                    if (secs >= 10) settings.setIdleThresholdSecs(secs);
+                  }"
+                />
+              </div>
+
+              <div
+                class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 max-[760px]:grid-cols-1"
+              >
+                <div class="min-w-0">
+                  <h3 class="m-0 text-[12px] font-bold text-(--text)">
+                    Detection methods
+                  </h3>
+                  <p class="mt-1.5 mb-0 max-w-[560px] text-[11px] leading-5 text-(--faint)">
+                    How idle periods are detected.
+                  </p>
+                </div>
+
+                <div class="flex gap-0.5 rounded-md border border-(--border) bg-(--surface) p-[3px]">
+                  <button
+                    v-for="method in idleMethodOptions"
+                    :key="method.id"
+                    class="rounded px-2.5 py-[5px] text-[10.5px] leading-none transition-[color,background] duration-150 ease-[var(--ease)]"
+                    :class="
+                      settings.idleMethods.includes(method.id)
+                        ? 'bg-(--surface-selected) font-semibold text-(--accent)'
+                        : 'text-(--faint) hover:bg-(--surface-hover) hover:text-(--muted)'
+                    "
+                    type="button"
+                    :aria-pressed="settings.idleMethods.includes(method.id)"
+                    :disabled="settings.loading || settings.saving"
+                    @click="toggleIdleMethod(method.id)"
+                  >
+                    {{ method.name }}
+                  </button>
+                </div>
+              </div>
+            </template>
           </div>
         </section>
 

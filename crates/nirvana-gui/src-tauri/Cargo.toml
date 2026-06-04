@@ -1,23 +1,27 @@
 [package]
 name = "nirvana-gui"
 version.workspace = true
-edition = "2021"
+edition = "2024"
 description = "Nirvana desktop GUI"
 
 [lib]
+crate-type = ["cdylib", "rlib", "staticlib"]
 name = "nirvana_gui_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+bitflags = "2.12.1"
+nirvana-core = { path = "../../nirvana-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
-[dependencies]
-nirvana-core = { path = "../../nirvana-core" }
-tauri = { version = "2", features = ["tray-icon"] }
-tauri-plugin-opener = "2"
-tauri-plugin-single-instance = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-
-[profile.dev]
-incremental = true
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_System_SystemInformation",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }

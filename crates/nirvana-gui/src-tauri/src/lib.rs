@@ -1,3 +1,5 @@
+mod idle;
+
 use nirvana_core::api::domain::{
     AppSettings, Change, Connection, ConnectionData, PublishFailure, PublishResult, Slot,
     SlotCreate, SlotEdit, Ticket,
@@ -6,7 +8,7 @@ use nirvana_core::api::{NirvanaApi, SlotSort};
 use serde::{Deserialize, Serialize};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -22,6 +24,10 @@ const TRAY_QUIT_ID: &str = "quit";
 
 struct TrayStatusState {
     item: MenuItem<tauri::Wry>,
+}
+
+struct IdleState {
+    tracker: Mutex<idle::IdleTracker>,
 }
 
 #[derive(Serialize)]
@@ -117,6 +123,15 @@ struct PublishSlotsInput {
     to: Option<i64>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolveIdleInput {
+    idle_start: i64,
+    idle_end: i64,
+    was_working: bool,
+    continue_tracking: bool,
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct GuiSettings {
@@ -124,6 +139,15 @@ struct GuiSettings {
     font_scale: f64,
     theme: String,
     show_tray_icon: bool,
+    idle_enabled: bool,
+    idle_methods: Vec<String>,
+    idle_threshold_secs: u64,
+}
+
+#[derive(Serialize)]
+struct GuiIdlePeriod {
+    from: i64,
+    to: i64,
 }
 
 #[derive(Serialize)]
@@ -208,6 +232,9 @@ impl From<AppSettings> for GuiSettings {
             font_scale: settings.font_scale,
             theme: settings.theme,
             show_tray_icon: settings.show_tray_icon,
+            idle_enabled: settings.idle_enabled,
+            idle_methods: settings.idle_methods,
+            idle_threshold_secs: settings.idle_threshold_secs,
         }
     }
 }
@@ -219,6 +246,9 @@ impl From<GuiSettings> for AppSettings {
             font_scale: settings.font_scale,
             theme: settings.theme,
             show_tray_icon: settings.show_tray_icon,
+            idle_enabled: settings.idle_enabled,
+            idle_methods: settings.idle_methods,
+            idle_threshold_secs: settings.idle_threshold_secs,
         }
     }
 }
@@ -438,6 +468,93 @@ fn stop_slot(app: tauri::AppHandle) -> Result<Option<GuiSlot>, String> {
 }
 
 #[tauri::command]
+fn get_idle_periods(idle_state: tauri::State<'_, IdleState>) -> Vec<GuiIdlePeriod> {
+    idle_state
+        .tracker
+        .lock()
+        .unwrap()
+        .drain_periods()
+        .into_iter()
+        .map(|p| GuiIdlePeriod {
+            from: p.from,
+            to: p.to,
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn resolve_idle(app: tauri::AppHandle, input: ResolveIdleInput) -> Result<(), String> {
+    let api = NirvanaApi::new().map_err(|e| e.to_string())?;
+    let running = api
+        .get_running_slot()
+        .map_err(|e| e.to_string())?;
+
+    let slot = match running {
+        Some(s) => s,
+        None => return Ok(()),
+    };
+
+    if input.was_working {
+        if !input.continue_tracking {
+            api.stop_slot(None).map_err(|e| e.to_string())?;
+        }
+    } else {
+        let idle_start = input.idle_start.max(slot.started_at);
+        api.edit_slot(
+            slot.id,
+            SlotEdit {
+                ticket_key: None,
+                note: Change::Skip,
+                started_at: None,
+                stopped_at: Change::Set(idle_start),
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
+        if input.continue_tracking {
+            api.start_slot(&slot.ticket_key, Some(input.idle_end), None)
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    refresh_tray_status(&app);
+    Ok(())
+}
+
+fn methods_to_flags(methods: &[String]) -> idle::IdleFlags {
+    let mut flags = idle::IdleFlags::empty();
+    for method in methods {
+        match method.as_str() {
+            "lock" => flags |= idle::IdleFlags::LOCK,
+            "sleep" => flags |= idle::IdleFlags::SLEEP,
+            "input" => flags |= idle::IdleFlags::INPUT,
+            _ => {}
+        }
+    }
+    if flags.is_empty() {
+        idle::IdleFlags::default()
+    } else {
+        flags
+    }
+}
+
+#[tauri::command]
+fn set_idle_enabled(
+    app: tauri::AppHandle,
+    idle_state: tauri::State<'_, IdleState>,
+    input: bool,
+) {
+    let config = nirvana_core::config::AppConfig::load_from_default_path();
+    let mut tracker = idle_state.tracker.lock().unwrap();
+    if input && config.idle.enabled {
+        let flags = methods_to_flags(&config.idle.methods);
+        tracker.start(app, flags, config.idle.threshold_secs);
+    } else {
+        tracker.stop();
+    }
+}
+
+#[tauri::command]
 fn publish_slots(input: PublishSlotsInput) -> Result<GuiPublishResult, String> {
     let api = NirvanaApi::new().map_err(|error| error.to_string())?;
     api.publish(input.from, input.to)
@@ -572,6 +689,22 @@ pub fn run() {
                 refresh_tray_status(app.handle());
             }
 
+            let has_running_slot = NirvanaApi::new()
+                .and_then(|api| api.get_running_slot())
+                .ok()
+                .flatten()
+                .is_some();
+
+            let app_config = nirvana_core::config::AppConfig::load_from_default_path();
+            let mut tracker = idle::IdleTracker::new();
+            if has_running_slot && app_config.idle.enabled {
+                let flags = methods_to_flags(&app_config.idle.methods);
+                tracker.start(app.handle().clone(), flags, app_config.idle.threshold_secs);
+            }
+            app.manage(IdleState {
+                tracker: Mutex::new(tracker),
+            });
+
             Ok(())
         })
         .on_window_event(move |window, event| {
@@ -611,7 +744,10 @@ pub fn run() {
             edit_slot,
             delete_slot,
             stop_slot,
-            publish_slots
+            publish_slots,
+            get_idle_periods,
+            resolve_idle,
+            set_idle_enabled
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

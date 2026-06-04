@@ -116,6 +116,9 @@ pub struct AppSettings {
     pub font_scale: f64,
     pub theme: String,
     pub show_tray_icon: bool,
+    pub idle_enabled: bool,
+    pub idle_methods: Vec<String>,
+    pub idle_threshold_secs: u64,
 }
 
 #[derive(Debug, Default)]

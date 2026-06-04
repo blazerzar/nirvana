@@ -303,6 +303,7 @@ export const useAllTasksStore = defineStore("allTasks", {
       const { task, session } = runningEntryFromBackendSlot(slot);
       this.runningTask = task;
       this.runningSession = session;
+      void invoke("set_idle_enabled", { input: !!task });
     },
     async refreshRunningSlot() {
       try {

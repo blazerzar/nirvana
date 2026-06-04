@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { AppInfo, AppView, ViewMode } from "./types/types";
+import IdleModal from "./components/modals/IdleModal.vue";
 import TaskModals from "./components/TaskModals.vue";
 import Footer from "./layout/Footer.vue";
 import ConnectionSetup from "./page/ConnectionSetup.vue";
@@ -10,11 +12,13 @@ import Settings from "./page/Settings.vue";
 import { useAllTasksStore } from "./stores/allTasks";
 import { useConnectionsStore } from "./stores/connections";
 import { useSettingsStore } from "./stores/settings";
+import { useIdleStore } from "./stores/idle";
 import SettingsIcon from "./assets/icons/settings.svg?raw";
 
 const tasks = useAllTasksStore();
 const connections = useConnectionsStore();
 const settings = useSettingsStore();
+const idle = useIdleStore();
 const appInfo = ref<AppInfo>({ name: "nirvana", version: "0.2.1-pre-alpha" });
 const currentView = ref<AppView>("tracker");
 
@@ -99,18 +103,28 @@ const handleKeydown = (event: KeyboardEvent) => {
 };
 
 let ticker: number | undefined;
+let unlisten: (() => void) | undefined;
 
-onMounted(() => {
+onMounted(async () => {
     getAppInfo();
     connections.initialize();
     settings.initialize();
     ticker = window.setInterval(() => tasks.tick(), 1000);
     window.addEventListener("keydown", handleKeydown);
+    unlisten = await listen("idle-period-ended", async () => {
+      await tasks.refreshRunningSlot();
+      if (!tasks.runningTask) {
+        idle.drain();
+        return;
+      }
+      await idle.fetchIdlePeriods();
+    });
 });
 
 onUnmounted(() => {
     if (ticker) window.clearInterval(ticker);
     window.removeEventListener("keydown", handleKeydown);
+    unlisten?.();
 });
 
 watch(
@@ -214,7 +228,9 @@ watch(
                         aria-label="Go to today"
                         @click="tasks.goToToday()"
                     >
-                        <span class="relative inline-grid min-h-3 w-[92px] overflow-hidden">
+                        <span
+                            class="relative inline-grid min-h-3 w-[92px] overflow-hidden"
+                        >
                             <Transition :name="dateTransitionName()">
                                 <span
                                     :key="tasks.selectedDateLabel"
@@ -292,4 +308,6 @@ watch(
             <TaskModals v-if="currentView === 'tracker'" />
         </section>
     </main>
+
+    <IdleModal />
 </template>

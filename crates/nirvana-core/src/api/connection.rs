@@ -109,7 +109,7 @@ fn normalize_host(url: &str) -> String {
 mod tests {
     use super::*;
     use crate::api::errors::TrackingError;
-    use crate::config::{AppConfig, CoreConfig, GuiConfig};
+    use crate::config::{AppConfig, CoreConfig, GuiConfig, IdleConfig};
     use crate::paths::AppPaths;
     use crate::storage::{Database, connection_repo, ticket_repo};
     use std::ops::Deref;
@@ -179,6 +179,11 @@ mod tests {
                         font_scale: 1.0,
                         theme: "high-contrast-dark".to_string(),
                         show_tray_icon: false,
+                    },
+                    idle: IdleConfig {
+                        enabled: false,
+                        methods: vec!["lock".into(), "sleep".into(), "input".into()],
+                        threshold_secs: 300,
                     },
                 },
                 db,

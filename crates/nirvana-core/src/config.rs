@@ -33,6 +33,16 @@ pub struct GuiConfig {
     pub show_tray_icon: bool,
 }
 
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct IdleConfig {
+    #[serde(default = "default_idle_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_idle_methods")]
+    pub methods: Vec<String>,
+    #[serde(default = "default_idle_threshold_secs")]
+    pub threshold_secs: u64,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct AppConfig {
     #[serde(default)]
@@ -41,6 +51,8 @@ pub struct AppConfig {
     pub(crate) core: CoreConfig,
     #[serde(default)]
     pub gui: GuiConfig,
+    #[serde(default)]
+    pub idle: IdleConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,6 +80,11 @@ impl From<LegacyAppConfig> for AppConfig {
                 theme: legacy.theme,
                 show_tray_icon: default_show_tray_icon(),
             },
+            idle: IdleConfig {
+                enabled: default_idle_enabled(),
+                methods: default_idle_methods(),
+                threshold_secs: default_idle_threshold_secs(),
+            },
         }
     }
 }
@@ -84,6 +101,11 @@ impl Default for AppConfig {
                 font_scale: default_font_scale(),
                 theme: default_theme(),
                 show_tray_icon: default_show_tray_icon(),
+            },
+            idle: IdleConfig {
+                enabled: default_idle_enabled(),
+                methods: default_idle_methods(),
+                threshold_secs: default_idle_threshold_secs(),
             },
         }
     }
@@ -118,6 +140,36 @@ pub(crate) fn normalize_theme(theme: &str) -> String {
 
 fn default_show_tray_icon() -> bool {
     false
+}
+
+fn default_idle_methods() -> Vec<String> {
+    vec!["lock".into(), "sleep".into(), "input".into()]
+}
+
+fn default_idle_enabled() -> bool {
+    true
+}
+
+fn default_idle_threshold_secs() -> u64 {
+    300
+}
+
+pub(crate) fn normalize_idle_methods(methods: &[String]) -> Vec<String> {
+    let valid = ["lock", "sleep", "input"];
+    let normalized: Vec<String> = methods
+        .iter()
+        .filter(|m| valid.contains(&m.as_str()))
+        .cloned()
+        .collect();
+    if normalized.is_empty() {
+        default_idle_methods()
+    } else {
+        normalized
+    }
+}
+
+pub(crate) fn normalize_idle_threshold_secs(secs: u64) -> u64 {
+    if secs >= 10 { secs } else { default_idle_threshold_secs() }
 }
 
 impl AppConfig {
@@ -169,6 +221,11 @@ impl Clone for AppConfig {
                 font_scale: self.gui.font_scale,
                 theme: self.gui.theme.clone(),
                 show_tray_icon: self.gui.show_tray_icon,
+            },
+            idle: IdleConfig {
+                enabled: self.idle.enabled,
+                methods: self.idle.methods.clone(),
+                threshold_secs: self.idle.threshold_secs,
             },
         }
     }
@@ -236,5 +293,52 @@ theme = "nirvana-dark"
         assert!((config.gui.font_scale - 1.2).abs() < f64::EPSILON);
         assert_eq!(config.gui.theme, "nirvana-dark");
         assert!(!config.gui.show_tray_icon);
+        assert!(config.idle.enabled);
+    }
+
+    #[test]
+    fn defaults_idle_enabled_with_all_methods() {
+        let config = AppConfig::default();
+
+        assert!(config.idle.enabled);
+        assert_eq!(config.idle.methods, vec!["lock", "sleep", "input"]);
+        assert_eq!(config.idle.threshold_secs, 300);
+    }
+
+    #[test]
+    fn parses_idle_section() {
+        let config = AppConfig::parse(
+            r#"
+schema_version = 1
+
+[idle]
+enabled = true
+methods = ["lock", "input"]
+threshold_secs = 600
+"#,
+        )
+        .unwrap();
+
+        assert!(config.idle.enabled);
+        assert_eq!(config.idle.methods, vec!["lock", "input"]);
+        assert_eq!(config.idle.threshold_secs, 600);
+    }
+
+    #[test]
+    fn normalizes_empty_methods_to_defaults() {
+        let methods = normalize_idle_methods(&[]);
+        assert_eq!(methods, vec!["lock", "sleep", "input"]);
+    }
+
+    #[test]
+    fn normalizes_invalid_methods() {
+        let methods = normalize_idle_methods(&["foo".into(), "lock".into()]);
+        assert_eq!(methods, vec!["lock"]);
+    }
+
+    #[test]
+    fn normalizes_threshold_below_minimum() {
+        assert_eq!(normalize_idle_threshold_secs(5), 300);
+        assert_eq!(normalize_idle_threshold_secs(10), 10);
     }
 }

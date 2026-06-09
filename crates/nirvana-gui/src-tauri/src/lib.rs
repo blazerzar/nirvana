@@ -620,6 +620,7 @@ pub fn run() {
     let is_quitting = Arc::new(AtomicBool::new(false));
     let close_is_quitting = Arc::clone(&is_quitting);
     let tray_is_quitting = Arc::clone(&is_quitting);
+    let run_is_quitting = Arc::clone(&is_quitting);
 
     let show_tray = nirvana_core::config::AppConfig::load_from_default_path()
         .gui
@@ -717,7 +718,7 @@ pub fn run() {
                     return;
                 }
 
-                if show_tray {
+                if cfg!(target_os = "macos") || show_tray {
                     api.prevent_close();
 
                     if let Err(error) = window.hide() {
@@ -752,7 +753,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|app, event| {
+    app.run(move |app, event| {
         #[cfg(target_os = "macos")]
         // Show application windows when pressing dock icon with no windows
         if let tauri::RunEvent::Reopen {
@@ -761,6 +762,10 @@ pub fn run() {
         } = event
         {
             show_main_window(app);
+        }
+
+        if let tauri::RunEvent::ExitRequested { .. } = event {
+            run_is_quitting.store(true, Ordering::SeqCst);
         }
 
         // Prevent unused variable warning

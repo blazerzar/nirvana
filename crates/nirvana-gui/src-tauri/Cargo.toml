@@ -21,7 +21,11 @@ tauri-plugin-single-instance = "2"
 tauri-build = { version = "2", features = [] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.62", features = [
-    "Win32_System_SystemInformation",
-    "Win32_UI_Input_KeyboardAndMouse",
-] }
+windows = {
+    version = "0.62",
+    features = [
+        "Win32_System_SystemInformation",
+        "Win32_UI_Input_KeyboardAndMouse",
+        "Win32_UI_WindowsAndMessaging"
+    ]
+}

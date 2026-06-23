@@ -1,5 +1,5 @@
 [tools]
-rust = { version = "1.92.0", profile = "default" }
+rust = { version = "latest", profile = "default" }
 "npm:sql-formatter" = "latest"
 just = "latest"
 bun = "latest"

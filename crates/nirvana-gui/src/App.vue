@@ -19,7 +19,7 @@ const tasks = useAllTasksStore();
 const connections = useConnectionsStore();
 const settings = useSettingsStore();
 const idle = useIdleStore();
-const appInfo = ref<AppInfo>({ name: "nirvana", version: "0.2.1-pre-alpha" });
+const appInfo = ref<AppInfo>({ name: "nirvana", version: "0.3.0-alpha" });
 const currentView = ref<AppView>("tracker");
 
 const viewModes: { label: string; value: ViewMode }[] = [
@@ -44,10 +44,10 @@ const getAppInfo = async () => {
         const response = await invoke<AppInfo>("get_app_info");
         appInfo.value = {
             name: response.name || "nirvana",
-            version: response.version || "0.2.1-pre-alpha",
+            version: response.version || "0.3.0-alpha",
         };
     } catch {
-        appInfo.value = { name: "nirvana", version: "0.2.1-pre-alpha" };
+        appInfo.value = { name: "nirvana", version: "0.3.0-alpha" };
     }
 };
 
@@ -112,12 +112,12 @@ onMounted(async () => {
     ticker = window.setInterval(() => tasks.tick(), 1000);
     window.addEventListener("keydown", handleKeydown);
     unlisten = await listen("idle-period-ended", async () => {
-      await tasks.refreshRunningSlot();
-      if (!tasks.runningTask) {
-        idle.drain();
-        return;
-      }
-      await idle.fetchIdlePeriods();
+        await tasks.refreshRunningSlot();
+        if (!tasks.runningTask) {
+            idle.drain();
+            return;
+        }
+        await idle.fetchIdlePeriods();
     });
 });
 

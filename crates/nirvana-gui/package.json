@@ -1,7 +1,7 @@
 {
     "name": "nirvana",
     "private": true,
-    "version": "0.2.1-pre-alpha",
+    "version": "0.3.0-alpha",
     "type": "module",
     "scripts": {
         "dev": "vite",

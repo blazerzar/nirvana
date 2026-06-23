@@ -33,7 +33,7 @@ pub struct GuiConfig {
     pub show_tray_icon: bool,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct IdleConfig {
     #[serde(default = "default_idle_enabled")]
     pub enabled: bool,
@@ -41,6 +41,16 @@ pub struct IdleConfig {
     pub methods: Vec<String>,
     #[serde(default = "default_idle_threshold_secs")]
     pub threshold_secs: u64,
+}
+
+impl Default for IdleConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_idle_enabled(),
+            methods: default_idle_methods(),
+            threshold_secs: default_idle_threshold_secs(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -273,6 +283,9 @@ show_tray_icon = true
         assert!((config.gui.font_scale - 1.1).abs() < f64::EPSILON);
         assert_eq!(config.gui.theme, "soft-light");
         assert!(config.gui.show_tray_icon);
+        assert!(config.idle.enabled);
+        assert_eq!(config.idle.methods, vec!["lock", "sleep", "input"]);
+        assert_eq!(config.idle.threshold_secs, 300);
     }
 
     #[test]

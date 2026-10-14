@@ -43,7 +43,7 @@ question answering.
 ## Cleanup
 
 - [ ] Remove not needed config files.
-- [ ] Remove GUI crate - idle detection will be taken from main later, tray and
+- [x] Remove GUI crate - idle detection will be taken from main later, tray and
       menu bar code will be rewritten.
 - [ ] Remove TUI stub with ratatui and crossterm.
 - [ ] Remove not needed git attributes.

@@ -30,10 +30,11 @@ question answering.
 
 - [ ] Get CI going at least for tests (fmt, clippy, test on macOS, Windows, Linux).
 - [ ] Get git hooks using hk for linting and formatting.
-- [ ] Use conventional commits from now on (commit-msg check in hk).
+- [ ] Use conventional commits from now on (commit-msg check in hk, PR title
+      check in CI).
 - [x] Sign commits and tags with SSH key (commit.gpgsign, tag.gpgsign).
-- [ ] Set correct GitHub protection settings for main and dev-1.0 (including
-      required signed commits).
+- [x] Set GitHub repository settings and rulesets for main and dev-1.0
+      (implementation guide §12).
 - [ ] Sign release tags in CICD.
 - [ ] Move justfile recipes to mise tasks.
 - [ ] Replace Tombi with Taplo.

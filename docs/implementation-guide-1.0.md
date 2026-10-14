@@ -48,6 +48,7 @@ worklogs.
 | 9 | **Portal stack: Leptos vs Phoenix, decided at the Stage 2 review** (see §8). Until then the Portal contract stays language-neutral. | |
 | 10 | Local web: **Leptos CSR (Trunk) + axum REST API**, assets embedded with `rust-embed`. *Recommended, confirm when stage 2 starts.* | Simpler single-binary build than SSR/hydration. The explicit API matches the roadmap's API section. |
 | 11 | **Migration tests are mandatory**: 0.3.0-alpha DB and config fixtures are checked in, never edited, and run in CI (§5). | Guarantees the compatibility promise. |
+| 12 | **Linear history only, no merge commits.** Feature PRs are squash-merged into `dev-1.0`, `main` is only fast-forwarded to `dev-1.0`. Code review is done by agents on the PR (§12). | |
 
 ## 4. Current codebase (0.3.0-alpha) - what exists
 
@@ -428,6 +429,9 @@ possible now:
    Iced.
 7. Change propagation between CLI, desktop and web: poll
    `PRAGMA data_version`, or a notify channel inside the process.
+8. Branch flow after 1.0: keep `dev-1.0` (or a `dev` branch) or PR straight
+   into `main`. Release PRs (release-plz) that land on `main` must not break
+   the fast-forward from the dev branch.
 
 ## 10. Security notes
 
@@ -443,7 +447,8 @@ possible now:
 
 ## 11. Stage order (details in the roadmap)
 
-1. **Prep**: CI, hk hooks, conventional commits, mise tasks, Taplo.
+1. **Prep**: CI, hk hooks, conventional commits, GitHub settings (§12),
+   mise tasks, Taplo.
 2. **Cleanup**: remove the GUI crate, TUI stub, Zed settings, unneeded
    configs/attributes. Update deps and AGENTS.md.
 3. **Logging**: logging module, in place before any code changes so DB and
@@ -463,3 +468,101 @@ possible now:
     desktop**, then the **Leptos web**, then **CICD** (signed bundles). Then
     the **Stage 2 review** (decides the Portal stack).
 11. **Portal**.
+
+## 12. Git and GitHub workflow
+
+History is linear everywhere. There are no merge commits.
+
+### 12.1 Branches
+
+- `main` is the released state. Until 1.0 nothing is committed to `main`
+  directly, so `dev-1.0` is always a fast-forward of `main`.
+- `dev-1.0` is the integration branch. Changes land only through PRs.
+- Feature branches come off `dev-1.0`, one per roadmap item, named
+  `<stage>/<topic>` (e.g. `prep/ci`, `cleanup/remove-gui`). They are
+  short-lived and deleted after merge.
+
+### 12.2 Pull requests
+
+- One roadmap checkbox per PR. The PR ticks its checkbox in the roadmap.
+- Open PRs as drafts early so CI runs. Mark ready when it is ready for review.
+- The PR title is a conventional commit (`feat(core): ...`). It becomes the
+  squash commit message, so CI checks the PR title. Commits on the feature
+  branch do not need to be clean.
+- Keep the feature branch up to date by rebasing on `dev-1.0` and force
+  pushing the feature branch (never `dev-1.0` or `main`).
+- What a review checks is listed in `AGENTS.md` (Reviewing PRs).
+
+### 12.3 Code review
+
+GitHub does not allow approving your own PR, so required approvals are 0 and
+reviews come from agents:
+
+1. Before marking ready: `/code-review` locally on the branch.
+2. On the PR: `/code-review <PR#> --comment` posts findings as inline
+   comments. Each comment is fixed or answered, then resolved. Unresolved
+   comments block the merge.
+3. Stage 1 and Stage 2 reviews: `/code-review ultra` on `dev-1.0`, plus a
+   manual read of the diff since the previous stage.
+
+### 12.4 Merging
+
+- Feature branch into `dev-1.0`: **squash merge** in the GitHub UI. GitHub
+  signs the squash commit with its own key, which shows as Verified.
+- `dev-1.0` into `main`: **fast-forward** from a local clone after `ci-ok` is
+  green on `dev-1.0`:
+
+  ```sh
+  git fetch origin
+  git push origin origin/dev-1.0:main
+  ```
+
+  The push is rejected if it is not a fast-forward. Optionally open a
+  `dev-1.0` → `main` PR first for visibility; GitHub marks it merged when the
+  push lands.
+
+### 12.5 GitHub settings
+
+Account (Settings → SSH and GPG keys):
+
+- The SSH signing key is added as a **Signing key** (not only as an
+  authentication key), otherwise commits do not show as Verified.
+
+Repository → Settings → General → Pull Requests:
+
+- Allow merge commits: **off**.
+- Allow squash merging: **on**, default commit message **Pull request title**.
+- Allow rebase merging: **off**.
+- Always suggest updating pull request branches: **on**.
+- Automatically delete head branches: **on**.
+
+Repository → Settings → Actions → General:
+
+- Workflow permissions: **Read repository contents and packages permissions**.
+
+Repository → Settings → Rules → Rulesets → New branch ruleset **`dev-1.0`**:
+
+- Enforcement status: **Active**. Target branches: `dev-1.0`. Bypass list:
+  empty.
+- Restrict deletions: **on**.
+- Require linear history: **on**.
+- Require signed commits: **on**.
+- Require a pull request before merging: **on**
+  - Required approvals: **0**.
+  - Require conversation resolution before merging: **on**.
+  - Allowed merge methods: **Squash** only.
+- Require status checks to pass: **on**
+  - Require branches to be up to date before merging: **on**.
+  - Status checks: **`ci-ok`** (add it after CI has run once).
+- Block force pushes: **on**.
+
+Repository → Settings → Rules → Rulesets → New branch ruleset **`main`**:
+
+- Enforcement status: **Active**. Target branches: `main`. Bypass list:
+  **Repository admin**, mode **Always** (needed for the fast-forward push).
+- Restrict deletions: **on**.
+- Restrict updates: **on** (only the bypass list can push).
+- Require linear history: **on**.
+- Require signed commits: **on**.
+- Require status checks to pass: **on**, status check **`ci-ok`**.
+- Block force pushes: **on**.

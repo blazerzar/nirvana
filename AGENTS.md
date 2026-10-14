@@ -119,3 +119,16 @@ publishing, task timing, listing, editing, starting, stopping, and deleting.
   manager used by that part of the repo.
 - Before finishing, check `git status --short` and make sure only intended files
   changed.
+
+## Reviewing PRs
+
+Besides correctness, check that:
+
+- The PR title is a conventional commit (`type(scope): summary`).
+- The PR covers one roadmap item and ticks its checkbox in
+  `docs/roadmap-1.0.md`.
+- Changes are tested.
+- Changes affecting 0.3.0-alpha DB or config compatibility update the
+  fixtures and migration tests.
+- `docs/roadmap-1.0.md` and `docs/implementation-guide-1.0.md` are updated if
+  a decision changed.

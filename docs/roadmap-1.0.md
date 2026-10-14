@@ -50,8 +50,16 @@ question answering.
 - [ ] Remove the agent.md pointer if not needed.
 - [ ] Update local deps.
 
+## Logging
+
+Created before we start changing code, so DB and settings migrations are
+logged from the start.
+
+- [ ] Add logging module.
+
 ## Database
 
+- [ ] Back up the DB and config.toml before running migrations.
 - [ ] Make core async (tokio, async reqwest).
 - [ ] Add SeaORM.
 - [ ] Bridge existing user_version migrations (v1, v2) into SeaORM baseline

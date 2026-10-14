@@ -446,18 +446,20 @@ possible now:
 1. **Prep**: CI, hk hooks, conventional commits, mise tasks, Taplo.
 2. **Cleanup**: remove the GUI crate, TUI stub, Zed settings, unneeded
    configs/attributes. Update deps and AGENTS.md.
-3. **Database**: async + SeaORM, 0.3 baseline, profiles, connection
-   settings, publish entries, uuid, config migration, drop notes, migration
-   tests.
-4. **Keychain**.
-5. **Tickets**: commands + tests, owner resolution, async title/description
+3. **Logging**: logging module, in place before any code changes so DB and
+   settings migrations are logged.
+4. **Database**: backup of DB and config.toml before migrating, async +
+   SeaORM, 0.3 baseline, profiles, connection settings, publish entries, uuid,
+   config migration, drop notes, migration tests.
+5. **Keychain**.
+6. **Tickets**: commands + tests, owner resolution, async title/description
    sync.
-6. **Linear** integration.
-7. **Publishing**: fan-out, squash, per-entry errors, retry, sub-minute rule,
+7. **Linear** integration.
+8. **Publishing**: fan-out, squash, per-entry errors, retry, sub-minute rule,
    ranges.
-8. **Core API review**, then **CICD** (first standalone release). Then the
+9. **Core API review**, then **CICD** (first standalone release). Then the
    **Stage 1 review**.
-9. **Design tokens**, then the **local API server**, then the **Iced
-   desktop**, then the **Leptos web**, then **CICD** (signed bundles). Then the
-   **Stage 2 review** (decides the Portal stack).
-10. **Portal**.
+10. **Design tokens**, then the **local API server**, then the **Iced
+    desktop**, then the **Leptos web**, then **CICD** (signed bundles). Then
+    the **Stage 2 review** (decides the Portal stack).
+11. **Portal**.

@@ -34,6 +34,25 @@ All recipes use `just` as the task runner (`cargo install just`).
 | Format check | `just fmt` |
 | Clean | `just clean` |
 
+## Tooling, hooks and formatting
+
+Tool versions are pinned in `mise.toml` (`mise install`). Git hooks run through
+[hk](https://hk.jdx.dev), configured in `hk.pkl`.
+
+| Task | Command |
+|------|---------|
+| Install git hooks | `mise run setup` |
+| Run all checks | `mise run lint` |
+| Fix formatting | `mise run fix` |
+
+- Formatting: `cargo fmt` (Rust), dprint (TOML, YAML, JSON, `dprint.json`),
+  `pkl format` (Pkl). Indentation and line endings follow `.editorconfig`.
+- Linting: clippy with `-D warnings`, jactionlint (GitHub workflows, actions
+  pinned to commit SHAs), editorconfig-checker.
+- `pre-commit` fixes formatting, `pre-push` runs all checks, `commit-msg`
+  enforces conventional commits. CI runs the same `hk check`, and the
+  `pr-title` workflow checks that the PR title is a conventional commit.
+
 ## Architecture
 
 This is a Cargo workspace with three crates:

@@ -1,5 +1,16 @@
 [tools]
-rust = { version = "latest", profile = "default" }
-"npm:sql-formatter" = "latest"
-just = "latest"
-node = "latest"
+hk = "2.6.0"
+pkl = "0.32.1"
+dprint = "0.63.0"
+jactionlint = "2.2.0"
+editorconfig-checker = "4.0.2"
+rust = { version = "1.99.0", profile = "default" }
+
+[tasks.setup]
+run = ["hk install --mise"]
+
+[tasks.lint]
+run = "hk check --all"
+
+[tasks.fix]
+run = "hk fix --all"

@@ -43,7 +43,7 @@ worklogs.
 | 4 | **TUI dropped for 1.0.** Remove the ratatui stub and the ratatui/crossterm deps. | No TUI tasks or v6 screens exist. Can come back after 1.0. |
 | 5 | Tickets keep a `connection_id` FK. **Open:** how the owner is picked when a profile has several connections (see §9). | |
 | 6 | **No rounding anywhere.** Jira rejects worklogs under 60 s, so a sub-minute entry **fails that entry with a visible error** and stays unpublished. | Design product rule: never silently alter time. |
-| 7 | Git hooks with **hk** (+ mise). **Mise tasks** replace the justfile. **Taplo** replaces Tombi. | Cross-platform, one tool manager. |
+| 7 | Git hooks with **hk** (+ mise). **Mise tasks** replace the justfile. **dprint** (TOML, YAML, JSON) replaces Tombi and sql-formatter, so Node is no longer needed. Tool versions are pinned in `mise.toml`. | Cross-platform, one tool manager, one formatter. |
 | 8 | **Idle detection** is restored from `main` (`crates/nirvana-gui/src-tauri/src/idle/{mod,macos,windows}.rs`) when the Iced app needs it. **Tray and menu-bar code is rewritten** for Iced. The GUI crate can be deleted without porting anything first. | |
 | 9 | **Portal stack: Leptos vs Phoenix, decided at the Stage 2 review** (see §8). Until then the Portal contract stays language-neutral. | |
 | 10 | Local web: **Leptos CSR (Trunk) + axum REST API**, assets embedded with `rust-embed`. *Recommended, confirm when stage 2 starts.* | Simpler single-binary build than SSR/hydration. The explicit API matches the roadmap's API section. |
@@ -448,7 +448,7 @@ possible now:
 ## 11. Stage order (details in the roadmap)
 
 1. **Prep**: CI, hk hooks, conventional commits, GitHub settings (§12),
-   mise tasks, Taplo.
+   mise tasks, dprint.
 2. **Cleanup**: remove the GUI crate, TUI stub, Zed settings, unneeded
    configs/attributes. Update deps and AGENTS.md.
 3. **Logging**: logging module, in place before any code changes so DB and
@@ -553,7 +553,8 @@ Repository → Settings → Rules → Rulesets → New branch ruleset **`dev-1.0
   - Allowed merge methods: **Squash** only.
 - Require status checks to pass: **on**
   - Require branches to be up to date before merging: **on**.
-  - Status checks: **`ci-ok`** (add it after CI has run once).
+  - Status checks: **`ci-ok`** and **`pr-title`** (add them after CI has run
+    once).
 - Block force pushes: **on**.
 
 Repository → Settings → Rules → Rulesets → New branch ruleset **`main`**:

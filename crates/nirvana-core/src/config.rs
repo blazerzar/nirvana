@@ -179,7 +179,11 @@ pub(crate) fn normalize_idle_methods(methods: &[String]) -> Vec<String> {
 }
 
 pub(crate) fn normalize_idle_threshold_secs(secs: u64) -> u64 {
-    if secs >= 10 { secs } else { default_idle_threshold_secs() }
+    if secs >= 10 {
+        secs
+    } else {
+        default_idle_threshold_secs()
+    }
 }
 
 impl AppConfig {

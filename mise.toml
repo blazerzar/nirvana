@@ -14,3 +14,11 @@ run = "hk check --all"
 
 [tasks.fix]
 run = "hk fix --all"
+
+[tasks.test]
+description = "Run all tests"
+run = "cargo test --workspace"
+
+[tasks.check]
+description = "Type-check all crates"
+run = "cargo check --workspace"

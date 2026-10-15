@@ -35,8 +35,7 @@ question answering.
 - [x] Sign commits and tags with SSH key (commit.gpgsign, tag.gpgsign).
 - [x] Set GitHub repository settings and rulesets for main and dev-1.0
       (implementation guide §12).
-- [ ] Sign release tags in CICD.
-- [ ] Move justfile recipes to mise tasks.
+- [x] Move justfile recipes to mise tasks.
 - [x] Use dprint for formatting.
 - [ ] Update AGENTS.md with new tooling.
 
@@ -139,6 +138,7 @@ logged from the start.
 
 - [ ] Need to start releasing automatically (release-plz or git-cliff from
       conventional commits).
+- [ ] Sign release tags in CICD.
 - [ ] This is the first time we are having a full standalone result.
 
 ## Stage 1 review

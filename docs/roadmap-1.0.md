@@ -17,7 +17,7 @@ config.toml).
 
 We will replace some tools:
 
-- Tombi with Taplo,
+- Tombi with dprint (TOML, YAML, JSON),
 - Justfile with Mise tasks (mise.toml already exists, cross platform),
 - perhaps some more if we find more appropriate tools.
 
@@ -29,15 +29,15 @@ question answering.
 ## Prep
 
 - [x] Get CI going at least for tests (fmt, clippy, test on macOS, Windows, Linux).
-- [ ] Get git hooks using hk for linting and formatting.
-- [ ] Use conventional commits from now on (commit-msg check in hk, PR title
+- [x] Get git hooks using hk for linting and formatting.
+- [x] Use conventional commits from now on (commit-msg check in hk, PR title
       check in CI).
 - [x] Sign commits and tags with SSH key (commit.gpgsign, tag.gpgsign).
 - [x] Set GitHub repository settings and rulesets for main and dev-1.0
       (implementation guide §12).
 - [ ] Sign release tags in CICD.
 - [ ] Move justfile recipes to mise tasks.
-- [ ] Replace Tombi with Taplo.
+- [x] Use dprint for formatting.
 - [ ] Update AGENTS.md with new tooling.
 
 ## Cleanup
@@ -47,7 +47,7 @@ question answering.
       menu bar code will be rewritten.
 - [ ] Remove TUI stub with ratatui and crossterm.
 - [ ] Remove not needed git attributes.
-- [ ] Remove Zed local settings - we may introduce this back later.
+- [x] Remove Zed local settings - we may introduce this back later.
 - [ ] Remove the agent.md pointer if not needed.
 - [ ] Update local deps.
 
@@ -85,7 +85,7 @@ logged from the start.
       active connection dropped, machine settings kept).
 - [ ] Keep these fixtures in the repo and run them in CI so every future
       migration is tested against today's data.
-- [ ] Check if we need SQL formatter.
+- [ ] Check if we need SQL formatter (without bringing back Node).
 
 ## Keychain
 

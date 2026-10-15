@@ -1,0 +1,33 @@
+amends "package://github.com/jdx/hk/releases/download/v2.6.0/hk@2.6.0#/Config.pkl"
+
+import "package://github.com/jdx/hk/releases/download/v2.6.0/hk@2.6.0#/Builtins.pkl"
+
+local formatters = new Mapping<String, Step> {
+  ["mixed-line-ending"] = Builtins.mixed_line_ending
+  ["trailing-whitespace"] = Builtins.trailing_whitespace
+  ["newlines"] = Builtins.newlines
+  ["dprint"] = Builtins.dprint
+  ["pkl-format"] = Builtins.pkl_format
+  ["cargo-fmt"] = Builtins.cargo_fmt
+}
+
+local linters = new Mapping<String, Step> {
+  ...formatters
+  ["jactionlint"] = Builtins.jactionlint
+  ["editorconfig"] = Builtins.editorconfig_checker
+  ["cargo-clippy"] = (Builtins.cargo_clippy) {
+    workspace_indicator = "Cargo.lock"
+    check = new CommandSpec {
+      command = "cargo clippy --quiet --workspace --all-targets --locked -- -D warnings"
+      effect = "write"
+    }
+  }
+}
+
+hooks {
+  ["pre-commit"] { fix = true; stash = "git"; steps = formatters }
+  ["pre-push"] { steps = linters }
+  ["commit-msg"] { steps { ["conventional"] = Builtins.check_conventional_commit } }
+  ["check"] { steps = linters }
+  ["fix"] { fix = true; steps = formatters }
+}

@@ -28,7 +28,7 @@ question answering.
 
 ## Prep
 
-- [ ] Get CI going at least for tests (fmt, clippy, test on macOS, Windows, Linux).
+- [x] Get CI going at least for tests (fmt, clippy, test on macOS, Windows, Linux).
 - [ ] Get git hooks using hk for linting and formatting.
 - [ ] Use conventional commits from now on (commit-msg check in hk, PR title
       check in CI).

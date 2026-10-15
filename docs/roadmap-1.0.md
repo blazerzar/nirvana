@@ -37,7 +37,7 @@ question answering.
       (implementation guide §12).
 - [x] Move justfile recipes to mise tasks.
 - [x] Use dprint for formatting.
-- [ ] Update AGENTS.md with new tooling.
+- [x] Update AGENTS.md with new tooling.
 
 ## Cleanup
 
@@ -47,7 +47,7 @@ question answering.
 - [ ] Remove TUI stub with ratatui and crossterm.
 - [ ] Remove not needed git attributes.
 - [x] Remove Zed local settings - we may introduce this back later.
-- [ ] Remove the agent.md pointer if not needed.
+- [x] Remove the agent.md pointer if not needed.
 - [ ] Update local deps.
 
 ## Logging

@@ -49,6 +49,7 @@ worklogs.
 | 10 | Local web: **Leptos CSR (Trunk) + axum REST API**, assets embedded with `rust-embed`. *Recommended, confirm when stage 2 starts.* | Simpler single-binary build than SSR/hydration. The explicit API matches the roadmap's API section. |
 | 11 | **Migration tests are mandatory**: 0.3.0-alpha DB and config fixtures are checked in, never edited, and run in CI (§5). | Guarantees the compatibility promise. |
 | 12 | **Linear history only, no merge commits.** Feature PRs are squash-merged into `dev-1.0`, `main` is only fast-forwarded to `dev-1.0`. Code review is done by agents on the PR (§12). | |
+| 13 | **Logging with `tracing`** to a single `nirvana.log`, **no rotation**. On macOS the log lives in `~/Library/Logs/nirvana/` (other locations in `paths.rs` module docs). | macOS convention. |
 
 ## 4. Current codebase (0.3.0-alpha) - what exists
 
@@ -432,6 +433,8 @@ possible now:
 8. Branch flow after 1.0: keep `dev-1.0` (or a `dev` branch) or PR straight
    into `main`. Release PRs (release-plz) that land on `main` must not break
    the fast-forward from the dev branch.
+9. Logging to the terminal when running with `cargo run` (dev mode): stdout
+   or stderr, and should it replace or add to the log file?
 
 ## 10. Security notes
 

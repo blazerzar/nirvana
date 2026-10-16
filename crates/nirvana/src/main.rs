@@ -1,12 +1,7 @@
 mod cli;
-mod tui;
 
 fn main() {
-    let result = if std::env::args().len() == 1 {
-        crate::tui::run()
-    } else {
-        crate::cli::run()
-    };
+    let result = crate::cli::run();
 
     if let Err(e) = result {
         eprintln!(

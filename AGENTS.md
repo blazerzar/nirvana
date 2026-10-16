@@ -54,17 +54,17 @@ This is a Cargo workspace with two crates:
 ```text
 crates/
   nirvana-core/   - shared domain logic, SQLite persistence, config, paths
-  nirvana/        - CLI (clap) and Ratatui TUI binary
+  nirvana/        - CLI (clap) binary
 ```
 
 `nirvana-core` owns shared domain and data behavior: `NirvanaApi`, connection
 and ticket domain types, SQLite storage through `rusqlite`, TOML config,
-credentials, integrations, and platform-aware paths. CLI and TUI work should
-use this crate instead of duplicating business logic.
+credentials, integrations, and platform-aware paths. CLI work should use this
+crate instead of duplicating business logic.
 
-`nirvana` is the terminal app. Running without arguments launches the Ratatui
-TUI. With arguments it exposes Clap subcommands for app info, connections,
-publishing, task timing, listing, editing, starting, stopping, and deleting.
+`nirvana` is the terminal app. It exposes Clap subcommands for app info,
+connections, publishing, task timing, listing, editing, starting, stopping,
+and deleting.
 
 ## Rust Guidance
 

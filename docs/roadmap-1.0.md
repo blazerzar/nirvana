@@ -41,14 +41,14 @@ question answering.
 
 ## Cleanup
 
-- [ ] Remove not needed config files.
+- [x] Remove not needed config files.
 - [x] Remove GUI crate - idle detection will be taken from main later, tray and
       menu bar code will be rewritten.
-- [ ] Remove TUI stub with ratatui and crossterm.
-- [ ] Remove not needed git attributes.
+- [x] Remove TUI stub with ratatui and crossterm.
+- [x] Remove not needed git attributes.
 - [x] Remove Zed local settings - we may introduce this back later.
 - [x] Remove the agent.md pointer if not needed.
-- [ ] Update local deps.
+- [x] Update local deps.
 
 ## Logging
 

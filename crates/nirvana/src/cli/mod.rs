@@ -18,6 +18,7 @@ pub(crate) use time::parse_time;
 #[command(
     name = "nirvana",
     version,
+    arg_required_else_help = true,
     about = "App to get you to time-tracking nirvana"
 )]
 struct Cli {

@@ -97,6 +97,9 @@ logged from the start.
 
 - [ ] Make sure start, stop, resume, switch, edit, delete are working and tested.
 - [ ] Get these commands working in CLI and start integration testing as well.
+- [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
+      through the public API).
+- [ ] Add e2e tests for nirvana (run the built binary).
 - [ ] Decide how owning connection is resolved when profile has multiple
       connections (proposal in the implementation guide).
 - [ ] Let's update ticket name and description when interacting with it (async).

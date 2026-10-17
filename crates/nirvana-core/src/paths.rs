@@ -48,6 +48,16 @@ pub struct AppPaths {
 }
 
 impl AppPaths {
+    /// Resolves the config, data and log locations for the current mode and
+    /// platform, as described in the [module docs](self).
+    ///
+    /// Reads `NIRVANA_DEV` and, in release mode, the `NIRVANA_*_DIR`
+    /// overrides. Empty values are ignored. Directories are not created.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the platform directories or the current executable path
+    /// cannot be determined.
     pub fn resolve() -> Self {
         Self::resolve_with(|key| env::var(key).ok())
     }

@@ -49,7 +49,7 @@ worklogs.
 | 10 | Local web: **Leptos CSR (Trunk) + axum REST API**, assets embedded with `rust-embed`. *Recommended, confirm when stage 2 starts.* | Simpler single-binary build than SSR/hydration. The explicit API matches the roadmap's API section. |
 | 11 | **Migration tests are mandatory**: 0.3.0-alpha DB and config fixtures are checked in, never edited, and run in CI (§5). | Guarantees the compatibility promise. |
 | 12 | **Linear history only, no merge commits.** Feature PRs are squash-merged into `dev-1.0`, `main` is only fast-forwarded to `dev-1.0`. Code review is done by agents on the PR (§12). | |
-| 13 | **Logging with `tracing`** to a single `nirvana.log`, **no rotation**. On macOS the log lives in `~/Library/Logs/nirvana/` (other locations in `paths.rs` module docs). | macOS convention. |
+| 13 | **Logging with `tracing`** to a single `nirvana.log`, **no rotation**. On macOS the log lives in `~/Library/Logs/nirvana/` (other locations in `paths.rs` module docs). Levels: `info` for user issued commands and state changes (start, stop, publish, DB and config migrated, config `X` changed from `a` to `b`), `warn`, `error`, `debug` for everything else (on in release), `trace` for dev only logs (compiled out in release with `release_max_level_debug`). Default filter `warn,nirvana=debug,nirvana_core=debug` (`trace` in dev mode). `[log] level` in `config.toml` (added when the config is migrated) sets the level for nirvana crates, `NIRVANA_LOG` (full filter directive) overrides both. Info events live in `NirvanaApi` so every frontend logs the same. `nirvana-core` owns the log file, format and filters and exposes them as a `Layer` (`logs::file_layer`). The `nirvana` binary only installs it and sets the max level feature, as `tracing` recommends for libraries. Stdout output for GUI dev comes later. | macOS convention. Level scheme follows `tracing` verbosity order. |
 
 ## 4. Current codebase (0.3.0-alpha) - what exists
 
@@ -95,7 +95,7 @@ publish_entry_slots(entry_id, slot_id)   -- a squash maps many slots to one entr
 
 - The machine config (`config.toml`) keeps machine-only state: active profile,
   desktop settings (launch at login, close to menu bar, idle, reminder,
-  shortcuts, web server on/off + port, theme light/dark/system).
+  shortcuts, web server on/off + port, theme light/dark/system), log level.
 - 0.3 migration: create profile `default`. Set every connection's
   `profile_id`, plus `publish = true` and `squash` from the global
   `core.publish_squashed_worklogs`. Move the `credentials` rows into the

@@ -55,7 +55,7 @@ question answering.
 Created before we start changing code, so DB and settings migrations are
 logged from the start.
 
-- [ ] Add logging module.
+- [x] Add logging module.
 
 ## Database
 
@@ -171,6 +171,7 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [ ] Global shortcuts, launch at login, close to menu bar.
 - [ ] Idle detection (take from main), not tracking reminder.
 - [ ] GUI will have its own settings that are related to the GUI application.
+- [ ] Log to stdout when running the GUI with cargo run.
 
 ## Webserver
 

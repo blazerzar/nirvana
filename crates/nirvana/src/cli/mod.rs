@@ -13,6 +13,7 @@ use nirvana_core::api::domain::Change;
 use std::fmt;
 use std::fmt::Display;
 pub(crate) use time::parse_time;
+use tracing::debug;
 
 #[derive(Parser)]
 #[command(
@@ -181,6 +182,12 @@ impl Display for SecretStore {
 }
 
 pub(crate) fn run() -> anyhow::Result<()> {
+    let args: Vec<_> = std::env::args_os()
+        .skip(1)
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
+    debug!(?args, "command ran");
+
     let cli = Cli::parse();
 
     match cli.command {

@@ -42,7 +42,7 @@ const LOG_ENV_VAR: &str = "NIRVANA_LOG";
 /// use tracing_subscriber::layer::SubscriberExt;
 /// use tracing_subscriber::util::SubscriberInitExt;
 ///
-/// match nirvana_core::logs::file_layer() {
+/// match nirvana_core::logging::file_layer() {
 ///     Ok(layer) => tracing_subscriber::registry().with(layer).init(),
 ///     Err(e) => eprintln!("logging disabled: {e}"),
 /// }

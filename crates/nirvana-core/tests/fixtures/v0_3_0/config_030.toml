@@ -1,0 +1,15 @@
+schema_version = 1
+
+[core]
+active_connection = 1
+publish_squashed_worklogs = true
+
+[gui]
+font_scale = 1.0
+theme = "high-contrast-dark"
+show_tray_icon = true
+
+[idle]
+enabled = true
+methods = ["lock"]
+threshold_secs = 600

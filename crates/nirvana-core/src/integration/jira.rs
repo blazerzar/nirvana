@@ -1,10 +1,12 @@
+use std::time::Duration;
+
 use crate::integration::{IntegrationError, IssueInfo};
 
 pub(crate) struct JiraIntegration {
     host: String,
     identity: String,
     token: String,
-    client: reqwest::blocking::Client,
+    client: reqwest::Client,
     kind: String,
 }
 
@@ -14,7 +16,7 @@ impl JiraIntegration {
             host: host.to_string(),
             identity: identity.to_string(),
             token: token.to_string(),
-            client: reqwest::blocking::Client::new(),
+            client: reqwest::Client::new(),
             kind: kind.to_string(),
         }
     }
@@ -24,7 +26,7 @@ impl JiraIntegration {
             host: host.to_string(),
             identity: String::new(),
             token: String::new(),
-            client: reqwest::blocking::Client::new(),
+            client: reqwest::Client::new(),
             kind: kind.to_string(),
         }
     }
@@ -35,7 +37,7 @@ impl JiraIntegration {
         format!("https://{}/browse/{}", self.host, ticket_key)
     }
 
-    pub(crate) fn test_connection(&self) -> Result<(), IntegrationError> {
+    pub(crate) async fn test_connection(&self) -> Result<(), IntegrationError> {
         let url = format!("https://{}/rest/api/2/myself", self.host);
         let response = (match self.kind.as_str() {
             "jira-cloud" => self
@@ -48,7 +50,9 @@ impl JiraIntegration {
                 format!("Bearer {}", self.token),
             ),
         })
-        .send()?;
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await?;
 
         let status = response.status();
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
@@ -62,7 +66,10 @@ impl JiraIntegration {
         Ok(())
     }
 
-    pub(crate) fn fetch_issue(&self, ticket_key: &str) -> Result<IssueInfo, IntegrationError> {
+    pub(crate) async fn fetch_issue(
+        &self,
+        ticket_key: &str,
+    ) -> Result<IssueInfo, IntegrationError> {
         let url = format!(
             "https://{}/rest/api/2/issue/{}?fields=summary",
             self.host, ticket_key
@@ -79,7 +86,9 @@ impl JiraIntegration {
                 format!("Bearer {}", self.token),
             ),
         })
-        .send()?;
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await?;
 
         let status = response.status();
         if status == reqwest::StatusCode::NOT_FOUND {
@@ -94,13 +103,13 @@ impl JiraIntegration {
             ));
         }
 
-        let body: serde_json::Value = response.json()?;
+        let body: serde_json::Value = response.json().await?;
         let summary = body["fields"]["summary"].as_str().unwrap_or("").to_string();
 
         Ok(IssueInfo { summary })
     }
 
-    pub(crate) fn publish_slot(
+    pub(crate) async fn publish_slot(
         &self,
         ticket_key: &str,
         started_at: i64,
@@ -132,7 +141,9 @@ impl JiraIntegration {
             ),
         })
         .json(&body)
-        .send()?;
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await?;
 
         let status = response.status();
         if status == reqwest::StatusCode::NOT_FOUND {

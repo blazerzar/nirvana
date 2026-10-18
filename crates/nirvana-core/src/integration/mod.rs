@@ -50,26 +50,26 @@ impl Integration {
         }
     }
 
-    pub fn test_connection(&self) -> Result<(), IntegrationError> {
+    pub async fn test_connection(&self) -> Result<(), IntegrationError> {
         match &self.kind {
-            IntegrationKind::Jira(j) => j.test_connection(),
+            IntegrationKind::Jira(j) => j.test_connection().await,
         }
     }
 
-    pub fn fetch_issue(&self, ticket_key: &str) -> Result<IssueInfo, IntegrationError> {
+    pub async fn fetch_issue(&self, ticket_key: &str) -> Result<IssueInfo, IntegrationError> {
         match &self.kind {
-            IntegrationKind::Jira(j) => j.fetch_issue(ticket_key),
+            IntegrationKind::Jira(j) => j.fetch_issue(ticket_key).await,
         }
     }
 
-    pub fn publish_slot(
+    pub async fn publish_slot(
         &self,
         ticket_key: &str,
         started_at: i64,
         seconds: i64,
     ) -> Result<(), IntegrationError> {
         match &self.kind {
-            IntegrationKind::Jira(j) => j.publish_slot(ticket_key, started_at, seconds),
+            IntegrationKind::Jira(j) => j.publish_slot(ticket_key, started_at, seconds).await,
         }
     }
 }

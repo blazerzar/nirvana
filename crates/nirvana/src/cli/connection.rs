@@ -362,11 +362,11 @@ fn add_interactive() -> anyhow::Result<ConnectionData> {
     })
 }
 
-pub(crate) fn test() -> anyhow::Result<()> {
+pub(crate) async fn test() -> anyhow::Result<()> {
     let api = Nirvana::new()?;
     let term = Term::stdout();
 
-    match api.test_connection() {
+    match api.test_connection().await {
         Ok(()) => term.write_line("Connection OK")?,
         Err(e) => return Err(e.into()),
     }

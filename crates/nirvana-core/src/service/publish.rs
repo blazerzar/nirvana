@@ -22,7 +22,7 @@ struct PublishDayGroup {
 }
 
 impl Nirvana {
-    pub fn publish(
+    pub async fn publish(
         &self,
         from: i64,
         to: Option<i64>,
@@ -56,7 +56,10 @@ impl Nirvana {
         let mut failed = Vec::new();
 
         for worklog in &worklogs {
-            match integ.publish_slot(&worklog.ticket_key, worklog.started_at, worklog.seconds) {
+            match integ
+                .publish_slot(&worklog.ticket_key, worklog.started_at, worklog.seconds)
+                .await
+            {
                 Ok(()) => published_ids.extend(worklog.source_slot_ids.iter().copied()),
                 Err(e) => failed.push(PublishFailure {
                     ticket_key: worklog.ticket_key.clone(),

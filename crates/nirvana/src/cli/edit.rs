@@ -10,7 +10,7 @@ pub(crate) struct EditArgs {
     pub stopped_at: Change<i64>,
 }
 
-pub(crate) fn run(args: EditArgs) -> anyhow::Result<()> {
+pub(crate) async fn run(args: EditArgs) -> anyhow::Result<()> {
     let api = Nirvana::new()?;
 
     let edit = SlotEdit {
@@ -20,7 +20,7 @@ pub(crate) fn run(args: EditArgs) -> anyhow::Result<()> {
         stopped_at: args.stopped_at,
     };
 
-    let slot = api.edit_slot(args.slot_id, edit)?;
+    let slot = api.edit_slot(args.slot_id, edit).await?;
 
     println!(
         "{} {} slot {}",

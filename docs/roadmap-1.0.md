@@ -63,7 +63,7 @@ logged from the start.
       DB (connections, plaintext credentials, tickets, closed, running and
       published slots, notes) and config.toml files (0.1 flat and 0.3
       sectioned). Check them into the repo, never edit them.
-- [ ] Make core async (tokio, async reqwest).
+- [x] Make core async (tokio, async reqwest).
 - [ ] Add SeaORM and replace the raw SQL migration files with SeaORM
       migrations (0001 and 0002 rewritten as the baseline).
 - [ ] Detect a <= 0.3.0-alpha DB (user_version 1 or 2, no SeaORM migrations
@@ -121,6 +121,7 @@ logged from the start.
 
 - [ ] Make sure start, stop, resume, switch, edit, delete are working and tested.
 - [ ] Get these commands working in CLI and start integration testing as well.
+- [ ] Check for blocking calls inside async code while refactoring the CLI.
 - [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
       through the public API).
 - [ ] Add e2e tests for nirvana (run the built binary).
@@ -136,6 +137,8 @@ logged from the start.
 - [ ] Add Linear integration - GraphQL, ticket name + description, workspace
       and user detected from key.
 - [ ] Publish time to Linear as issue comment.
+- [ ] Build HTTP clients with `reqwest::Client::builder()` (timeout set on the
+      client instead of per request).
 
 ## Publishing
 

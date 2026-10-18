@@ -1,11 +1,11 @@
-use crate::api::NirvanaApi;
-use crate::api::NirvanaError;
-use crate::api::domain::Slot;
-use crate::api::errors::TrackingError;
+use crate::domain::Slot;
+use crate::errors::NirvanaError;
+use crate::errors::TrackingError;
 use crate::integration;
+use crate::service::Nirvana;
 use crate::storage::slot_repo::{self, SlotSort};
 
-impl NirvanaApi {
+impl Nirvana {
     pub fn get_running_slot(&self) -> Result<Option<Slot>, NirvanaError> {
         let Some(connection_id) = self.config.core.active_connection else {
             return Ok(None);

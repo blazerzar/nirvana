@@ -1,12 +1,12 @@
-use crate::api::NirvanaApi;
-use crate::api::NirvanaError;
-use crate::api::domain::{Connection, ConnectionData};
-use crate::api::errors::TrackingError;
 use crate::credentials;
+use crate::domain::{Connection, ConnectionData};
+use crate::errors::NirvanaError;
+use crate::errors::TrackingError;
 use crate::integration;
+use crate::service::Nirvana;
 use crate::storage::connection_repo;
 
-impl NirvanaApi {
+impl Nirvana {
     pub fn list_connections(&self) -> Result<Vec<Connection>, NirvanaError> {
         let records = connection_repo::list(&self.db)?;
         Ok(records.into_iter().map(Connection::from).collect())
@@ -108,8 +108,8 @@ fn normalize_host(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::errors::TrackingError;
     use crate::config::{AppConfig, CoreConfig, GuiConfig, IdleConfig};
+    use crate::errors::TrackingError;
     use crate::paths::AppPaths;
     use crate::storage::{Database, connection_repo, ticket_repo};
     use std::ops::Deref;
@@ -120,12 +120,12 @@ mod tests {
     static TEST_DB_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     struct TestApi {
-        api: Option<NirvanaApi>,
+        api: Option<Nirvana>,
         base: PathBuf,
     }
 
     impl Deref for TestApi {
-        type Target = NirvanaApi;
+        type Target = Nirvana;
 
         fn deref(&self) -> &Self::Target {
             self.api.as_ref().unwrap()
@@ -140,7 +140,7 @@ mod tests {
     }
 
     impl TestApi {
-        fn api_mut(&mut self) -> &mut NirvanaApi {
+        fn api_mut(&mut self) -> &mut Nirvana {
             self.api.as_mut().unwrap()
         }
     }
@@ -167,7 +167,7 @@ mod tests {
         let db = Database::initialize(&paths.db_file).unwrap();
 
         TestApi {
-            api: Some(NirvanaApi {
+            api: Some(Nirvana {
                 paths,
                 config: AppConfig {
                     schema_version: Some(1),
@@ -192,7 +192,7 @@ mod tests {
         }
     }
 
-    fn add_connection(api: &NirvanaApi, name: &str) -> i64 {
+    fn add_connection(api: &Nirvana, name: &str) -> i64 {
         connection_repo::add(
             &api.db,
             ConnectionData {

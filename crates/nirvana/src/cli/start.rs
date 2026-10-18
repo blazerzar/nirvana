@@ -1,12 +1,12 @@
 use chrono::{Local, TimeZone};
 use console::style;
 use dialoguer::{FuzzySelect, Input, theme::ColorfulTheme};
-use nirvana_core::api::NirvanaApi;
+use nirvana_core::service::Nirvana;
 
 use crate::cli::StartArgs;
 
 pub(crate) fn run(args: StartArgs) -> anyhow::Result<()> {
-    let api = NirvanaApi::new()?;
+    let api = Nirvana::new()?;
 
     let (ticket, at, note) = match args.ticket {
         Some(ticket) => (ticket, args.at, args.note),
@@ -30,9 +30,7 @@ pub(crate) fn run(args: StartArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn interactive_prompt(
-    api: &NirvanaApi,
-) -> anyhow::Result<(String, Option<String>, Option<String>)> {
+fn interactive_prompt(api: &Nirvana) -> anyhow::Result<(String, Option<String>, Option<String>)> {
     let theme = ColorfulTheme {
         active_item_prefix: console::Style::new().green().apply_to(String::from("❯")),
         ..ColorfulTheme::default()

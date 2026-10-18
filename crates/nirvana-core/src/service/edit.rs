@@ -1,12 +1,12 @@
-use crate::api::NirvanaApi;
-use crate::api::NirvanaError;
-use crate::api::domain::{Slot, SlotEdit};
-use crate::api::errors::TrackingError;
+use crate::domain::{Slot, SlotEdit};
+use crate::errors::NirvanaError;
+use crate::errors::TrackingError;
 use crate::integration;
+use crate::service::Nirvana;
 use crate::storage::slot_repo;
 use crate::storage::slot_repo::Change;
 
-impl NirvanaApi {
+impl Nirvana {
     pub fn edit_slot(&self, slot_id: i64, edit: SlotEdit) -> Result<Slot, NirvanaError> {
         let current = slot_repo::find_by_id_with_ticket(&self.db, slot_id)?
             .ok_or(TrackingError::SlotNotFound(slot_id))?;

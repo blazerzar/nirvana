@@ -1,8 +1,8 @@
-use crate::api::NirvanaApi;
-use crate::api::domain::{PublishFailure, PublishResult};
-use crate::api::errors::TrackingError;
 use crate::credentials;
+use crate::domain::{PublishFailure, PublishResult};
+use crate::errors::TrackingError;
 use crate::integration;
+use crate::service::Nirvana;
 use crate::storage::slot_repo::{self, SlotWithTicket};
 use chrono::{Local, TimeZone};
 
@@ -21,7 +21,7 @@ struct PublishDayGroup {
     worklogs: Vec<PublishWorklog>,
 }
 
-impl NirvanaApi {
+impl Nirvana {
     pub fn publish(
         &self,
         from: i64,

@@ -1,10 +1,11 @@
-use crate::api::domain::AppSettings;
-use crate::api::{NirvanaApi, NirvanaError};
 use crate::config::{
     normalize_font_scale, normalize_idle_methods, normalize_idle_threshold_secs, normalize_theme,
 };
+use crate::domain::AppSettings;
+use crate::errors::NirvanaError;
+use crate::service::Nirvana;
 
-impl NirvanaApi {
+impl Nirvana {
     pub fn get_settings(&self) -> AppSettings {
         AppSettings {
             publish_squashed_worklogs: self.config.core.publish_squashed_worklogs,

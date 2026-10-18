@@ -1,14 +1,14 @@
 use console::{Style, Term};
 use std::env;
 
-use nirvana_core::api::NirvanaApi;
+use nirvana_core::service::Nirvana;
 
 const SHORT_HASH: Option<&str> = option_env!("SHORT_HASH");
 const COMMIT_HASH: Option<&str> = option_env!("COMMIT_HASH");
 const COMMIT_DATE: Option<&str> = option_env!("COMMIT_DATE");
 
 pub(crate) fn run() -> anyhow::Result<()> {
-    let api = NirvanaApi::new()?;
+    let api = Nirvana::new()?;
     let info = api.info();
     let term = Term::stdout();
     let bold = Style::new().bold();

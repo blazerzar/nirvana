@@ -3,8 +3,8 @@ use chrono::{Local, TimeZone};
 use clap::ValueEnum;
 use console::{Style, Term};
 use dialoguer::{Input, Password, Select, theme::ColorfulTheme};
-use nirvana_core::api::NirvanaApi;
-use nirvana_core::api::domain::{Connection, ConnectionData};
+use nirvana_core::domain::{Connection, ConnectionData};
+use nirvana_core::service::Nirvana;
 use std::cmp::max;
 
 enum Column {
@@ -60,7 +60,7 @@ const COLUMNS: &[Column] = &[
 ];
 
 pub(crate) fn list() -> anyhow::Result<()> {
-    let api = NirvanaApi::new()?;
+    let api = Nirvana::new()?;
     let connections = api.list_connections()?;
 
     let term = Term::stdout();
@@ -116,7 +116,7 @@ pub(crate) fn list() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn is_active(conn: &Connection, api: &NirvanaApi) -> bool {
+fn is_active(conn: &Connection, api: &Nirvana) -> bool {
     api.active_connection() == Some(conn.id)
 }
 
@@ -151,7 +151,7 @@ fn print_row(
 }
 
 pub(crate) fn activate(query: Option<&str>) -> anyhow::Result<()> {
-    let mut api = NirvanaApi::new()?;
+    let mut api = Nirvana::new()?;
     let connections = api.list_connections()?;
 
     if connections.is_empty() {
@@ -229,7 +229,7 @@ pub(crate) fn add(args: AddArgs) -> anyhow::Result<()> {
         add_command(args)?
     };
 
-    let mut api = NirvanaApi::new()?;
+    let mut api = Nirvana::new()?;
     let connection = api.add_connection(data)?;
 
     let term = Term::stdout();
@@ -363,7 +363,7 @@ fn add_interactive() -> anyhow::Result<ConnectionData> {
 }
 
 pub(crate) fn test() -> anyhow::Result<()> {
-    let api = NirvanaApi::new()?;
+    let api = Nirvana::new()?;
     let term = Term::stdout();
 
     match api.test_connection() {

@@ -1,6 +1,6 @@
 use chrono::{Local, NaiveTime, TimeZone};
 use console::{Style, Term};
-use nirvana_core::api::{NirvanaApi, SlotSort};
+use nirvana_core::service::{Nirvana, SlotSort};
 use std::cmp::max;
 
 use crate::cli::{ListArgs, parse_time};
@@ -57,7 +57,7 @@ const COLUMNS: &[Column] = &[
 ];
 
 pub(crate) fn run(args: ListArgs) -> anyhow::Result<()> {
-    let api = NirvanaApi::new()?;
+    let api = Nirvana::new()?;
 
     let today = Local::now().date_naive();
     let from = args

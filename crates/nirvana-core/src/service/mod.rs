@@ -1,8 +1,6 @@
 mod connection;
 mod delete;
-pub mod domain;
 mod edit;
-pub mod errors;
 mod info;
 mod publish;
 mod settings;
@@ -15,13 +13,13 @@ use crate::config::AppConfig;
 use crate::paths::AppPaths;
 use crate::storage::Database;
 
-use errors::NirvanaError;
+use crate::errors::NirvanaError;
 
 pub use crate::storage::slot_repo::{Change, SlotSort};
 
-pub use domain::{SlotCreate, SlotEdit};
+pub use crate::domain::{SlotCreate, SlotEdit};
 
-pub struct NirvanaApi {
+pub struct Nirvana {
     paths: AppPaths,
     config: AppConfig,
     db: Database,
@@ -35,7 +33,7 @@ pub struct AppInfo {
     pub is_dev: bool,
 }
 
-impl NirvanaApi {
+impl Nirvana {
     pub fn new() -> Result<Self, NirvanaError> {
         let paths = AppPaths::resolve()?;
         let config = AppConfig::load(&paths.config_file)?;

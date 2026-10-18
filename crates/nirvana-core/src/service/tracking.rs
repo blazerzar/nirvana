@@ -1,12 +1,12 @@
-use crate::api::NirvanaApi;
-use crate::api::domain::{Connection, Slot, SlotCreate, Ticket};
-use crate::api::errors::{IntegrationError, TrackingError};
 use crate::credentials;
+use crate::domain::{Connection, Slot, SlotCreate, Ticket};
+use crate::errors::{IntegrationError, TrackingError};
 use crate::integration;
+use crate::service::Nirvana;
 use crate::storage::ticket_repo::TicketRecord;
 use crate::storage::{DbError, connection_repo, slot_repo, ticket_repo};
 
-impl NirvanaApi {
+impl Nirvana {
     pub fn start_slot(
         &self,
         ticket_key: &str,
@@ -151,10 +151,10 @@ impl NirvanaApi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::NirvanaError;
-    use crate::api::domain::ConnectionData;
-    use crate::api::domain::SlotEdit;
     use crate::config::{AppConfig, CoreConfig, GuiConfig, IdleConfig};
+    use crate::domain::ConnectionData;
+    use crate::domain::SlotEdit;
+    use crate::errors::NirvanaError;
     use crate::paths::AppPaths;
     use crate::storage::Database;
     use crate::storage::slot_repo::{Change, SlotSort};
@@ -166,12 +166,12 @@ mod tests {
     static TEST_DB_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     struct TestApi {
-        api: Option<NirvanaApi>,
+        api: Option<Nirvana>,
         base: PathBuf,
     }
 
     impl Deref for TestApi {
-        type Target = NirvanaApi;
+        type Target = Nirvana;
 
         fn deref(&self) -> &Self::Target {
             self.api.as_ref().unwrap()
@@ -219,7 +219,7 @@ mod tests {
         .unwrap();
 
         TestApi {
-            api: Some(NirvanaApi {
+            api: Some(Nirvana {
                 paths,
                 config: AppConfig {
                     schema_version: Some(1),
@@ -244,7 +244,7 @@ mod tests {
         }
     }
 
-    fn insert_ticket(api: &NirvanaApi, key: &str) -> i64 {
+    fn insert_ticket(api: &Nirvana, key: &str) -> i64 {
         let connection_id = api.config.core.active_connection.unwrap();
         ticket_repo::insert(&api.db, key, Some("Existing ticket"), connection_id, 0)
             .unwrap()

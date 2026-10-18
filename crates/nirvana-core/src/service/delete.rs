@@ -1,11 +1,11 @@
-use crate::api::NirvanaApi;
-use crate::api::NirvanaError;
-use crate::api::domain::Slot;
-use crate::api::errors::TrackingError;
+use crate::domain::Slot;
+use crate::errors::NirvanaError;
+use crate::errors::TrackingError;
 use crate::integration;
+use crate::service::Nirvana;
 use crate::storage::slot_repo;
 
-impl NirvanaApi {
+impl Nirvana {
     pub fn delete_slot(&self, slot_id: i64) -> Result<Slot, NirvanaError> {
         let current = slot_repo::find_by_id_with_ticket(&self.db, slot_id)?
             .ok_or(TrackingError::SlotNotFound(slot_id))?;

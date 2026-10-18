@@ -57,7 +57,7 @@ crates/
   nirvana/        - CLI (clap) binary
 ```
 
-`nirvana-core` owns shared domain and data behavior: `NirvanaApi`, connection
+`nirvana-core` owns shared domain and data behavior: `Nirvana`, connection
 and ticket domain types, SQLite storage through `rusqlite`, TOML config,
 credentials, integrations, and platform-aware paths. CLI work should use this
 crate instead of duplicating business logic.

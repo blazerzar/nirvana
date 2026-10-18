@@ -1,6 +1,6 @@
 pub(crate) mod jira;
 
-use crate::api::domain::Connection;
+use crate::domain::Connection;
 use jira::JiraIntegration;
 use thiserror::Error;
 

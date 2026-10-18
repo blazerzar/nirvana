@@ -1,6 +1,6 @@
 use console::style;
-use nirvana_core::api::NirvanaApi;
-use nirvana_core::api::domain::{Change, SlotEdit};
+use nirvana_core::domain::{Change, SlotEdit};
+use nirvana_core::service::Nirvana;
 
 pub(crate) struct EditArgs {
     pub slot_id: i64,
@@ -11,7 +11,7 @@ pub(crate) struct EditArgs {
 }
 
 pub(crate) fn run(args: EditArgs) -> anyhow::Result<()> {
-    let api = NirvanaApi::new()?;
+    let api = Nirvana::new()?;
 
     let edit = SlotEdit {
         ticket_key: args.ticket_key,

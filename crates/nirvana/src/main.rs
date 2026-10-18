@@ -5,7 +5,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 mod cli;
 
 fn main() {
-    match nirvana_core::logs::file_layer() {
+    match nirvana_core::logging::file_layer() {
         Ok(layer) => tracing_subscriber::registry().with(layer).init(),
         Err(e) => eprintln!(
             "{} logging disabled: {e}",

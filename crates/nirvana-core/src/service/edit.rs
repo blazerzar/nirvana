@@ -7,7 +7,7 @@ use crate::storage::slot_repo;
 use crate::storage::slot_repo::Change;
 
 impl Nirvana {
-    pub fn edit_slot(&self, slot_id: i64, edit: SlotEdit) -> Result<Slot, NirvanaError> {
+    pub async fn edit_slot(&self, slot_id: i64, edit: SlotEdit) -> Result<Slot, NirvanaError> {
         let current = slot_repo::find_by_id_with_ticket(&self.db, slot_id)?
             .ok_or(TrackingError::SlotNotFound(slot_id))?;
 
@@ -70,7 +70,8 @@ impl Nirvana {
                     current.connection_id,
                     ticket_key,
                     last_worked_at,
-                )?
+                )
+                .await?
                 .id,
             )
         } else {

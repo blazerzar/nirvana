@@ -7,7 +7,7 @@ use crate::storage::ticket_repo::TicketRecord;
 use crate::storage::{DbError, connection_repo, slot_repo, ticket_repo};
 
 impl Nirvana {
-    pub fn start_slot(
+    pub async fn start_slot(
         &self,
         ticket_key: &str,
         at: Option<i64>,
@@ -23,7 +23,9 @@ impl Nirvana {
         let ticket_key = ticket_key.to_uppercase();
         let now = at.unwrap_or_else(|| chrono::Utc::now().timestamp());
 
-        let ticket = self.resolve_ticket_for_work(&connection, connection_id, &ticket_key, now)?;
+        let ticket = self
+            .resolve_ticket_for_work(&connection, connection_id, &ticket_key, now)
+            .await?;
 
         if let Some(running) = slot_repo::find_running(&self.db)? {
             let stopped_at = std::cmp::max(running.started_at + 1, now);
@@ -36,7 +38,7 @@ impl Nirvana {
         Ok(Slot::from_record(result, issue_url))
     }
 
-    pub fn create_slot(&self, input: SlotCreate) -> Result<Slot, super::NirvanaError> {
+    pub async fn create_slot(&self, input: SlotCreate) -> Result<Slot, super::NirvanaError> {
         let connection_id = self
             .config
             .core
@@ -58,12 +60,9 @@ impl Nirvana {
 
         let connection = self.get_connection(connection_id)?;
         let ticket_key = input.ticket_key.to_uppercase();
-        let ticket = self.resolve_ticket_for_work(
-            &connection,
-            connection_id,
-            &ticket_key,
-            input.stopped_at,
-        )?;
+        let ticket = self
+            .resolve_ticket_for_work(&connection, connection_id, &ticket_key, input.stopped_at)
+            .await?;
 
         let result = slot_repo::insert_completed(
             &self.db,
@@ -105,7 +104,7 @@ impl Nirvana {
             ))
     }
 
-    pub(crate) fn resolve_ticket_for_work(
+    pub(crate) async fn resolve_ticket_for_work(
         &self,
         connection: &Connection,
         connection_id: i64,
@@ -120,7 +119,7 @@ impl Nirvana {
             None => {
                 let token = credentials::get_token(&self.db, connection_id)?;
                 let integ = integration::build_integration(connection, &token)?;
-                let issue = integ.fetch_issue(ticket_key).map_err(|e| match e {
+                let issue = integ.fetch_issue(ticket_key).await.map_err(|e| match e {
                     IntegrationError::TicketNotFound(key) => {
                         super::NirvanaError::Tracking(TrackingError::TicketNotFound(key))
                     }
@@ -260,12 +259,15 @@ mod tests {
         }
     }
 
-    #[test]
-    fn creates_completed_unpublished_slot() {
+    #[tokio::test]
+    async fn creates_completed_unpublished_slot() {
         let api = test_api();
         insert_ticket(&api, "DES-1");
 
-        let slot = api.create_slot(slot_create("des-1", 100, 160)).unwrap();
+        let slot = api
+            .create_slot(slot_create("des-1", 100, 160))
+            .await
+            .unwrap();
 
         assert_eq!(slot.ticket_key, "DES-1");
         assert_eq!(slot.note.as_deref(), Some("manual entry"));
@@ -274,11 +276,14 @@ mod tests {
         assert_eq!(slot.published_at, None);
     }
 
-    #[test]
-    fn rejects_invalid_time_range() {
+    #[tokio::test]
+    async fn rejects_invalid_time_range() {
         let api = test_api();
 
-        let error = api.create_slot(slot_create("DES-1", 160, 160)).unwrap_err();
+        let error = api
+            .create_slot(slot_create("DES-1", 160, 160))
+            .await
+            .unwrap_err();
 
         assert!(matches!(
             error,
@@ -286,13 +291,14 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn rejects_future_times() {
+    #[tokio::test]
+    async fn rejects_future_times() {
         let api = test_api();
         let future = chrono::Utc::now().timestamp() + 60;
 
         let error = api
             .create_slot(slot_create("DES-1", future - 10, future))
+            .await
             .unwrap_err();
 
         assert!(matches!(
@@ -301,13 +307,18 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn rejects_overlapping_slot() {
+    #[tokio::test]
+    async fn rejects_overlapping_slot() {
         let api = test_api();
         insert_ticket(&api, "DES-1");
-        api.create_slot(slot_create("DES-1", 100, 160)).unwrap();
+        api.create_slot(slot_create("DES-1", 100, 160))
+            .await
+            .unwrap();
 
-        let error = api.create_slot(slot_create("DES-1", 150, 200)).unwrap_err();
+        let error = api
+            .create_slot(slot_create("DES-1", 150, 200))
+            .await
+            .unwrap_err();
 
         assert!(matches!(
             error,
@@ -315,14 +326,17 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn does_not_stop_existing_running_slot() {
+    #[tokio::test]
+    async fn does_not_stop_existing_running_slot() {
         let api = test_api();
         let ticket_id = insert_ticket(&api, "DES-1");
         let connection_id = api.config.core.active_connection.unwrap();
         let running = slot_repo::insert(&api.db, ticket_id, connection_id, None, 300).unwrap();
 
-        let slot = api.create_slot(slot_create("DES-1", 100, 160)).unwrap();
+        let slot = api
+            .create_slot(slot_create("DES-1", 100, 160))
+            .await
+            .unwrap();
         let still_running = slot_repo::find_running(&api.db).unwrap().unwrap();
 
         assert_eq!(slot.stopped_at, Some(160));
@@ -331,15 +345,21 @@ mod tests {
         assert_eq!(still_running.stopped_at, None);
     }
 
-    #[test]
-    fn lists_slots_that_overlap_bounded_range() {
+    #[tokio::test]
+    async fn lists_slots_that_overlap_bounded_range() {
         let api = test_api();
         insert_ticket(&api, "DES-1");
         insert_ticket(&api, "DES-2");
         insert_ticket(&api, "DES-3");
-        api.create_slot(slot_create("DES-1", 100, 140)).unwrap();
-        api.create_slot(slot_create("DES-2", 140, 220)).unwrap();
-        api.create_slot(slot_create("DES-3", 260, 320)).unwrap();
+        api.create_slot(slot_create("DES-1", 100, 140))
+            .await
+            .unwrap();
+        api.create_slot(slot_create("DES-2", 140, 220))
+            .await
+            .unwrap();
+        api.create_slot(slot_create("DES-3", 260, 320))
+            .await
+            .unwrap();
 
         let slots = api.get_slots(150, Some(260), SlotSort::StartedAt).unwrap();
 
@@ -349,13 +369,17 @@ mod tests {
         assert_eq!(slots[0].stopped_at, Some(220));
     }
 
-    #[test]
-    fn lists_open_ended_slots_that_overlap_range_start() {
+    #[tokio::test]
+    async fn lists_open_ended_slots_that_overlap_range_start() {
         let api = test_api();
         insert_ticket(&api, "DES-1");
         insert_ticket(&api, "DES-2");
-        api.create_slot(slot_create("DES-1", 100, 140)).unwrap();
-        api.create_slot(slot_create("DES-2", 140, 220)).unwrap();
+        api.create_slot(slot_create("DES-1", 100, 140))
+            .await
+            .unwrap();
+        api.create_slot(slot_create("DES-2", 140, 220))
+            .await
+            .unwrap();
 
         let slots = api.get_slots(200, None, SlotSort::StartedAt).unwrap();
 
@@ -365,12 +389,15 @@ mod tests {
         assert_eq!(slots[0].stopped_at, Some(220));
     }
 
-    #[test]
-    fn edits_slot_ticket_to_existing_ticket() {
+    #[tokio::test]
+    async fn edits_slot_ticket_to_existing_ticket() {
         let api = test_api();
         insert_ticket(&api, "DES-1");
         insert_ticket(&api, "DES-2");
-        let slot = api.create_slot(slot_create("DES-1", 100, 160)).unwrap();
+        let slot = api
+            .create_slot(slot_create("DES-1", 100, 160))
+            .await
+            .unwrap();
 
         let edited = api
             .edit_slot(
@@ -382,6 +409,7 @@ mod tests {
                     stopped_at: Change::Skip,
                 },
             )
+            .await
             .unwrap();
 
         assert_eq!(edited.id, slot.id);
@@ -390,12 +418,15 @@ mod tests {
         assert_eq!(edited.stopped_at, Some(160));
     }
 
-    #[test]
-    fn rejects_ticket_edit_for_published_slot() {
+    #[tokio::test]
+    async fn rejects_ticket_edit_for_published_slot() {
         let api = test_api();
         insert_ticket(&api, "DES-1");
         insert_ticket(&api, "DES-2");
-        let slot = api.create_slot(slot_create("DES-1", 100, 160)).unwrap();
+        let slot = api
+            .create_slot(slot_create("DES-1", 100, 160))
+            .await
+            .unwrap();
         slot_repo::mark_published(&api.db, &[slot.id], 200).unwrap();
 
         let error = api
@@ -408,6 +439,7 @@ mod tests {
                     stopped_at: Change::Skip,
                 },
             )
+            .await
             .unwrap_err();
 
         assert!(matches!(
@@ -416,11 +448,14 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn edits_slot_note_and_times() {
+    #[tokio::test]
+    async fn edits_slot_note_and_times() {
         let api = test_api();
         insert_ticket(&api, "DES-1");
-        let slot = api.create_slot(slot_create("DES-1", 100, 160)).unwrap();
+        let slot = api
+            .create_slot(slot_create("DES-1", 100, 160))
+            .await
+            .unwrap();
 
         let edited = api
             .edit_slot(
@@ -432,6 +467,7 @@ mod tests {
                     stopped_at: Change::Set(170),
                 },
             )
+            .await
             .unwrap();
 
         assert_eq!(edited.ticket_key, "DES-1");

@@ -181,7 +181,7 @@ impl Display for SecretStore {
     }
 }
 
-pub(crate) fn run() -> anyhow::Result<()> {
+pub(crate) async fn run() -> anyhow::Result<()> {
     let args: Vec<_> = std::env::args_os()
         .skip(1)
         .map(|arg| arg.to_string_lossy().into_owned())
@@ -192,7 +192,7 @@ pub(crate) fn run() -> anyhow::Result<()> {
 
     match cli.command {
         Some(Command::Info) => info::run(),
-        Some(Command::Start(args)) => start::run(args),
+        Some(Command::Start(args)) => start::run(args).await,
         Some(Command::Stop(args)) => stop::run(args),
         Some(Command::Edit(args)) => {
             let note = match args.note {
@@ -213,17 +213,18 @@ pub(crate) fn run() -> anyhow::Result<()> {
                 started_at,
                 stopped_at,
             })
+            .await
         }
         Some(Command::Delete(args)) => delete::run(delete::DeleteArgs {
             slot_id: args.slot_id,
         }),
         Some(Command::List(args)) => list::run(args),
-        Some(Command::Publish(args)) => publish::run(args),
+        Some(Command::Publish(args)) => publish::run(args).await,
         Some(Command::Connection { command }) => match command {
             Connection::Add(args) => connection::add(args),
             Connection::List => connection::list(),
             Connection::Use { query } => connection::activate(query.as_deref()),
-            Connection::Test => connection::test(),
+            Connection::Test => connection::test().await,
         },
         None => Ok(()),
     }

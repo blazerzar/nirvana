@@ -4,7 +4,7 @@ use nirvana_core::service::Nirvana;
 
 use crate::cli::{PublishArgs, parse_time};
 
-pub(crate) fn run(args: PublishArgs) -> anyhow::Result<()> {
+pub(crate) async fn run(args: PublishArgs) -> anyhow::Result<()> {
     let api = Nirvana::new()?;
 
     let today = Local::now().date_naive();
@@ -21,7 +21,7 @@ pub(crate) fn run(args: PublishArgs) -> anyhow::Result<()> {
     let to = args.stop.as_deref().map(parse_time).transpose()?;
 
     let term = Term::stdout();
-    let result = api.publish(from, to)?;
+    let result = api.publish(from, to).await?;
 
     if result.published_count == 0 && result.failed.is_empty() {
         term.write_line("No unpublished slots found.")?;

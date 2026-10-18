@@ -65,7 +65,10 @@ impl Nirvana {
         Ok(record.into())
     }
 
-    pub fn test_connection_data(&self, mut connection: ConnectionData) -> Result<(), NirvanaError> {
+    pub async fn test_connection_data(
+        &self,
+        mut connection: ConnectionData,
+    ) -> Result<(), NirvanaError> {
         connection.host = normalize_host(&connection.host);
         let candidate = Connection {
             id: 0,
@@ -78,11 +81,11 @@ impl Nirvana {
             updated_at: 0,
         };
         let integ = integration::build_integration(&candidate, &connection.token)?;
-        integ.test_connection()?;
+        integ.test_connection().await?;
         Ok(())
     }
 
-    pub fn test_connection(&self) -> Result<(), NirvanaError> {
+    pub async fn test_connection(&self) -> Result<(), NirvanaError> {
         let connection_id = self
             .config
             .core
@@ -92,7 +95,7 @@ impl Nirvana {
         let connection = self.get_connection(connection_id)?;
         let token = credentials::get_token(&self.db, connection_id)?;
         let integ = integration::build_integration(&connection, &token)?;
-        integ.test_connection()?;
+        integ.test_connection().await?;
         Ok(())
     }
 }

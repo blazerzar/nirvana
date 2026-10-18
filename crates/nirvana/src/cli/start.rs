@@ -5,7 +5,7 @@ use nirvana_core::service::Nirvana;
 
 use crate::cli::StartArgs;
 
-pub(crate) fn run(args: StartArgs) -> anyhow::Result<()> {
+pub(crate) async fn run(args: StartArgs) -> anyhow::Result<()> {
     let api = Nirvana::new()?;
 
     let (ticket, at, note) = match args.ticket {
@@ -15,7 +15,7 @@ pub(crate) fn run(args: StartArgs) -> anyhow::Result<()> {
 
     let at_ts = at.as_deref().map(parse_time).transpose()?;
 
-    let slot = api.start_slot(&ticket, at_ts, note.as_deref())?;
+    let slot = api.start_slot(&ticket, at_ts, note.as_deref()).await?;
     let time = format_timestamp(slot.started_at);
 
     println!(

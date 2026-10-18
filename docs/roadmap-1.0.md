@@ -59,7 +59,7 @@ logged from the start.
 
 ## Database
 
-- [ ] Capture 0.3.0-alpha fixtures: build the `v0.3.0-alpha` tag and create a
+- [x] Capture 0.3.0-alpha fixtures: build the `v0.3.0-alpha` tag and create a
       DB (connections, plaintext credentials, tickets, closed, running and
       published slots, notes) and config.toml files (0.1 flat and 0.3
       sectioned). Check them into the repo, never edit them.

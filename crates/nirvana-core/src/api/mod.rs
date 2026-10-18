@@ -37,7 +37,7 @@ pub struct AppInfo {
 
 impl NirvanaApi {
     pub fn new() -> Result<Self, NirvanaError> {
-        let paths = AppPaths::resolve();
+        let paths = AppPaths::resolve()?;
         let config = AppConfig::load(&paths.config_file)?;
         let db = Database::initialize(&paths.db_file)?;
         Ok(Self { paths, config, db })

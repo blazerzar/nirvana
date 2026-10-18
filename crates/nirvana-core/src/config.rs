@@ -217,9 +217,9 @@ impl AppConfig {
         Ok(())
     }
 
-    pub fn load_from_default_path() -> Self {
-        let paths = AppPaths::resolve();
-        Self::load(&paths.config_file).unwrap_or_default()
+    pub fn load_from_default_path() -> Result<Self, ConfigError> {
+        let paths = AppPaths::resolve()?;
+        Ok(Self::load(&paths.config_file).unwrap_or_default())
     }
 }
 

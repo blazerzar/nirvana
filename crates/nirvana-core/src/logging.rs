@@ -56,7 +56,7 @@ pub fn file_layer<S>() -> io::Result<impl Layer<S>>
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
-    let paths = AppPaths::resolve();
+    let paths = AppPaths::resolve()?;
     let file = open_log_file(&paths.log_file)?;
     let filter = filter(|key| env::var(key).ok(), paths.is_dev);
     Ok(fmt_layer(Arc::new(file)).with_filter(filter))

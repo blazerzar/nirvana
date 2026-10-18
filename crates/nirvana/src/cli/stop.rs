@@ -1,11 +1,11 @@
 use chrono::TimeZone;
 use console::style;
-use nirvana_core::api::NirvanaApi;
+use nirvana_core::service::Nirvana;
 
 use crate::cli::StopArgs;
 
 pub(crate) fn run(args: StopArgs) -> anyhow::Result<()> {
-    let api = NirvanaApi::new()?;
+    let api = Nirvana::new()?;
     let at_ts = args.at.as_deref().map(parse_time).transpose()?;
 
     match api.stop_slot(at_ts)? {

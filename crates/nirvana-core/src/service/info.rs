@@ -1,6 +1,6 @@
-use crate::api::{AppInfo, NirvanaApi};
+use crate::service::{AppInfo, Nirvana};
 
-impl NirvanaApi {
+impl Nirvana {
     pub fn info(&self) -> AppInfo {
         AppInfo {
             version: env!("CARGO_PKG_VERSION").to_string(),

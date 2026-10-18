@@ -1,4 +1,4 @@
-use crate::api::domain::ConnectionData;
+use crate::domain::ConnectionData;
 use crate::storage::{Database, DbError};
 
 pub(crate) struct ConnectionRecord {

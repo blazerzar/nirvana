@@ -1,11 +1,11 @@
 use chrono::{Local, NaiveTime, TimeZone};
 use console::Term;
-use nirvana_core::api::NirvanaApi;
+use nirvana_core::service::Nirvana;
 
 use crate::cli::{PublishArgs, parse_time};
 
 pub(crate) fn run(args: PublishArgs) -> anyhow::Result<()> {
-    let api = NirvanaApi::new()?;
+    let api = Nirvana::new()?;
 
     let today = Local::now().date_naive();
     let from = args

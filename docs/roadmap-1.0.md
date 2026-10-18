@@ -59,37 +59,61 @@ logged from the start.
 
 ## Database
 
-- [ ] Back up the DB and config.toml before running migrations.
+- [ ] Capture 0.3.0-alpha fixtures: build the `v0.3.0-alpha` tag and create a
+      DB (connections, plaintext credentials, tickets, closed, running and
+      published slots, notes) and config.toml files (0.1 flat and 0.3
+      sectioned). Check them into the repo, never edit them.
 - [ ] Make core async (tokio, async reqwest).
-- [ ] Add SeaORM.
-- [ ] Bridge existing user_version migrations (v1, v2) into SeaORM baseline
-      that detects 0.3 DB.
+- [ ] Add SeaORM and replace the raw SQL migration files with SeaORM
+      migrations (0001 and 0002 rewritten as the baseline).
+- [ ] Detect a <= 0.3.0-alpha DB (user_version 1 or 2, no SeaORM migrations
+      table), back it up to `data_dir/backup`, mark the matching baseline
+      migrations as applied and migrate. Log every step.
 - [ ] Add profiles table - single DB, existing data becomes one profile with
       all connections.
 - [ ] Add settings to connections - publish and squash columns, replacing
-      global publish_squashed_worklogs.
+      global publish_squashed_worklogs. Add profile_id, unique name per
+      profile. Credentials table and secret_store stay (plaintext support).
 - [ ] Add profile settings (week start, time format, workday, expected hours,
       weekends, portal toggle + url).
 - [ ] Add uuid to slots (needed for idempotent publishing to portal).
 - [ ] Add publish entries table (target, remote id, status, error) with slot
-      link - covers worklog id, multiple targets and per log errors.
-- [ ] Migrate config.toml: active connection obsolete, squash flag into
-      connections, machine settings for desktop app.
+      link - covers worklog id, multiple targets and per log errors. Published
+      slots get a synthetic ok entry, then drop published_at.
+- [ ] Slots: add profile_id, drop connection_id (check it matches the
+      ticket's first), one running slot per profile.
+- [ ] Tickets: add profile_id, title (from summary), description, synced_at,
+      nullable connection_id, new unique key (implementation guide §9).
 - [ ] Remove note column (decide if notes get exported first).
 - [ ] Add DB migration tests: fixture DB created by 0.3.0-alpha (connections,
       credentials, tickets, slots incl. running and published) migrates
-      correctly to the new schema without data loss.
-- [ ] Add config migration tests: legacy flat and 0.3.0-alpha sectioned
-      config.toml fixtures migrate correctly (squash flag into connections,
-      active connection dropped, machine settings kept).
+      correctly to the new schema without data loss. A fresh DB ends with the
+      same schema as a migrated one. A backup is created.
 - [ ] Keep these fixtures in the repo and run them in CI so every future
       migration is tested against today's data.
-- [ ] Check if we need SQL formatter (without bringing back Node).
+
+## Config
+
+- [ ] Move config into a `config/` module with one file per old format (0.1
+      flat, 0.3 sectioned). Each only parses TOML and returns the latest
+      config interface.
+- [ ] Detect an old config.toml (0.1 flat or schema_version 1), back it up to
+      `data_dir/backup` and migrate. Log every step.
+- [ ] Fail on parse errors instead of falling back to defaults and
+      overwriting the config.
+- [ ] Bump schema_version to 2, one migration step per version.
+- [ ] Replace active_connection with active profile.
+- [ ] Remove publish_squashed_worklogs (moved into connections).
+- [ ] Add `[log] level`.
+- [ ] Add config migration tests: 0.1 flat and 0.3.0-alpha sectioned
+      config.toml fixtures migrate correctly (squash flag into connections,
+      active connection dropped, machine settings kept).
 
 ## Keychain
 
 - [ ] Add support for storing connection tokens in keychain (keyring crate).
 - [ ] Support macOS, Windows and Linux.
+- [ ] Keep plaintext credentials supported (needed on Linux for now).
 - [ ] Migrate plaintext tokens from credentials table into keyring and delete them.
 - [ ] Env override NIRVANA_TOKEN_<NAME> for CI and headless use.
 
@@ -174,6 +198,9 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [ ] Global shortcuts, launch at login, close to menu bar.
 - [ ] Idle detection (take from main), not tracking reminder.
 - [ ] GUI will have its own settings that are related to the GUI application.
+- [ ] Migrate `[gui]` and `[idle]` to desktop settings: remove unused keys
+      (font_scale, show_tray_icon), map old themes to light / dark / system
+      (new schema_version, backup, migration tests).
 - [ ] Log to stdout when running the GUI with cargo run.
 
 ## Webserver

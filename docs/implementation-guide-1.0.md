@@ -39,7 +39,7 @@ worklogs.
 |---|---|---|
 | 1 | **Single SQLite DB with a `profiles` table.** Every profile-scoped table gets `profile_id`. | Maintainer's choice. Departs from the design, which shows one `.db` file per profile: the web profile card cannot show a per-profile DB path, so show the shared DB path in Settings → data instead. |
 | 2 | **0.3 migration: the existing DB becomes one profile** (e.g. `default`) holding all existing connections. Tickets keep their `connection_id`; a slot's connection comes from its ticket (verify `slots.connection_id` always matches before dropping it). | Simple, lossless. Splitting into more profiles can be done by hand later. |
-| 3 | **Async core on tokio + SeaORM**, async reqwest. Bridge the existing `PRAGMA user_version` migrations (v1, v2) into SeaORM migrations with a baseline that detects a 0.3 DB. | axum, Leptos and Iced tasks are async anyway, and SeaORM is async-only. |
+| 3 | **Async core on tokio + SeaORM**, async reqwest. Use SeaORM as much as possible: the raw SQL migration files are replaced by SeaORM migrations, with `0001` and `0002` rewritten as the baseline. | axum, Leptos and Iced tasks are async anyway, and SeaORM is async-only. |
 | 4 | **TUI dropped for 1.0.** Remove the ratatui stub and the ratatui/crossterm deps. | No TUI tasks or v6 screens exist. Can come back after 1.0. |
 | 5 | Tickets keep a `connection_id` FK. **Open:** how the owner is picked when a profile has several connections (see §9). | |
 | 6 | **No rounding anywhere.** Jira rejects worklogs under 60 s, so a sub-minute entry **fails that entry with a visible error** and stays unpublished. | Design product rule: never silently alter time. |
@@ -50,6 +50,9 @@ worklogs.
 | 11 | **Migration tests are mandatory**: 0.3.0-alpha DB and config fixtures are checked in, never edited, and run in CI (§5). | Guarantees the compatibility promise. |
 | 12 | **Linear history only, no merge commits.** Feature PRs are squash-merged into `dev-1.0`, `main` is only fast-forwarded to `dev-1.0`. Code review is done by agents on the PR (§12). | |
 | 13 | **Logging with `tracing`** to a single `nirvana.log`, **no rotation**. On macOS the log lives in `~/Library/Logs/nirvana/` (other locations in `paths.rs` module docs). Levels: `info` for user issued commands and state changes (start, stop, publish, DB and config migrated, config `X` changed from `a` to `b`), `warn`, `error`, `debug` for everything else (on in release), `trace` for dev only logs (compiled out in release with `release_max_level_debug`). Default filter `warn,nirvana=debug,nirvana_core=debug` (`trace` in dev mode). `[log] level` in `config.toml` (added when the config is migrated) sets the level for nirvana crates, `NIRVANA_LOG` (full filter directive) overrides both. Info events live in `NirvanaApi` so every frontend logs the same. `nirvana-core` owns the log file, format and filters and exposes them as a `Layer` (`logs::file_layer`). The `nirvana` binary only installs it and sets the max level feature, as `tracing` recommends for libraries. Stdout output for GUI dev comes later. | macOS convention. Level scheme follows `tracing` verbosity order. |
+| 14 | **One running slot per profile.** | Easier to show the state to the user than one running slot across profiles. |
+| 15 | **Legacy detection + backup.** When a <= 0.3.0-alpha DB is detected (`user_version` 1 or 2, no SeaORM migrations table), it is copied to `data_dir/backup` first, the matching baseline migrations are marked as applied, and then it is migrated. Every step is logged. The config does the same in the Config stage. | Never lose user data on upgrade. |
+| 16 | **Plaintext credentials stay supported** (probably needed on Linux). The `credentials` table and `connections.secret_store` stay in the Database stage. The keyring comes in the Keychain stage. | |
 
 ## 4. Current codebase (0.3.0-alpha) - what exists
 
@@ -63,7 +66,7 @@ worklogs.
   `credentials/` (**tokens stored in plaintext in the `credentials` table**),
   `config.rs` (sectioned `config.toml` with `[core] active_connection,
   publish_squashed_worklogs`, `[gui] font_scale, theme, show_tray_icon`,
-  `[idle] enabled, methods, threshold_secs`, plus the legacy flat format),
+  `[idle] enabled, methods, threshold_secs`, plus the 0.1 flat format),
   `paths.rs` (platform dirs via `directories`, `NIRVANA_*_DIR` overrides,
   dev mode = exe dir).
 - Schema today: `connections(id, name, kind, host, identity, secret_store,
@@ -83,11 +86,14 @@ profile_settings(profile_id, week_start, clock_24h, workday_start, workday_end,
                  expected_minutes_per_day, show_weekends,
                  portal_enabled, portal_url)
 connections(id, profile_id, name, kind {jira-cloud, jira-dc, linear}, host,
-            identity, publish bool, squash bool, created_at, updated_at)
-            -- token lives in the OS keyring, never in the DB
+            identity, secret_store {plaintext, keyring}, publish bool,
+            squash bool, created_at, updated_at)
+            -- unique (profile_id, name)
+credentials(connection_id, credential)   -- plaintext store only
 tickets(id, profile_id, connection_id NULL, ticket_key, title, description,
         last_worked_at, synced_at)   -- NULL = owner not resolved yet
 slots(id, uuid, profile_id, ticket_id, started_at, stopped_at)
+            -- one running slot per profile
 publish_entries(id, target_kind {connection, portal}, connection_id NULL,
                 remote_id, status {pending, ok, failed}, error, attempted_at)
 publish_entry_slots(entry_id, slot_id)   -- a squash maps many slots to one entry
@@ -96,25 +102,39 @@ publish_entry_slots(entry_id, slot_id)   -- a squash maps many slots to one entr
 - The machine config (`config.toml`) keeps machine-only state: active profile,
   desktop settings (launch at login, close to menu bar, idle, reminder,
   shortcuts, web server on/off + port, theme light/dark/system), log level.
-- 0.3 migration: create profile `default`. Set every connection's
-  `profile_id`, plus `publish = true` and `squash` from the global
-  `core.publish_squashed_worklogs`. Move the `credentials` rows into the
-  keyring, then delete them. Add a uuid to every slot. For slots that already
-  have `published_at`, create a synthetic ok `publish_entry` (no remote_id).
-  `core.active_connection` becomes obsolete (all connections are active).
-  The 0.3 `gui.*` settings (font scale, tray icon, theme) map to the new
-  machine settings where an equivalent exists; old theme names map to
-  light/dark.
+- 0.3 DB migration (Database stage): back up the DB to `data_dir/backup`,
+  create profile `default`. Set every connection's `profile_id`, plus
+  `publish = true` and `squash` from the global
+  `core.publish_squashed_worklogs` (read from the 0.3 config, so the DB
+  migrates before the config). Add a uuid to every slot. For slots that
+  already have `published_at`, create a synthetic ok `publish_entry` (no
+  remote_id). `credentials` and `secret_store` stay (plaintext support).
+- Config migration (Config stage): back up `config.toml` to
+  `data_dir/backup`. `core.active_connection` becomes the active profile (all
+  connections are active), `core.publish_squashed_worklogs` is removed,
+  `[log] level` is added. A parse error fails instead of falling back to
+  defaults. The `config/` module has one file per old format (0.1 flat, 0.3
+  sectioned). Each only parses TOML and returns the latest config interface.
+  The 0.1 format stays because 0.2 and 0.3 only rewrite `config.toml` when a
+  setting changes, so a 0.3 user can still have a flat file.
+- Desktop settings migration (GUI stage): the 0.3 `gui.*` and `idle.*`
+  settings map to the new machine settings where an equivalent exists, unused
+  keys (font scale, tray icon) are removed, old theme names map to
+  light/dark/system.
+- Keychain stage: plaintext tokens move into the keyring where it is
+  available.
 - The note column is dropped (no UI uses it). Decide whether old notes get
   exported first.
 - **Migration tests** (required before the Stage 1 review), run in CI:
   - DB: a fixture `nirvana.db` produced by 0.3.0-alpha (`user_version` 2) with
     several connections, credentials, tickets, closed, running and published
     slots. It must migrate to the latest schema with no data loss: one
-    `default` profile, connection settings set, tokens moved to the keyring
-    (mock the keyring in tests), uuids assigned, publish entries created for
-    published slots. Also cover a fresh DB and a DB at `user_version` 1.
-  - Config: fixtures for the legacy flat format and the 0.3.0-alpha sectioned
+    `default` profile, connection settings set, uuids assigned, publish
+    entries created for published slots, backup created. Also cover a fresh
+    DB and a DB at `user_version` 1, and check that a fresh DB and a migrated
+    one end with the same schema. The Keychain stage adds the token move
+    (mock the keyring in tests).
+  - Config: fixtures for the 0.1 flat format and the 0.3.0-alpha sectioned
     format (`[core]`, `[gui]`, `[idle]`). Check that the squash flag moves into
     connections, `active_connection` is dropped, and machine/idle settings are
     kept.
@@ -417,7 +437,9 @@ possible now:
    Proposed: ask every connection (async), cache the first hit in
    `tickets.connection_id`, and ask the user if several answer. A ticket with
    no owner is allowed ("checked when published") and resolved on the next
-   sync or at publish time.
+   sync or at publish time. Decides the tickets unique key, since
+   `unique (ticket_key, connection_id)` allows duplicates once
+   `connection_id` is nullable.
 2. Leptos CSR vs SSR for the local web (CSR recommended, §3 #10).
 3. The per-profile DB path in the design versus the single-DB decision:
    adjust the copy on the profile card, Settings → data and setup ("logs are
@@ -435,6 +457,10 @@ possible now:
    the fast-forward from the dev branch.
 9. Logging to the terminal when running with `cargo run` (dev mode): stdout
    or stderr, and should it replace or add to the log file?
+10. Release boundary: the first standalone release (Stage 1 CICD) freezes the
+    DB and config schema it ships. Later changes then need migrations and
+    fixtures from that release too. Until then, 1.0 migrations can still be
+    edited.
 
 ## 10. Security notes
 
@@ -456,21 +482,23 @@ possible now:
    configs/attributes. Update deps and AGENTS.md.
 3. **Logging**: logging module, in place before any code changes so DB and
    settings migrations are logged.
-4. **Database**: backup of DB and config.toml before migrating, async +
-   SeaORM, 0.3 baseline, profiles, connection settings, publish entries, uuid,
-   config migration, drop notes, migration tests.
-5. **Keychain**.
-6. **Tickets**: commands + tests, owner resolution, async title/description
+4. **Database**: 0.3 fixtures, async + SeaORM, 0.3 detection + backup +
+   baseline, profiles, connection settings, publish entries, uuid, slots and
+   tickets changes, drop notes, migration tests.
+5. **Config**: 0.3 detection + backup, schema_version 2, active profile,
+   `[log] level`, migration tests.
+6. **Keychain**.
+7. **Tickets**: commands + tests, owner resolution, async title/description
    sync.
-7. **Linear** integration.
-8. **Publishing**: fan-out, squash, per-entry errors, retry, sub-minute rule,
+8. **Linear** integration.
+9. **Publishing**: fan-out, squash, per-entry errors, retry, sub-minute rule,
    ranges.
-9. **Core API review**, then **CICD** (first standalone release). Then the
-   **Stage 1 review**.
-10. **Design tokens**, then the **local API server**, then the **Iced
+10. **Core API review**, then **CICD** (first standalone release). Then the
+    **Stage 1 review**.
+11. **Design tokens**, then the **local API server**, then the **Iced
     desktop**, then the **Leptos web**, then **CICD** (signed bundles). Then
     the **Stage 2 review** (decides the Portal stack).
-11. **Portal**.
+12. **Portal**.
 
 ## 12. Git and GitHub workflow
 

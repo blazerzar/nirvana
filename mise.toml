@@ -7,8 +7,16 @@ editorconfig-checker = "4.0.2"
 rust = { version = "1.99.0", profile = "default" }
 "cargo:sea-orm-cli" = "2.0.4"
 
+[env]
+RUSTFMT_TOOLCHAIN = "nightly-2026-10-01"
+
 [tasks.setup]
+depends = ["setup-rustfmt"]
 run = ["hk install --mise"]
+
+[tasks.setup-rustfmt]
+description = "Install nightly rustfmt for unstable formatting options"
+run = "rustup toolchain install $RUSTFMT_TOOLCHAIN --profile minimal --component rustfmt"
 
 [tasks.lint]
 run = "hk check --all"

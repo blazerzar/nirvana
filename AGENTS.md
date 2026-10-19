@@ -39,7 +39,8 @@ Tool versions are pinned in `mise.toml` (`mise install`). Git hooks run through
 | Run all checks | `mise run lint` |
 | Fix formatting | `mise run fix` |
 
-- Formatting: `cargo fmt` (Rust), dprint (TOML, YAML, JSON, `dprint.json`),
+- Formatting: `cargo +$RUSTFMT_TOOLCHAIN fmt` (Rust, pinned nightly rustfmt
+  for import grouping, installed by `mise run setup`), dprint (TOML, YAML, JSON, `dprint.json`),
   `pkl format` (Pkl). Indentation and line endings follow `.editorconfig`.
 - Linting: clippy with `-D warnings`, jactionlint (GitHub workflows, actions
   pinned to commit SHAs), editorconfig-checker.

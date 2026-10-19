@@ -1,7 +1,10 @@
-use crate::paths::AppPaths;
+use std::fs;
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
 use thiserror::Error;
+
+use crate::paths::AppPaths;
 
 const CURRENT_SCHEMA_VERSION: i64 = 1;
 

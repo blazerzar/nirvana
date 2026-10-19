@@ -1,8 +1,9 @@
+use std::cmp::max;
+
 use anyhow::Context;
 use chrono::{Local, NaiveTime, TimeZone};
 use console::{Style, Term};
 use nirvana_core::service::{Nirvana, SlotSort};
-use std::cmp::max;
 
 use crate::cli::{ListArgs, parse_time};
 

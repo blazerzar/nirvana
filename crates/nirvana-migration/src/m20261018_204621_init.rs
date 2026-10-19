@@ -1,6 +1,8 @@
-use crate::user_version;
-use sea_orm_migration::{prelude::*, schema::*};
+use sea_orm_migration::prelude::*;
+use sea_orm_migration::schema::*;
 use tracing::info;
+
+use crate::user_version;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;

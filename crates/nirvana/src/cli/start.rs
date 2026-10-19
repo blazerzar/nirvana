@@ -1,6 +1,7 @@
 use chrono::{Local, TimeZone};
 use console::style;
-use dialoguer::{FuzzySelect, Input, theme::ColorfulTheme};
+use dialoguer::theme::ColorfulTheme;
+use dialoguer::{FuzzySelect, Input};
 use nirvana_core::service::Nirvana;
 
 use crate::cli::StartArgs;

@@ -49,18 +49,26 @@ Tool versions are pinned in `mise.toml` (`mise install`). Git hooks run through
 
 ## Architecture
 
-This is a Cargo workspace with two crates:
+This is a Cargo workspace with four crates:
 
 ```text
 crates/
-  nirvana-core/   - shared domain logic, SQLite persistence, config, paths
-  nirvana/        - CLI (clap) binary
+  nirvana-core/        - shared domain logic, SQLite persistence, config, paths
+  nirvana-entity/      - SeaORM entities, one file per table
+  nirvana-migration/   - SeaORM migrations (Migrator)
+  nirvana/             - CLI (clap) binary
 ```
 
 `nirvana-core` owns shared domain and data behavior: `Nirvana`, connection
-and ticket domain types, SQLite storage through `rusqlite`, TOML config,
+and ticket domain types, SQLite storage through SeaORM, TOML config,
 credentials, integrations, and platform-aware paths. CLI work should use this
 crate instead of duplicating business logic.
+
+`nirvana-entity` and `nirvana-migration` hold the schema. Entities also hold
+shared queries (methods returning a `Select`) and row hooks in
+`ActiveModelBehavior::before_save` (timestamps, row validation). `nirvana-core`
+opens the database, backs it up and runs the migrations. Migrations are only
+run by the application.
 
 `nirvana` is the terminal app. It exposes Clap subcommands for app info,
 connections, publishing, task timing, listing, editing, starting, stopping,
@@ -70,13 +78,15 @@ and deleting.
 
 - Use workspace-level commands from the repository root unless a narrower command
   is clearly better.
-- Keep persistent data access, migrations, domain rules, config, credentials, and
-  integration logic in `nirvana-core`.
+- Keep the schema, shared queries and row hooks in `nirvana-entity` and
+  `nirvana-migration`. Keep the rest of data access, domain rules, config,
+  credentials, and integration logic in `nirvana-core`. Only `nirvana-core` depends on the entity and migration
+  crates.
 - Keep CLI argument parsing and terminal presentation in `nirvana`; delegate
   shared behavior to `nirvana-core`.
 - Avoid panics in normal user-facing flows. Prefer typed errors and clear
   propagation through existing error patterns.
-- When changing storage behavior, update migrations and repository code together
+- When changing storage behavior, update migrations and entities together
   and test the behavior through public APIs where possible.
 
 ## Verification

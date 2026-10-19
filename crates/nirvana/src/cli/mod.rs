@@ -191,9 +191,9 @@ pub(crate) async fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Command::Info) => info::run(),
+        Some(Command::Info) => info::run().await,
         Some(Command::Start(args)) => start::run(args).await,
-        Some(Command::Stop(args)) => stop::run(args),
+        Some(Command::Stop(args)) => stop::run(args).await,
         Some(Command::Edit(args)) => {
             let note = match args.note {
                 None => Change::Skip,
@@ -215,15 +215,18 @@ pub(crate) async fn run() -> anyhow::Result<()> {
             })
             .await
         }
-        Some(Command::Delete(args)) => delete::run(delete::DeleteArgs {
-            slot_id: args.slot_id,
-        }),
-        Some(Command::List(args)) => list::run(args),
+        Some(Command::Delete(args)) => {
+            delete::run(delete::DeleteArgs {
+                slot_id: args.slot_id,
+            })
+            .await
+        }
+        Some(Command::List(args)) => list::run(args).await,
         Some(Command::Publish(args)) => publish::run(args).await,
         Some(Command::Connection { command }) => match command {
-            Connection::Add(args) => connection::add(args),
-            Connection::List => connection::list(),
-            Connection::Use { query } => connection::activate(query.as_deref()),
+            Connection::Add(args) => connection::add(args).await,
+            Connection::List => connection::list().await,
+            Connection::Use { query } => connection::activate(query.as_deref()).await,
             Connection::Test => connection::test().await,
         },
         None => Ok(()),

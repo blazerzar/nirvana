@@ -51,8 +51,9 @@ worklogs.
 | 12 | **Linear history only, no merge commits.** Feature PRs are squash-merged into `dev-1.0`, `main` is only fast-forwarded to `dev-1.0`. Code review is done by agents on the PR (§12). | |
 | 13 | **Logging with `tracing`** to a single `nirvana.log`, **no rotation**. On macOS the log lives in `~/Library/Logs/nirvana/` (other locations in `paths.rs` module docs). Levels: `info` for user issued commands and state changes (start, stop, publish, DB and config migrated, config `X` changed from `a` to `b`), `warn`, `error`, `debug` for everything else (on in release), `trace` for dev only logs (compiled out in release with `release_max_level_debug`). Default filter `warn,nirvana=debug,nirvana_core=debug` (`trace` in dev mode). `[log] level` in `config.toml` (added when the config is migrated) sets the level for nirvana crates, `NIRVANA_LOG` (full filter directive) overrides both. Info events live in `Nirvana` so every frontend logs the same. `nirvana-core` owns the log file, format and filters and exposes them as a `Layer` (`logging::file_layer`). The `nirvana` binary only installs it and sets the max level feature, as `tracing` recommends for libraries. Stdout output for GUI dev comes later. | macOS convention. Level scheme follows `tracing` verbosity order. |
 | 14 | **One running slot per profile.** | Easier to show the state to the user than one running slot across profiles. |
-| 15 | **Legacy detection + backup.** When a <= 0.3.0-alpha DB is detected (`user_version` 1 or 2, no SeaORM migrations table), it is copied to `data_dir/backup` first, the matching baseline migrations are marked as applied, and then it is migrated. Every step is logged. The config does the same in the Config stage. | Never lose user data on upgrade. |
+| 15 | **Legacy detection + backup.** Before applying pending migrations to an existing DB, the DB is copied to `data_dir/backup` with `VACUUM INTO`, a consistent single-file snapshot that includes rows still in the `-wal` file. The baseline migrations `m0001` and `m0002` skip their work when `user_version` is 2, which every released 0.x DB has. Every step is logged. The config does the same in the Config stage. | Never lose user data on upgrade. |
 | 16 | **Plaintext credentials stay supported** (probably needed on Linux). The `credentials` table and `connections.secret_store` stay in the Database stage. The keyring comes in the Keychain stage. | |
+| 17 | **Canonical SeaORM layout in two crates**: `nirvana-entity` (one file per table in the 2.0 `#[sea_orm::model]` format, plus `prelude.rs`) and `nirvana-migration` (`Migrator`, one file per migration, no `cli` feature or binary). `nirvana-core` depends on both and owns opening the DB, the backup and running `Migrator::up`. `nirvana` depends only on `nirvana-core`. No repository layer: services call entities directly. Table rows are entity `Model`s, which `nirvana-core` re-exports as `nirvana_core::entity`. `domain.rs` holds only types that are not a table row (inputs, results, `Change<T>`). Slot services return `(slot::Model, ticket::Model)` and frontends build the issue link with `Nirvana::issue_urls`. Shared queries are entity methods that return a `Select`, and timestamps are set in `ActiveModelBehavior::before_save`. | Matches SeaORM's canonical layout. Migrations are only run by the application, never from a CLI. |
 
 ## 4. Current codebase (0.3.0-alpha) - what exists
 
@@ -131,9 +132,9 @@ publish_entry_slots(entry_id, slot_id)   -- a squash maps many slots to one entr
     slots. It must migrate to the latest schema with no data loss: one
     `default` profile, connection settings set, uuids assigned, publish
     entries created for published slots, backup created. Also cover a fresh
-    DB and a DB at `user_version` 1, and check that a fresh DB and a migrated
-    one end with the same schema. The Keychain stage adds the token move
-    (mock the keyring in tests).
+    DB, and check that a fresh DB and a migrated one end with the same
+    schema. The Keychain stage adds the token move (mock the keyring in
+    tests).
   - Config: fixtures for the 0.1 flat format and the 0.3.0-alpha sectioned
     format (`[core]`, `[gui]`, `[idle]`). Check that the squash flag moves into
     connections, `active_connection` is dropped, and machine/idle settings are

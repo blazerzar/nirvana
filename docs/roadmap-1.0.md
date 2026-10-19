@@ -64,11 +64,12 @@ logged from the start.
       published slots, notes) and config.toml files (0.1 flat and 0.3
       sectioned). Check them into the repo, never edit them.
 - [x] Make core async (tokio, async reqwest).
-- [ ] Add SeaORM and replace the raw SQL migration files with SeaORM
+- [x] Add SeaORM and replace the raw SQL migration files with SeaORM
       migrations (0001 and 0002 rewritten as the baseline).
-- [ ] Detect a <= 0.3.0-alpha DB (user_version 1 or 2, no SeaORM migrations
-      table), back it up to `data_dir/backup`, mark the matching baseline
-      migrations as applied and migrate. Log every step.
+- [x] Adopt <= 0.3.0-alpha DBs: baseline migrations skip their work when
+      user_version is 2 (every released 0.x DB). Back up the DB
+      to `data_dir/backup` with `VACUUM INTO` before applying pending
+      migrations. Log every step.
 - [ ] Add profiles table - single DB, existing data becomes one profile with
       all connections.
 - [ ] Add settings to connections - publish and squash columns, replacing
@@ -77,6 +78,11 @@ logged from the start.
 - [ ] Add profile settings (week start, time format, workday, expected hours,
       weekends, portal toggle + url).
 - [ ] Add uuid to slots (needed for idempotent publishing to portal).
+- [ ] Check entity attributes match the schema: `slot.stopped_at` is marked
+      unique but the DB has only the partial `one_running_slot` index, and
+      ids use `auto_increment = false` on rowid primary keys.
+- [ ] Check the duplicate connection name inside the insert transaction,
+      backed by a unique index so concurrent adds cannot create duplicates.
 - [ ] Add publish entries table (target, remote id, status, error) with slot
       link - covers worklog id, multiple targets and per log errors. Published
       slots get a synthetic ok entry, then drop published_at.
@@ -88,7 +94,12 @@ logged from the start.
 - [ ] Add DB migration tests: fixture DB created by 0.3.0-alpha (connections,
       credentials, tickets, slots incl. running and published) migrates
       correctly to the new schema without data loss. A fresh DB ends with the
-      same schema as a migrated one. A backup is created.
+      same schema as a migrated one. A backup is created. Baseline
+      migrations are skipped for user_version 2 and recorded as applied.
+- [ ] Add service tests removed while porting to SeaORM: deleting a
+      connection removes its credentials, deleting a connection with history
+      is blocked, the next connection becomes active or none is left, an
+      unknown id is rejected.
 - [ ] Keep these fixtures in the repo and run them in CI so every future
       migration is tested against today's data.
 
@@ -129,6 +140,7 @@ logged from the start.
       connections (proposal in the implementation guide).
 - [ ] Let's update ticket name and description when interacting with it (async).
 - [ ] Validate overlaps on edit; published slots are read-only.
+- [ ] Stop the running slot and start the new one in a single transaction.
 
 ## Linear
 
@@ -159,6 +171,8 @@ logged from the start.
 
 - [ ] Check if we should rework the API interface of the core.
 - [ ] The same goes for DB and config API.
+- [ ] Return the issue URL from core with slots, so frontends do not fetch
+      the active connection and build it themselves.
 - [ ] Separate profile settings from machine settings.
 - [ ] Export logs to CSV and JSON.
 - [ ] Connection health checks (ping every 60 s, latency, auth status).

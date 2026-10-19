@@ -5,7 +5,7 @@ use nirvana_core::service::Nirvana;
 use crate::cli::{PublishArgs, parse_time};
 
 pub(crate) async fn run(args: PublishArgs) -> anyhow::Result<()> {
-    let api = Nirvana::new()?;
+    let api = Nirvana::new().await?;
 
     let today = Local::now().date_naive();
     let from = args

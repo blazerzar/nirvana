@@ -1,15 +1,27 @@
-use crate::domain::{Slot, SlotEdit};
+use crate::domain::{Change, SlotEdit};
 use crate::errors::NirvanaError;
 use crate::errors::TrackingError;
-use crate::integration;
 use crate::service::Nirvana;
-use crate::storage::slot_repo;
-use crate::storage::slot_repo::Change;
+use crate::service::slots::require_ticket;
+
+use nirvana_entity::slot::Entity as Slot;
+use nirvana_entity::{slot, ticket};
+use sea_orm::ActiveValue::{NotSet, Set, Unchanged};
+use sea_orm::{ActiveModelTrait, ActiveValue, QueryFilter, Value};
 
 impl Nirvana {
-    pub async fn edit_slot(&self, slot_id: i64, edit: SlotEdit) -> Result<Slot, NirvanaError> {
-        let current = slot_repo::find_by_id_with_ticket(&self.db, slot_id)?
-            .ok_or(TrackingError::SlotNotFound(slot_id))?;
+    pub async fn edit_slot(
+        &self,
+        slot_id: i64,
+        edit: SlotEdit,
+    ) -> Result<(slot::Model, ticket::Model), NirvanaError> {
+        let (current, ticket) = require_ticket(
+            Slot::find_with_ticket()
+                .filter(slot::COLUMN.id.eq(slot_id))
+                .one(&self.db)
+                .await?
+                .ok_or(TrackingError::SlotNotFound(slot_id))?,
+        )?;
 
         if current.published_at.is_some() {
             return Err(TrackingError::SlotAlreadyPublished.into());
@@ -38,13 +50,10 @@ impl Nirvana {
         });
         let ticket_changed = normalized_ticket_key
             .as_ref()
-            .is_some_and(|ticket_key| ticket_key != &current.ticket_key);
+            .is_some_and(|ticket_key| ticket_key != &ticket.ticket_key);
 
         if !ticket_changed && !note_changed && !started_changed && !stopped_changed {
-            let connection = self.get_connection(current.connection_id)?;
-            let integ = integration::Integration::build_for_url(&connection)?;
-            let issue_url = Some(integ.get_issue_link(&current.ticket_key));
-            return Ok(Slot::from_record(current, issue_url));
+            return Ok((current, ticket));
         }
 
         let effective_started = edit.started_at.unwrap_or(current.started_at);
@@ -59,8 +68,8 @@ impl Nirvana {
             return Err(TrackingError::InvalidTimeRange.into());
         }
 
-        let connection = self.get_connection(current.connection_id)?;
-        let next_ticket_id = if ticket_changed {
+        let next_ticket = if ticket_changed {
+            let connection = self.get_connection(current.connection_id).await?;
             let ticket_key = normalized_ticket_key.as_deref().unwrap_or_default();
             let last_worked_at =
                 effective_stopped.unwrap_or_else(|| chrono::Utc::now().timestamp());
@@ -71,38 +80,44 @@ impl Nirvana {
                     ticket_key,
                     last_worked_at,
                 )
-                .await?
-                .id,
+                .await?,
             )
         } else {
             None
         };
 
-        let update = slot_repo::SlotUpdate {
-            ticket_id: next_ticket_id,
+        let update = slot::ActiveModel {
+            id: Unchanged(slot_id),
+            ticket_id: next_ticket.as_ref().map_or(NotSet, |t| Set(t.id)),
             note: if note_changed {
-                edit.note
+                active_value(edit.note)
             } else {
-                Change::Skip
+                NotSet
             },
-            started_at: if started_changed {
-                edit.started_at
-            } else {
-                None
+            started_at: match edit.started_at {
+                Some(v) if started_changed => Set(v),
+                _ => NotSet,
             },
             stopped_at: if stopped_changed {
-                edit.stopped_at
+                active_value(edit.stopped_at)
             } else {
-                Change::Skip
+                NotSet
             },
+            ..Default::default()
         };
-        slot_repo::update(&self.db, slot_id, &update)?;
+        let updated = update.update(&self.db).await?;
 
-        let updated = slot_repo::find_by_id_with_ticket(&self.db, slot_id)?
-            .ok_or(TrackingError::SlotNotFound(slot_id))?;
+        Ok((updated, next_ticket.unwrap_or(ticket)))
+    }
+}
 
-        let integ = integration::Integration::build_for_url(&connection)?;
-        let issue_url = Some(integ.get_issue_link(&updated.ticket_key));
-        Ok(Slot::from_record(updated, issue_url))
+fn active_value<T>(change: Change<T>) -> ActiveValue<Option<T>>
+where
+    Option<T>: Into<Value>,
+{
+    match change {
+        Change::Skip => NotSet,
+        Change::Clear => Set(None),
+        Change::Set(v) => Set(Some(v)),
     }
 }

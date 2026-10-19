@@ -1,7 +1,7 @@
 pub(crate) mod jira;
 
-use crate::domain::Connection;
 use jira::JiraIntegration;
+use nirvana_entity::connection;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -29,7 +29,7 @@ pub(crate) struct Integration {
 }
 
 impl Integration {
-    pub fn build_for_url(connection: &Connection) -> Result<Integration, IntegrationError> {
+    pub fn build_for_url(connection: &connection::Model) -> Result<Integration, IntegrationError> {
         let kind = match connection.kind.as_str() {
             "jira-cloud" => IntegrationKind::Jira(JiraIntegration::new_unauthenticated(
                 &connection.host,
@@ -75,7 +75,7 @@ impl Integration {
 }
 
 pub(crate) fn build_integration(
-    connection: &Connection,
+    connection: &connection::Model,
     token: &str,
 ) -> Result<Integration, IntegrationError> {
     let kind = match connection.kind.as_str() {

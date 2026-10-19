@@ -40,3 +40,9 @@ pub enum TrackingError {
     #[error("slot overlaps an existing slot")]
     SlotOverlap,
 }
+
+impl From<sea_orm::DbErr> for NirvanaError {
+    fn from(e: sea_orm::DbErr) -> Self {
+        Self::Db(e.into())
+    }
+}

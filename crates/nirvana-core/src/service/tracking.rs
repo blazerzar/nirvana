@@ -1,10 +1,16 @@
-use crate::credentials;
-use crate::domain::{Connection, Slot, SlotCreate, Ticket};
-use crate::errors::{IntegrationError, TrackingError};
+use nirvana_entity::slot::Entity as Slot;
+use nirvana_entity::ticket::Entity as Ticket;
+use nirvana_entity::{connection, slot, ticket};
+use sea_orm::ActiveValue::Set;
+use sea_orm::{
+    ActiveModelTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder,
+};
+
+use crate::domain::SlotCreate;
+use crate::errors::{DbError, IntegrationError, TrackingError};
 use crate::integration;
 use crate::service::Nirvana;
-use crate::storage::ticket_repo::TicketRecord;
-use crate::storage::{DbError, connection_repo, slot_repo, ticket_repo};
+use crate::service::slots::require_ticket;
 
 impl Nirvana {
     pub async fn start_slot(
@@ -12,14 +18,14 @@ impl Nirvana {
         ticket_key: &str,
         at: Option<i64>,
         note: Option<&str>,
-    ) -> Result<Slot, super::NirvanaError> {
+    ) -> Result<(slot::Model, ticket::Model), super::NirvanaError> {
         let connection_id = self
             .config
             .core
             .active_connection
             .ok_or(TrackingError::NoActiveConnection)?;
 
-        let connection = self.get_connection(connection_id)?;
+        let connection = self.get_connection(connection_id).await?;
         let ticket_key = ticket_key.to_uppercase();
         let now = at.unwrap_or_else(|| chrono::Utc::now().timestamp());
 
@@ -27,18 +33,31 @@ impl Nirvana {
             .resolve_ticket_for_work(&connection, connection_id, &ticket_key, now)
             .await?;
 
-        if let Some(running) = slot_repo::find_running(&self.db)? {
+        if let Some(running) = Slot::find_running().one(&self.db).await? {
             let stopped_at = std::cmp::max(running.started_at + 1, now);
-            slot_repo::stop_by_id(&self.db, running.id, stopped_at)?;
+            let mut running = running.into_active_model();
+            running.stopped_at = Set(Some(stopped_at));
+            running.update(&self.db).await?;
         }
 
-        let result = slot_repo::insert(&self.db, ticket.id, connection_id, note, now)?;
-        let integ = integration::Integration::build_for_url(&connection)?;
-        let issue_url = Some(integ.get_issue_link(&result.ticket_key));
-        Ok(Slot::from_record(result, issue_url))
+        let slot = slot::ActiveModel {
+            ticket_id: Set(ticket.id),
+            connection_id: Set(connection_id),
+            note: Set(note.map(str::to_string)),
+            started_at: Set(now),
+            stopped_at: Set(None),
+            published_at: Set(None),
+            ..Default::default()
+        }
+        .insert(&self.db)
+        .await?;
+        Ok((slot, ticket))
     }
 
-    pub async fn create_slot(&self, input: SlotCreate) -> Result<Slot, super::NirvanaError> {
+    pub async fn create_slot(
+        &self,
+        input: SlotCreate,
+    ) -> Result<(slot::Model, ticket::Model), super::NirvanaError> {
         let connection_id = self
             .config
             .core
@@ -54,51 +73,64 @@ impl Nirvana {
             return Err(TrackingError::FutureTime.into());
         }
 
-        if slot_repo::overlaps(&self.db, connection_id, input.started_at, input.stopped_at)? {
+        let overlapping = Slot::find_overlapping(connection_id, input.started_at, input.stopped_at)
+            .count(&self.db)
+            .await?;
+        if overlapping > 0 {
             return Err(TrackingError::SlotOverlap.into());
         }
 
-        let connection = self.get_connection(connection_id)?;
+        let connection = self.get_connection(connection_id).await?;
         let ticket_key = input.ticket_key.to_uppercase();
         let ticket = self
             .resolve_ticket_for_work(&connection, connection_id, &ticket_key, input.stopped_at)
             .await?;
 
-        let result = slot_repo::insert_completed(
-            &self.db,
-            ticket.id,
-            connection_id,
-            input.note.as_deref(),
-            input.started_at,
-            input.stopped_at,
-        )?;
-        let integ = integration::Integration::build_for_url(&connection)?;
-        let issue_url = Some(integ.get_issue_link(&result.ticket_key));
-        Ok(Slot::from_record(result, issue_url))
-    }
-
-    pub fn stop_slot(&self, at: Option<i64>) -> Result<Option<Slot>, super::NirvanaError> {
-        let now = at.unwrap_or_else(|| chrono::Utc::now().timestamp());
-        match slot_repo::stop_running(&self.db, now) {
-            Ok(slot) => {
-                let connection = self.get_connection(slot.connection_id)?;
-                let integ = integration::Integration::build_for_url(&connection)?;
-                let issue_url = Some(integ.get_issue_link(&slot.ticket_key));
-                let mut s = Slot::from_record(slot, issue_url);
-                s.stopped_at = Some(now);
-                Ok(Some(s))
-            }
-            Err(DbError::Sqlite(rusqlite::Error::QueryReturnedNoRows)) => Ok(None),
-            Err(e) => Err(super::NirvanaError::Db(e)),
+        let slot = slot::ActiveModel {
+            ticket_id: Set(ticket.id),
+            connection_id: Set(connection_id),
+            note: Set(input.note),
+            started_at: Set(input.started_at),
+            stopped_at: Set(Some(input.stopped_at)),
+            published_at: Set(None),
+            ..Default::default()
         }
+        .insert(&self.db)
+        .await?;
+        Ok((slot, ticket))
     }
 
-    pub(crate) fn get_connection(&self, id: i64) -> Result<Connection, super::NirvanaError> {
-        let records = connection_repo::list(&self.db)?;
-        records
-            .into_iter()
-            .find(|r| r.id == id)
-            .map(Connection::from)
+    pub async fn stop_slot(
+        &self,
+        at: Option<i64>,
+    ) -> Result<Option<(slot::Model, ticket::Model)>, super::NirvanaError> {
+        let now = at.unwrap_or_else(|| chrono::Utc::now().timestamp());
+        let Some(running) = Slot::find_running()
+            .find_also_related(ticket::Entity)
+            .one(&self.db)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let (slot, ticket) = require_ticket(running)?;
+
+        if now <= slot.started_at {
+            return Err(DbError::StopBeforeStart.into());
+        }
+
+        let mut slot = slot.into_active_model();
+        slot.stopped_at = Set(Some(now));
+        let slot = slot.update(&self.db).await?;
+        Ok(Some((slot, ticket)))
+    }
+
+    pub(crate) async fn get_connection(
+        &self,
+        id: i64,
+    ) -> Result<connection::Model, super::NirvanaError> {
+        connection::Entity::find_by_id(id)
+            .one(&self.db)
+            .await?
             .ok_or(super::NirvanaError::Tracking(
                 TrackingError::NoActiveConnection,
             ))
@@ -106,18 +138,24 @@ impl Nirvana {
 
     pub(crate) async fn resolve_ticket_for_work(
         &self,
-        connection: &Connection,
+        connection: &connection::Model,
         connection_id: i64,
         ticket_key: &str,
         last_worked_at: i64,
-    ) -> Result<TicketRecord, super::NirvanaError> {
-        match ticket_repo::find_by_key(&self.db, ticket_key, connection_id)? {
+    ) -> Result<ticket::Model, super::NirvanaError> {
+        let existing = Ticket::find()
+            .filter(ticket::COLUMN.ticket_key.eq(ticket_key))
+            .filter(ticket::COLUMN.connection_id.eq(connection_id))
+            .one(&self.db)
+            .await?;
+        match existing {
             Some(t) => {
-                ticket_repo::touch_last_worked(&self.db, t.id, last_worked_at)?;
-                Ok(t)
+                let mut t = t.into_active_model();
+                t.last_worked_at = Set(last_worked_at);
+                Ok(t.update(&self.db).await?)
             }
             None => {
-                let token = credentials::get_token(&self.db, connection_id)?;
+                let token = self.get_token(connection_id).await?;
                 let integ = integration::build_integration(connection, &token)?;
                 let issue = integ.fetch_issue(ticket_key).await.map_err(|e| match e {
                     IntegrationError::TicketNotFound(key) => {
@@ -125,25 +163,30 @@ impl Nirvana {
                     }
                     other => super::NirvanaError::Integration(other),
                 })?;
-                Ok(ticket_repo::insert(
-                    &self.db,
-                    ticket_key,
-                    Some(&issue.summary),
-                    connection_id,
-                    last_worked_at,
-                )?)
+                Ok(ticket::ActiveModel {
+                    ticket_key: Set(ticket_key.to_string()),
+                    summary: Set(Some(issue.summary)),
+                    connection_id: Set(connection_id),
+                    last_worked_at: Set(last_worked_at),
+                    ..Default::default()
+                }
+                .insert(&self.db)
+                .await?)
             }
         }
     }
 
-    pub fn list_recent_tickets(&self) -> Result<Vec<Ticket>, super::NirvanaError> {
+    pub async fn list_recent_tickets(&self) -> Result<Vec<ticket::Model>, super::NirvanaError> {
         let connection_id = self
             .config
             .core
             .active_connection
             .ok_or(TrackingError::NoActiveConnection)?;
-        let records = ticket_repo::list_by_connection(&self.db, connection_id)?;
-        Ok(records.into_iter().map(Ticket::from).collect())
+        Ok(Ticket::find()
+            .filter(ticket::COLUMN.connection_id.eq(connection_id))
+            .order_by_desc(ticket::COLUMN.last_worked_at)
+            .all(&self.db)
+            .await?)
     }
 }
 
@@ -153,10 +196,11 @@ mod tests {
     use crate::config::{AppConfig, CoreConfig, GuiConfig, IdleConfig};
     use crate::domain::ConnectionData;
     use crate::domain::SlotEdit;
+    use crate::domain::{Change, SlotSort};
     use crate::errors::NirvanaError;
     use crate::paths::AppPaths;
-    use crate::storage::Database;
-    use crate::storage::slot_repo::{Change, SlotSort};
+    use crate::storage;
+    use sea_orm::sea_query::Expr;
     use std::ops::Deref;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -184,7 +228,7 @@ mod tests {
         }
     }
 
-    fn test_api() -> TestApi {
+    async fn test_api() -> TestApi {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -203,51 +247,59 @@ mod tests {
             log_file: base.join("nirvana.log"),
             is_dev: true,
         };
-        let db = Database::initialize(&paths.db_file).unwrap();
-        let connection = connection_repo::add(
-            &db,
-            ConnectionData {
+        let db = storage::open(&paths.db_file).await.unwrap();
+        let mut api = Nirvana {
+            paths,
+            config: AppConfig {
+                schema_version: Some(1),
+                core: CoreConfig {
+                    active_connection: None,
+                    publish_squashed_worklogs: true,
+                },
+                gui: GuiConfig {
+                    font_scale: 1.0,
+                    theme: "high-contrast-dark".to_string(),
+                    show_tray_icon: false,
+                },
+                idle: IdleConfig {
+                    enabled: false,
+                    methods: vec!["lock".into(), "sleep".into(), "input".into()],
+                    threshold_secs: 300,
+                },
+            },
+            db,
+        };
+        let connection = api
+            .add_connection(ConnectionData {
                 name: "Test Jira".to_string(),
                 kind: "jira-cloud".to_string(),
                 host: "https://example.atlassian.net".to_string(),
                 identity: "tester@example.com".to_string(),
                 secret_store: "plaintext".to_string(),
                 token: "token".to_string(),
-            },
-        )
-        .unwrap();
+            })
+            .await
+            .unwrap();
+        api.config.core.active_connection = Some(connection.id);
 
         TestApi {
-            api: Some(Nirvana {
-                paths,
-                config: AppConfig {
-                    schema_version: Some(1),
-                    core: CoreConfig {
-                        active_connection: Some(connection.id),
-                        publish_squashed_worklogs: true,
-                    },
-                    gui: GuiConfig {
-                        font_scale: 1.0,
-                        theme: "high-contrast-dark".to_string(),
-                        show_tray_icon: false,
-                    },
-                    idle: IdleConfig {
-                        enabled: false,
-                        methods: vec!["lock".into(), "sleep".into(), "input".into()],
-                        threshold_secs: 300,
-                    },
-                },
-                db,
-            }),
+            api: Some(api),
             base,
         }
     }
 
-    fn insert_ticket(api: &Nirvana, key: &str) -> i64 {
-        let connection_id = api.config.core.active_connection.unwrap();
-        ticket_repo::insert(&api.db, key, Some("Existing ticket"), connection_id, 0)
-            .unwrap()
-            .id
+    async fn insert_ticket(api: &Nirvana, key: &str) -> i64 {
+        ticket::ActiveModel {
+            ticket_key: Set(key.to_string()),
+            summary: Set(Some("Existing ticket".to_string())),
+            connection_id: Set(api.config.core.active_connection.unwrap()),
+            last_worked_at: Set(0),
+            ..Default::default()
+        }
+        .insert(&api.db)
+        .await
+        .unwrap()
+        .id
     }
 
     fn slot_create(ticket_key: &str, started_at: i64, stopped_at: i64) -> SlotCreate {
@@ -261,15 +313,15 @@ mod tests {
 
     #[tokio::test]
     async fn creates_completed_unpublished_slot() {
-        let api = test_api();
-        insert_ticket(&api, "DES-1");
+        let api = test_api().await;
+        insert_ticket(&api, "DES-1").await;
 
-        let slot = api
+        let (slot, ticket) = api
             .create_slot(slot_create("des-1", 100, 160))
             .await
             .unwrap();
 
-        assert_eq!(slot.ticket_key, "DES-1");
+        assert_eq!(ticket.ticket_key, "DES-1");
         assert_eq!(slot.note.as_deref(), Some("manual entry"));
         assert_eq!(slot.started_at, 100);
         assert_eq!(slot.stopped_at, Some(160));
@@ -278,7 +330,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_invalid_time_range() {
-        let api = test_api();
+        let api = test_api().await;
 
         let error = api
             .create_slot(slot_create("DES-1", 160, 160))
@@ -293,7 +345,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_future_times() {
-        let api = test_api();
+        let api = test_api().await;
         let future = chrono::Utc::now().timestamp() + 60;
 
         let error = api
@@ -309,8 +361,8 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_overlapping_slot() {
-        let api = test_api();
-        insert_ticket(&api, "DES-1");
+        let api = test_api().await;
+        insert_ticket(&api, "DES-1").await;
         api.create_slot(slot_create("DES-1", 100, 160))
             .await
             .unwrap();
@@ -328,16 +380,27 @@ mod tests {
 
     #[tokio::test]
     async fn does_not_stop_existing_running_slot() {
-        let api = test_api();
-        let ticket_id = insert_ticket(&api, "DES-1");
+        let api = test_api().await;
+        let ticket_id = insert_ticket(&api, "DES-1").await;
         let connection_id = api.config.core.active_connection.unwrap();
-        let running = slot_repo::insert(&api.db, ticket_id, connection_id, None, 300).unwrap();
+        let running = slot::ActiveModel {
+            ticket_id: Set(ticket_id),
+            connection_id: Set(connection_id),
+            note: Set(None),
+            started_at: Set(300),
+            stopped_at: Set(None),
+            published_at: Set(None),
+            ..Default::default()
+        }
+        .insert(&api.db)
+        .await
+        .unwrap();
 
-        let slot = api
+        let (slot, _) = api
             .create_slot(slot_create("DES-1", 100, 160))
             .await
             .unwrap();
-        let still_running = slot_repo::find_running(&api.db).unwrap().unwrap();
+        let still_running = Slot::find_running().one(&api.db).await.unwrap().unwrap();
 
         assert_eq!(slot.stopped_at, Some(160));
         assert_eq!(still_running.id, running.id);
@@ -347,10 +410,10 @@ mod tests {
 
     #[tokio::test]
     async fn lists_slots_that_overlap_bounded_range() {
-        let api = test_api();
-        insert_ticket(&api, "DES-1");
-        insert_ticket(&api, "DES-2");
-        insert_ticket(&api, "DES-3");
+        let api = test_api().await;
+        insert_ticket(&api, "DES-1").await;
+        insert_ticket(&api, "DES-2").await;
+        insert_ticket(&api, "DES-3").await;
         api.create_slot(slot_create("DES-1", 100, 140))
             .await
             .unwrap();
@@ -361,19 +424,22 @@ mod tests {
             .await
             .unwrap();
 
-        let slots = api.get_slots(150, Some(260), SlotSort::StartedAt).unwrap();
+        let slots = api
+            .get_slots(150, Some(260), SlotSort::StartedAt)
+            .await
+            .unwrap();
 
         assert_eq!(slots.len(), 1);
-        assert_eq!(slots[0].ticket_key, "DES-2");
-        assert_eq!(slots[0].started_at, 140);
-        assert_eq!(slots[0].stopped_at, Some(220));
+        assert_eq!(slots[0].1.ticket_key, "DES-2");
+        assert_eq!(slots[0].0.started_at, 140);
+        assert_eq!(slots[0].0.stopped_at, Some(220));
     }
 
     #[tokio::test]
     async fn lists_open_ended_slots_that_overlap_range_start() {
-        let api = test_api();
-        insert_ticket(&api, "DES-1");
-        insert_ticket(&api, "DES-2");
+        let api = test_api().await;
+        insert_ticket(&api, "DES-1").await;
+        insert_ticket(&api, "DES-2").await;
         api.create_slot(slot_create("DES-1", 100, 140))
             .await
             .unwrap();
@@ -381,25 +447,25 @@ mod tests {
             .await
             .unwrap();
 
-        let slots = api.get_slots(200, None, SlotSort::StartedAt).unwrap();
+        let slots = api.get_slots(200, None, SlotSort::StartedAt).await.unwrap();
 
         assert_eq!(slots.len(), 1);
-        assert_eq!(slots[0].ticket_key, "DES-2");
-        assert_eq!(slots[0].started_at, 140);
-        assert_eq!(slots[0].stopped_at, Some(220));
+        assert_eq!(slots[0].1.ticket_key, "DES-2");
+        assert_eq!(slots[0].0.started_at, 140);
+        assert_eq!(slots[0].0.stopped_at, Some(220));
     }
 
     #[tokio::test]
     async fn edits_slot_ticket_to_existing_ticket() {
-        let api = test_api();
-        insert_ticket(&api, "DES-1");
-        insert_ticket(&api, "DES-2");
-        let slot = api
+        let api = test_api().await;
+        insert_ticket(&api, "DES-1").await;
+        insert_ticket(&api, "DES-2").await;
+        let (slot, _) = api
             .create_slot(slot_create("DES-1", 100, 160))
             .await
             .unwrap();
 
-        let edited = api
+        let (edited, edited_ticket) = api
             .edit_slot(
                 slot.id,
                 SlotEdit {
@@ -413,21 +479,26 @@ mod tests {
             .unwrap();
 
         assert_eq!(edited.id, slot.id);
-        assert_eq!(edited.ticket_key, "DES-2");
+        assert_eq!(edited_ticket.ticket_key, "DES-2");
         assert_eq!(edited.started_at, 100);
         assert_eq!(edited.stopped_at, Some(160));
     }
 
     #[tokio::test]
     async fn rejects_ticket_edit_for_published_slot() {
-        let api = test_api();
-        insert_ticket(&api, "DES-1");
-        insert_ticket(&api, "DES-2");
-        let slot = api
+        let api = test_api().await;
+        insert_ticket(&api, "DES-1").await;
+        insert_ticket(&api, "DES-2").await;
+        let (slot, _) = api
             .create_slot(slot_create("DES-1", 100, 160))
             .await
             .unwrap();
-        slot_repo::mark_published(&api.db, &[slot.id], 200).unwrap();
+        Slot::update_many()
+            .col_expr(slot::COLUMN.published_at, Expr::value(200))
+            .filter(slot::COLUMN.id.eq(slot.id))
+            .exec(&api.db)
+            .await
+            .unwrap();
 
         let error = api
             .edit_slot(
@@ -450,14 +521,14 @@ mod tests {
 
     #[tokio::test]
     async fn edits_slot_note_and_times() {
-        let api = test_api();
-        insert_ticket(&api, "DES-1");
-        let slot = api
+        let api = test_api().await;
+        insert_ticket(&api, "DES-1").await;
+        let (slot, _) = api
             .create_slot(slot_create("DES-1", 100, 160))
             .await
             .unwrap();
 
-        let edited = api
+        let (edited, edited_ticket) = api
             .edit_slot(
                 slot.id,
                 SlotEdit {
@@ -470,7 +541,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(edited.ticket_key, "DES-1");
+        assert_eq!(edited_ticket.ticket_key, "DES-1");
         assert_eq!(edited.note.as_deref(), Some("updated note"));
         assert_eq!(edited.started_at, 90);
         assert_eq!(edited.stopped_at, Some(170));

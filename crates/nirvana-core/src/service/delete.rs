@@ -1,29 +1,34 @@
-use crate::domain::Slot;
 use crate::errors::NirvanaError;
 use crate::errors::TrackingError;
-use crate::integration;
 use crate::service::Nirvana;
-use crate::storage::slot_repo;
+use crate::service::slots::require_ticket;
+
+use nirvana_entity::slot::Entity as Slot;
+use nirvana_entity::{slot, ticket};
+use sea_orm::{EntityTrait, QueryFilter};
 
 impl Nirvana {
-    pub fn delete_slot(&self, slot_id: i64) -> Result<Slot, NirvanaError> {
-        let current = slot_repo::find_by_id_with_ticket(&self.db, slot_id)?
-            .ok_or(TrackingError::SlotNotFound(slot_id))?;
+    pub async fn delete_slot(
+        &self,
+        slot_id: i64,
+    ) -> Result<(slot::Model, ticket::Model), NirvanaError> {
+        let (slot, ticket) = require_ticket(
+            Slot::find_with_ticket()
+                .filter(slot::COLUMN.id.eq(slot_id))
+                .one(&self.db)
+                .await?
+                .ok_or(TrackingError::SlotNotFound(slot_id))?,
+        )?;
 
-        if current.published_at.is_some() {
+        if slot.published_at.is_some() {
             return Err(TrackingError::CannotDeletePublished.into());
         }
 
-        let connection = self.get_connection(current.connection_id)?;
-        let integ = integration::Integration::build_for_url(&connection)?;
-        let issue_url = Some(integ.get_issue_link(&current.ticket_key));
-        let slot = Slot::from_record(current, issue_url);
-
-        let deleted = slot_repo::delete(&self.db, slot_id)?;
-        if !deleted {
+        let deleted = Slot::delete_by_id(slot_id).exec(&self.db).await?;
+        if deleted.rows_affected == 0 {
             return Err(TrackingError::SlotNotFound(slot_id).into());
         }
 
-        Ok(slot)
+        Ok((slot, ticket))
     }
 }

@@ -1,11 +1,10 @@
-use crate::domain::SlotSort;
-use crate::errors::NirvanaError;
-use crate::errors::TrackingError;
-use crate::service::Nirvana;
-
 use nirvana_entity::slot::Entity as Slot;
 use nirvana_entity::{slot, ticket};
 use sea_orm::{DbErr, ExprTrait, QueryFilter, QueryOrder, QueryTrait};
+
+use crate::domain::SlotSort;
+use crate::errors::{NirvanaError, TrackingError};
+use crate::service::Nirvana;
 
 impl Nirvana {
     pub async fn get_running_slot(

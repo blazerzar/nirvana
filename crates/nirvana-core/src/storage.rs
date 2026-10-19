@@ -1,11 +1,10 @@
 use std::path::{Path, PathBuf};
 
+use nirvana_migration::{Migrator, MigratorTrait};
 use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbErr, RuntimeErr, raw_sql};
 use thiserror::Error;
 use tracing::info;
-
-use nirvana_migration::{Migrator, MigratorTrait};
 
 #[derive(Debug, Error)]
 pub enum DbError {

@@ -1,7 +1,8 @@
+use thiserror::Error;
+
 pub use crate::config::ConfigError;
 pub use crate::integration::IntegrationError;
 pub use crate::storage::DbError;
-use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum NirvanaError {

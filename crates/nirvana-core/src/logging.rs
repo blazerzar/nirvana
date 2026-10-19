@@ -15,11 +15,10 @@
 //! Defaults to `warn,nirvana=debug,nirvana_core=debug` (`trace` in dev mode).
 //! `NIRVANA_LOG` overrides it with a full filter directive.
 
-use std::env;
 use std::fs::{File, OpenOptions};
-use std::io;
 use std::path::Path;
 use std::sync::Arc;
+use std::{env, io};
 
 use tracing::Subscriber;
 use tracing_subscriber::fmt::MakeWriter;

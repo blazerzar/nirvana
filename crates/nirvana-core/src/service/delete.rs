@@ -1,11 +1,10 @@
-use crate::errors::NirvanaError;
-use crate::errors::TrackingError;
-use crate::service::Nirvana;
-use crate::service::slots::require_ticket;
-
 use nirvana_entity::slot::Entity as Slot;
 use nirvana_entity::{slot, ticket};
 use sea_orm::{EntityTrait, QueryFilter};
+
+use crate::errors::{NirvanaError, TrackingError};
+use crate::service::Nirvana;
+use crate::service::slots::require_ticket;
 
 impl Nirvana {
     pub async fn delete_slot(

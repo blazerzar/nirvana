@@ -192,19 +192,19 @@ impl Nirvana {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::config::{AppConfig, CoreConfig, GuiConfig, IdleConfig};
-    use crate::domain::ConnectionData;
-    use crate::domain::SlotEdit;
-    use crate::domain::{Change, SlotSort};
-    use crate::errors::NirvanaError;
-    use crate::paths::AppPaths;
-    use crate::storage;
-    use sea_orm::sea_query::Expr;
     use std::ops::Deref;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    use sea_orm::sea_query::Expr;
+
+    use super::*;
+    use crate::config::{AppConfig, CoreConfig, GuiConfig, IdleConfig};
+    use crate::domain::{Change, ConnectionData, SlotEdit, SlotSort};
+    use crate::errors::NirvanaError;
+    use crate::paths::AppPaths;
+    use crate::storage;
 
     static TEST_DB_COUNTER: AtomicUsize = AtomicUsize::new(0);
 

@@ -1,13 +1,12 @@
-use crate::domain::{Change, SlotEdit};
-use crate::errors::NirvanaError;
-use crate::errors::TrackingError;
-use crate::service::Nirvana;
-use crate::service::slots::require_ticket;
-
 use nirvana_entity::slot::Entity as Slot;
 use nirvana_entity::{slot, ticket};
 use sea_orm::ActiveValue::{NotSet, Set, Unchanged};
 use sea_orm::{ActiveModelTrait, ActiveValue, QueryFilter, Value};
+
+use crate::domain::{Change, SlotEdit};
+use crate::errors::{NirvanaError, TrackingError};
+use crate::service::Nirvana;
+use crate::service::slots::require_ticket;
 
 impl Nirvana {
     pub async fn edit_slot(

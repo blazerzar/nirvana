@@ -30,9 +30,8 @@
 //! Each directory can be overridden with `NIRVANA_CONFIG_DIR`,
 //! `NIRVANA_DATA_DIR` and `NIRVANA_LOG_DIR`.
 
-use std::env;
-use std::io;
 use std::path::PathBuf;
+use std::{env, io};
 
 use directories::ProjectDirs;
 

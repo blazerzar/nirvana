@@ -1,12 +1,15 @@
-use crate::cli::{AddArgs, ConnectionKind, SecretStore};
+use std::cmp::max;
+
 use chrono::{Local, TimeZone};
 use clap::ValueEnum;
 use console::{Style, Term};
-use dialoguer::{Input, Password, Select, theme::ColorfulTheme};
+use dialoguer::theme::ColorfulTheme;
+use dialoguer::{Input, Password, Select};
 use nirvana_core::domain::ConnectionData;
 use nirvana_core::entity::connection;
 use nirvana_core::service::Nirvana;
-use std::cmp::max;
+
+use crate::cli::{AddArgs, ConnectionKind, SecretStore};
 
 enum Column {
     Unlimited(&'static str),

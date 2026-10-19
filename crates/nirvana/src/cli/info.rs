@@ -1,6 +1,6 @@
-use console::{Style, Term};
 use std::env;
 
+use console::{Style, Term};
 use nirvana_core::service::Nirvana;
 
 const SHORT_HASH: Option<&str> = option_env!("SHORT_HASH");

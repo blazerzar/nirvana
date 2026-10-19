@@ -1,14 +1,14 @@
-use crate::domain::ConnectionData;
-use crate::errors::TrackingError;
-use crate::errors::{DbError, NirvanaError};
-use crate::integration;
-use crate::service::Nirvana;
 use nirvana_entity::connection::Entity as Connection;
 use nirvana_entity::{connection, credential, slot, ticket};
 use sea_orm::{
     ActiveModelTrait, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set,
     TransactionTrait,
 };
+
+use crate::domain::ConnectionData;
+use crate::errors::{DbError, NirvanaError, TrackingError};
+use crate::integration;
+use crate::service::Nirvana;
 
 impl Nirvana {
     pub async fn list_connections(&self) -> Result<Vec<connection::Model>, NirvanaError> {

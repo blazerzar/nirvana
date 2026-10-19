@@ -6,23 +6,23 @@ use nirvana_core::service::Nirvana;
 use crate::cli::StartArgs;
 
 pub(crate) async fn run(args: StartArgs) -> anyhow::Result<()> {
-    let api = Nirvana::new()?;
+    let api = Nirvana::new().await?;
 
     let (ticket, at, note) = match args.ticket {
         Some(ticket) => (ticket, args.at, args.note),
-        None => interactive_prompt(&api)?,
+        None => interactive_prompt(&api).await?,
     };
 
     let at_ts = at.as_deref().map(parse_time).transpose()?;
 
-    let slot = api.start_slot(&ticket, at_ts, note.as_deref()).await?;
+    let (slot, ticket) = api.start_slot(&ticket, at_ts, note.as_deref()).await?;
     let time = format_timestamp(slot.started_at);
 
     println!(
         "{} {} {} {} {}",
         style("Started").green().bold(),
-        style(&slot.ticket_key).bold(),
-        style(slot.summary.as_deref().unwrap_or("")).dim(),
+        style(&ticket.ticket_key).bold(),
+        style(ticket.summary.as_deref().unwrap_or("")).dim(),
         style("at").white(),
         time,
     );
@@ -30,13 +30,15 @@ pub(crate) async fn run(args: StartArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn interactive_prompt(api: &Nirvana) -> anyhow::Result<(String, Option<String>, Option<String>)> {
+async fn interactive_prompt(
+    api: &Nirvana,
+) -> anyhow::Result<(String, Option<String>, Option<String>)> {
     let theme = ColorfulTheme {
         active_item_prefix: console::Style::new().green().apply_to(String::from("❯")),
         ..ColorfulTheme::default()
     };
 
-    let tickets = api.list_recent_tickets()?;
+    let tickets = api.list_recent_tickets().await?;
 
     let ticket = if tickets.is_empty() {
         Input::with_theme(&theme)

@@ -5,6 +5,7 @@ dprint = "0.63.0"
 jactionlint = "2.2.0"
 editorconfig-checker = "4.0.2"
 rust = { version = "1.99.0", profile = "default" }
+"cargo:sea-orm-cli" = "2.0.4"
 
 [tasks.setup]
 run = ["hk install --mise"]
@@ -22,3 +23,7 @@ run = "cargo test --workspace"
 [tasks.check]
 description = "Type-check all crates"
 run = "cargo check --workspace"
+
+[tasks.migrate]
+description = "Create a new DB migration"
+run = "sea-orm-cli migrate generate -d crates/nirvana-migration"

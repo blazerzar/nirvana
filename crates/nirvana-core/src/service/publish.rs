@@ -1,10 +1,12 @@
-use crate::credentials;
 use crate::domain::{PublishFailure, PublishResult};
 use crate::errors::TrackingError;
 use crate::integration;
 use crate::service::Nirvana;
-use crate::storage::slot_repo::{self, SlotWithTicket};
 use chrono::{Local, TimeZone};
+use nirvana_entity::slot::Entity as Slot;
+use nirvana_entity::{slot, ticket};
+use sea_orm::sea_query::Expr;
+use sea_orm::{EntityTrait, QueryFilter};
 
 #[derive(Debug, PartialEq, Eq)]
 struct PublishWorklog {
@@ -33,11 +35,11 @@ impl Nirvana {
             .active_connection
             .ok_or(TrackingError::NoActiveConnection)?;
 
-        let connection = self.get_connection(connection_id)?;
-        let token = credentials::get_token(&self.db, connection_id)?;
+        let connection = self.get_connection(connection_id).await?;
+        let token = self.get_token(connection_id).await?;
         let integ = integration::build_integration(&connection, &token)?;
 
-        let slots = slot_repo::get_unpublished(&self.db, connection_id, from, to)?;
+        let slots = self.get_unpublished_slots(from, to).await?;
         if slots.is_empty() {
             return Ok(PublishResult {
                 published_count: 0,
@@ -69,7 +71,11 @@ impl Nirvana {
         }
 
         if !published_ids.is_empty() {
-            slot_repo::mark_published(&self.db, &published_ids, now)?;
+            Slot::update_many()
+                .col_expr(slot::COLUMN.published_at, Expr::value(now))
+                .filter(slot::COLUMN.id.is_in(published_ids.iter().copied()))
+                .exec(&self.db)
+                .await?;
         }
 
         Ok(PublishResult {
@@ -80,12 +86,12 @@ impl Nirvana {
     }
 }
 
-fn squash_slots_for_publish(slots: &[SlotWithTicket]) -> Vec<PublishWorklog> {
+fn squash_slots_for_publish(slots: &[(slot::Model, ticket::Model)]) -> Vec<PublishWorklog> {
     let mut slots = slots.iter().collect::<Vec<_>>();
-    slots.sort_by_key(|slot| slot.started_at);
+    slots.sort_by_key(|(slot, _)| slot.started_at);
     let mut day_groups: Vec<PublishDayGroup> = Vec::new();
 
-    for slot in slots {
+    for (slot, ticket) in slots {
         let Some(stopped_at) = slot.stopped_at else {
             continue;
         };
@@ -113,14 +119,14 @@ fn squash_slots_for_publish(slots: &[SlotWithTicket]) -> Vec<PublishWorklog> {
         match day_group
             .worklogs
             .iter_mut()
-            .find(|worklog| worklog.ticket_key == slot.ticket_key)
+            .find(|worklog| worklog.ticket_key == ticket.ticket_key)
         {
             Some(worklog) => {
                 worklog.seconds += seconds;
                 worklog.source_slot_ids.push(slot.id);
             }
             None => day_group.worklogs.push(PublishWorklog {
-                ticket_key: slot.ticket_key.clone(),
+                ticket_key: ticket.ticket_key.clone(),
                 started_at: 0,
                 seconds,
                 source_slot_ids: vec![slot.id],
@@ -149,10 +155,10 @@ fn local_day(timestamp: i64) -> Option<chrono::NaiveDate> {
     }
 }
 
-fn slots_for_publish(slots: &[SlotWithTicket]) -> Vec<PublishWorklog> {
+fn slots_for_publish(slots: &[(slot::Model, ticket::Model)]) -> Vec<PublishWorklog> {
     slots
         .iter()
-        .filter_map(|slot| {
+        .filter_map(|(slot, ticket)| {
             let stopped_at = slot.stopped_at?;
             let seconds = stopped_at - slot.started_at;
             if seconds <= 0 {
@@ -160,7 +166,7 @@ fn slots_for_publish(slots: &[SlotWithTicket]) -> Vec<PublishWorklog> {
             }
 
             Some(PublishWorklog {
-                ticket_key: slot.ticket_key.clone(),
+                ticket_key: ticket.ticket_key.clone(),
                 started_at: slot.started_at,
                 seconds,
                 source_slot_ids: vec![slot.id],
@@ -173,17 +179,30 @@ fn slots_for_publish(slots: &[SlotWithTicket]) -> Vec<PublishWorklog> {
 mod tests {
     use super::*;
 
-    fn slot(id: i64, ticket_key: &str, started_at: i64, stopped_at: i64) -> SlotWithTicket {
-        SlotWithTicket {
-            id,
-            ticket_key: ticket_key.to_string(),
-            summary: None,
-            connection_id: 1,
-            note: None,
-            started_at,
-            stopped_at: Some(stopped_at),
-            published_at: None,
-        }
+    fn slot(
+        id: i64,
+        ticket_key: &str,
+        started_at: i64,
+        stopped_at: i64,
+    ) -> (slot::Model, ticket::Model) {
+        (
+            slot::Model {
+                id,
+                ticket_id: 1,
+                connection_id: 1,
+                note: None,
+                started_at,
+                stopped_at: Some(stopped_at),
+                published_at: None,
+            },
+            ticket::Model {
+                id: 1,
+                ticket_key: ticket_key.to_string(),
+                summary: None,
+                connection_id: 1,
+                last_worked_at: 0,
+            },
+        )
     }
 
     fn local_ts(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> i64 {

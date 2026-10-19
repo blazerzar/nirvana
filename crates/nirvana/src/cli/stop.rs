@@ -4,19 +4,19 @@ use nirvana_core::service::Nirvana;
 
 use crate::cli::StopArgs;
 
-pub(crate) fn run(args: StopArgs) -> anyhow::Result<()> {
-    let api = Nirvana::new()?;
+pub(crate) async fn run(args: StopArgs) -> anyhow::Result<()> {
+    let api = Nirvana::new().await?;
     let at_ts = args.at.as_deref().map(parse_time).transpose()?;
 
-    match api.stop_slot(at_ts)? {
-        Some(slot) => {
+    match api.stop_slot(at_ts).await? {
+        Some((slot, ticket)) => {
             let duration = slot.stopped_at.unwrap() - slot.started_at;
 
             println!(
                 "{} {} {} {}",
                 style("Stopped").green().bold(),
-                style(&slot.ticket_key).bold(),
-                style(slot.summary.as_deref().unwrap_or("")).dim(),
+                style(&ticket.ticket_key).bold(),
+                style(ticket.summary.as_deref().unwrap_or("")).dim(),
                 style(format!("({})", style(format_duration(duration)))).white(),
             );
         }

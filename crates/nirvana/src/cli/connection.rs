@@ -3,7 +3,8 @@ use chrono::{Local, TimeZone};
 use clap::ValueEnum;
 use console::{Style, Term};
 use dialoguer::{Input, Password, Select, theme::ColorfulTheme};
-use nirvana_core::domain::{Connection, ConnectionData};
+use nirvana_core::domain::ConnectionData;
+use nirvana_core::entity::connection;
 use nirvana_core::service::Nirvana;
 use std::cmp::max;
 
@@ -59,9 +60,9 @@ const COLUMNS: &[Column] = &[
     Column::Static("UPDATED", "2026-05-17".len()),
 ];
 
-pub(crate) fn list() -> anyhow::Result<()> {
-    let api = Nirvana::new()?;
-    let connections = api.list_connections()?;
+pub(crate) async fn list() -> anyhow::Result<()> {
+    let api = Nirvana::new().await?;
+    let connections = api.list_connections().await?;
 
     let term = Term::stdout();
     if connections.is_empty() {
@@ -116,7 +117,7 @@ pub(crate) fn list() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn is_active(conn: &Connection, api: &Nirvana) -> bool {
+fn is_active(conn: &connection::Model, api: &Nirvana) -> bool {
     api.active_connection() == Some(conn.id)
 }
 
@@ -150,9 +151,9 @@ fn print_row(
     Ok(())
 }
 
-pub(crate) fn activate(query: Option<&str>) -> anyhow::Result<()> {
-    let mut api = Nirvana::new()?;
-    let connections = api.list_connections()?;
+pub(crate) async fn activate(query: Option<&str>) -> anyhow::Result<()> {
+    let mut api = Nirvana::new().await?;
+    let connections = api.list_connections().await?;
 
     if connections.is_empty() {
         let term = Term::stdout();
@@ -167,7 +168,7 @@ pub(crate) fn activate(query: Option<&str>) -> anyhow::Result<()> {
     };
     let chosen = &connections[idx];
 
-    api.set_active_connection(chosen.id)?;
+    api.set_active_connection(chosen.id).await?;
     let term = Term::stdout();
     term.write_line(&format!(
         "Active connection set to '{}' (id {})",
@@ -176,7 +177,7 @@ pub(crate) fn activate(query: Option<&str>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn resolve_query(query: &str, connections: &[Connection]) -> anyhow::Result<usize> {
+fn resolve_query(query: &str, connections: &[connection::Model]) -> anyhow::Result<usize> {
     if let Ok(id) = query.parse::<i64>()
         && let Some(idx) = connections.iter().position(|c| c.id == id)
     {
@@ -188,7 +189,7 @@ fn resolve_query(query: &str, connections: &[Connection]) -> anyhow::Result<usiz
     anyhow::bail!("Connection '{query}' not found")
 }
 
-fn pick_interactive(connections: &[Connection]) -> anyhow::Result<usize> {
+fn pick_interactive(connections: &[connection::Model]) -> anyhow::Result<usize> {
     let dim = Style::new().dim();
     let name_width = connections.iter().map(|c| c.name.len()).max().unwrap_or(0);
 
@@ -222,15 +223,15 @@ fn pick_interactive(connections: &[Connection]) -> anyhow::Result<usize> {
     }
 }
 
-pub(crate) fn add(args: AddArgs) -> anyhow::Result<()> {
+pub(crate) async fn add(args: AddArgs) -> anyhow::Result<()> {
     let data = if args.name.is_none() {
         add_interactive()?
     } else {
         add_command(args)?
     };
 
-    let mut api = Nirvana::new()?;
-    let connection = api.add_connection(data)?;
+    let mut api = Nirvana::new().await?;
+    let connection = api.add_connection(data).await?;
 
     let term = Term::stdout();
     term.write_line(&format!(
@@ -244,7 +245,7 @@ pub(crate) fn add(args: AddArgs) -> anyhow::Result<()> {
         .interact()?;
 
     if use_it {
-        api.set_active_connection(connection.id)?;
+        api.set_active_connection(connection.id).await?;
         term.write_line(&format!(
             "Active connection set to '{}' (id {})",
             connection.name, connection.id
@@ -363,7 +364,7 @@ fn add_interactive() -> anyhow::Result<ConnectionData> {
 }
 
 pub(crate) async fn test() -> anyhow::Result<()> {
-    let api = Nirvana::new()?;
+    let api = Nirvana::new().await?;
     let term = Term::stdout();
 
     match api.test_connection().await {

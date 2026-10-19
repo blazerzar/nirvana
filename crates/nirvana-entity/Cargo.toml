@@ -1,0 +1,10 @@
+[package]
+name = "nirvana-entity"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+chrono = "0.4.45"
+sea-orm = { version = "2.0.4", default-features = false, features = ["macros"] }

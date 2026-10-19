@@ -1,3 +1,4 @@
+use anyhow::Context;
 use chrono::{Local, NaiveTime, TimeZone};
 use console::{Style, Term};
 use nirvana_core::service::{Nirvana, SlotSort};
@@ -56,8 +57,8 @@ const COLUMNS: &[Column] = &[
     Column::Limited("URL", 50),
 ];
 
-pub(crate) fn run(args: ListArgs) -> anyhow::Result<()> {
-    let api = Nirvana::new()?;
+pub(crate) async fn run(args: ListArgs) -> anyhow::Result<()> {
+    let api = Nirvana::new().await?;
 
     let today = Local::now().date_naive();
     let from = args
@@ -78,7 +79,7 @@ pub(crate) fn run(args: ListArgs) -> anyhow::Result<()> {
         SlotSort::StartedAt
     };
 
-    let slots = api.get_slots(from, to, sort)?;
+    let slots = api.get_slots(from, to, sort).await?;
 
     let term = Term::stdout();
     if slots.is_empty() {
@@ -86,10 +87,16 @@ pub(crate) fn run(args: ListArgs) -> anyhow::Result<()> {
         return Ok(());
     }
 
+    let connection = api
+        .get_active_connection()
+        .await?
+        .context("No active connection")?;
+    let urls = api.issue_urls(&connection, slots.iter().map(|(_, ticket)| ticket))?;
     let now = chrono::Local::now().timestamp();
-    let rows: Vec<[String; COLUMNS.len()]> = slots
+    let rows = slots
         .iter()
-        .map(|s| {
+        .zip(urls)
+        .map(|((s, ticket), url)| {
             let started = format_time(s.started_at);
             let stopped = match s.stopped_at {
                 Some(t) => format_time(t),
@@ -98,16 +105,16 @@ pub(crate) fn run(args: ListArgs) -> anyhow::Result<()> {
             let ended = s.stopped_at.unwrap_or(now);
             let duration = format_duration(ended - s.started_at);
             [
-                s.ticket_key.clone(),
-                s.summary.clone().unwrap_or_default(),
+                ticket.ticket_key.clone(),
+                ticket.summary.clone().unwrap_or_default(),
                 s.note.clone().unwrap_or_default(),
                 started,
                 stopped,
                 duration,
-                s.issue_url.clone().unwrap_or_default(),
+                url,
             ]
         })
-        .collect();
+        .collect::<Vec<_>>();
 
     let mut widths: Vec<usize> = COLUMNS.iter().map(|c| c.initial_width()).collect();
     for row in &rows {

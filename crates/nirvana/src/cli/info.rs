@@ -7,8 +7,8 @@ const SHORT_HASH: Option<&str> = option_env!("SHORT_HASH");
 const COMMIT_HASH: Option<&str> = option_env!("COMMIT_HASH");
 const COMMIT_DATE: Option<&str> = option_env!("COMMIT_DATE");
 
-pub(crate) fn run() -> anyhow::Result<()> {
-    let api = Nirvana::new()?;
+pub(crate) async fn run() -> anyhow::Result<()> {
+    let api = Nirvana::new().await?;
     let info = api.info();
     let term = Term::stdout();
     let bold = Style::new().bold();

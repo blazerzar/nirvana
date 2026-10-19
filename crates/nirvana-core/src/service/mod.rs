@@ -9,20 +9,18 @@ mod tracking;
 
 use std::path::PathBuf;
 
+use sea_orm::DatabaseConnection;
+
 use crate::config::AppConfig;
-use crate::paths::AppPaths;
-use crate::storage::Database;
-
+pub use crate::domain::{Change, SlotCreate, SlotEdit, SlotSort};
 use crate::errors::NirvanaError;
-
-pub use crate::storage::slot_repo::{Change, SlotSort};
-
-pub use crate::domain::{SlotCreate, SlotEdit};
+use crate::paths::AppPaths;
+use crate::storage;
 
 pub struct Nirvana {
     paths: AppPaths,
     config: AppConfig,
-    db: Database,
+    db: DatabaseConnection,
 }
 
 pub struct AppInfo {
@@ -34,10 +32,10 @@ pub struct AppInfo {
 }
 
 impl Nirvana {
-    pub fn new() -> Result<Self, NirvanaError> {
+    pub async fn new() -> Result<Self, NirvanaError> {
         let paths = AppPaths::resolve()?;
         let config = AppConfig::load(&paths.config_file)?;
-        let db = Database::initialize(&paths.db_file)?;
+        let db = storage::open(&paths.db_file).await?;
         Ok(Self { paths, config, db })
     }
 }

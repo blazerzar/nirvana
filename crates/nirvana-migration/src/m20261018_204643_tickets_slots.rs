@@ -129,34 +129,4 @@ impl MigrationTrait for Migration {
             )
             .await
     }
-
-    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .drop_index(Index::drop().name("slots_unpublished").to_owned())
-            .await?;
-
-        manager
-            .drop_index(Index::drop().name("slots_by_ticket").to_owned())
-            .await?;
-
-        manager
-            .drop_index(Index::drop().name("one_running_slot").to_owned())
-            .await?;
-
-        manager
-            .drop_table(Table::drop().table("slots").to_owned())
-            .await?;
-
-        manager
-            .drop_index(Index::drop().name("tickets_by_last_worked").to_owned())
-            .await?;
-
-        manager
-            .drop_index(Index::drop().name("tickets_by_key").to_owned())
-            .await?;
-
-        manager
-            .drop_table(Table::drop().table("tickets").to_owned())
-            .await
-    }
 }

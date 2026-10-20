@@ -70,11 +70,11 @@ logged from the start.
       user_version is 2 (every released 0.x DB). Back up the DB
       to `data_dir/backup` with `VACUUM INTO` before applying pending
       migrations. Log every step.
-- [ ] Add profiles table - single DB, existing data becomes one profile with
-      all connections.
+- [x] Add profiles table - single DB, existing data becomes one profile with
+      all connections. Add profile_id to connections, unique name per profile.
 - [ ] Add settings to connections - publish and squash columns, replacing
-      global publish_squashed_worklogs. Add profile_id, unique name per
-      profile. Credentials table and secret_store stay (plaintext support).
+      global publish_squashed_worklogs. Credentials table and secret_store
+      stay (plaintext support).
 - [ ] Add profile settings (week start, time format, workday, expected hours,
       weekends, portal toggle + url).
 - [ ] Add uuid to slots (needed for idempotent publishing to portal).
@@ -131,6 +131,8 @@ logged from the start.
 ## Tickets
 
 - [ ] Make sure start, stop, resume, switch, edit, delete are working and tested.
+- [ ] Add `nirvana profile add` - a fresh DB has no profile, so connections
+      cannot be added until one is created.
 - [ ] Get these commands working in CLI and start integration testing as well.
 - [ ] Check for blocking calls inside async code while refactoring the CLI.
 - [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,

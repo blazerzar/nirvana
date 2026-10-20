@@ -19,6 +19,15 @@ pub struct Model {
     pub secret_store: String,
     pub created_at: i64,
     pub updated_at: i64,
+    pub profile_id: i64,
+    #[sea_orm(
+        belongs_to,
+        from = "profile_id",
+        to = "id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    pub profile: BelongsTo<super::profile::Entity>,
     #[sea_orm(has_one)]
     pub credential: HasOne<super::credential::Entity>,
     #[sea_orm(has_many)]

@@ -22,6 +22,8 @@ pub enum NirvanaError {
 pub enum TrackingError {
     #[error("no active connection")]
     NoActiveConnection,
+    #[error("no active profile")]
+    NoActiveProfile,
     #[error("connection not found: {0}")]
     ConnectionNotFound(i64),
     #[error("cannot delete a connection with local history")]

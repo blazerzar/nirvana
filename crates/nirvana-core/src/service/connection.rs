@@ -1,5 +1,6 @@
 use nirvana_entity::connection::Entity as Connection;
-use nirvana_entity::{connection, credential, slot, ticket};
+use nirvana_entity::profile::Entity as Profile;
+use nirvana_entity::{connection, credential, profile, slot, ticket};
 use sea_orm::{
     ActiveModelTrait, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set,
     TransactionTrait,
@@ -79,7 +80,14 @@ impl Nirvana {
             unimplemented!("only plaintext secret store is currently supported");
         }
 
+        let profile = Profile::find()
+            .order_by_asc(profile::COLUMN.id)
+            .one(&self.db)
+            .await?
+            .ok_or(TrackingError::NoActiveProfile)?;
+
         let duplicates = Connection::find()
+            .filter(connection::COLUMN.profile_id.eq(profile.id))
             .filter(connection::COLUMN.name.eq(&connection.name))
             .count(&self.db)
             .await?;
@@ -94,6 +102,7 @@ impl Nirvana {
             host: Set(normalize_host(&connection.host)),
             identity: Set(connection.identity),
             secret_store: Set(connection.secret_store),
+            profile_id: Set(profile.id),
             ..Default::default()
         }
         .insert(&txn)
@@ -123,6 +132,7 @@ impl Nirvana {
             secret_store: connection.secret_store,
             created_at: 0,
             updated_at: 0,
+            profile_id: 0,
         };
         let integ = integration::build_integration(&candidate, &connection.token)?;
         integ.test_connection().await?;

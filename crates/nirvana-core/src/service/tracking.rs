@@ -197,6 +197,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use nirvana_entity::profile;
     use sea_orm::sea_query::Expr;
 
     use super::*;
@@ -269,6 +270,13 @@ mod tests {
             },
             db,
         };
+        profile::ActiveModel {
+            name: Set("test".to_string()),
+            ..Default::default()
+        }
+        .insert(&api.db)
+        .await
+        .unwrap();
         let connection = api
             .add_connection(ConnectionData {
                 name: "Test Jira".to_string(),

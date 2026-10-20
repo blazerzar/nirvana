@@ -35,3 +35,12 @@ run = "cargo check --workspace"
 [tasks.migrate]
 description = "Create a new DB migration"
 run = "sea-orm-cli migrate generate -d crates/nirvana-migration"
+
+[tasks.db-diagram]
+description = "Generate a Mermaid diagram of the DB"
+run = """
+sea-orm-cli generate entity -u "sqlite://$PWD/target/debug/nirvana.db" \
+-o "$TMPDIR/nirvana-entities" --er-diagram >/dev/null && \
+cp "$TMPDIR/nirvana-entities/entities.mermaid" docs/schema.mermaid && \
+rm -rf "$TMPDIR/nirvana-entities"
+"""

@@ -62,23 +62,4 @@ impl MigrationTrait for Migration {
             )
             .await
     }
-
-    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .drop_table(Table::drop().table("credentials").to_owned())
-            .await?;
-
-        manager
-            .drop_index(
-                Index::drop()
-                    .name("connections_by_name")
-                    .table("connections")
-                    .to_owned(),
-            )
-            .await?;
-
-        manager
-            .drop_table(Table::drop().table("connections").to_owned())
-            .await
-    }
 }

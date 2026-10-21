@@ -17,7 +17,6 @@ impl Nirvana {
         &self,
         ticket_key: &str,
         at: Option<i64>,
-        note: Option<&str>,
     ) -> Result<(slot::Model, ticket::Model), super::NirvanaError> {
         let connection_id = self
             .config
@@ -43,7 +42,6 @@ impl Nirvana {
         let slot = slot::ActiveModel {
             ticket_id: Set(ticket.id),
             connection_id: Set(connection_id),
-            note: Set(note.map(str::to_string)),
             started_at: Set(now),
             stopped_at: Set(None),
             published_at: Set(None),
@@ -89,7 +87,6 @@ impl Nirvana {
         let slot = slot::ActiveModel {
             ticket_id: Set(ticket.id),
             connection_id: Set(connection_id),
-            note: Set(input.note),
             started_at: Set(input.started_at),
             stopped_at: Set(Some(input.stopped_at)),
             published_at: Set(None),
@@ -311,7 +308,6 @@ mod tests {
     fn slot_create(ticket_key: &str, started_at: i64, stopped_at: i64) -> SlotCreate {
         SlotCreate {
             ticket_key: ticket_key.to_string(),
-            note: Some("manual entry".to_string()),
             started_at,
             stopped_at,
         }
@@ -328,7 +324,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(ticket.ticket_key, "DES-1");
-        assert_eq!(slot.note.as_deref(), Some("manual entry"));
         assert_eq!(slot.started_at, 100);
         assert_eq!(slot.stopped_at, Some(160));
         assert_eq!(slot.published_at, None);
@@ -431,7 +426,6 @@ mod tests {
         let running = slot::ActiveModel {
             ticket_id: Set(ticket_id),
             connection_id: Set(connection_id),
-            note: Set(None),
             started_at: Set(300),
             stopped_at: Set(None),
             published_at: Set(None),
@@ -515,7 +509,6 @@ mod tests {
                 slot.id,
                 SlotEdit {
                     ticket_key: Some("des-2".to_string()),
-                    note: Change::Skip,
                     started_at: None,
                     stopped_at: Change::Skip,
                 },
@@ -550,7 +543,6 @@ mod tests {
                 slot.id,
                 SlotEdit {
                     ticket_key: Some("DES-2".to_string()),
-                    note: Change::Skip,
                     started_at: None,
                     stopped_at: Change::Skip,
                 },
@@ -565,7 +557,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn edits_slot_note_and_times() {
+    async fn edits_slot_times() {
         let api = test_api().await;
         insert_ticket(&api, "DES-1").await;
         let (slot, _) = api
@@ -578,7 +570,6 @@ mod tests {
                 slot.id,
                 SlotEdit {
                     ticket_key: None,
-                    note: Change::Set("updated note".to_string()),
                     started_at: Some(90),
                     stopped_at: Change::Set(170),
                 },
@@ -587,7 +578,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(edited_ticket.ticket_key, "DES-1");
-        assert_eq!(edited.note.as_deref(), Some("updated note"));
         assert_eq!(edited.started_at, 90);
         assert_eq!(edited.stopped_at, Some(170));
     }

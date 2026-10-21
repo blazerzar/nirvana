@@ -197,7 +197,6 @@ mod tests {
                 id,
                 ticket_id: 1,
                 connection_id: 1,
-                note: None,
                 started_at,
                 stopped_at: Some(stopped_at),
                 published_at: None,

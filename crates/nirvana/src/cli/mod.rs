@@ -58,9 +58,6 @@ struct StartArgs {
     /// Start time (e.g. "14:30" or "2026-05-19 14:30"). Requires ticket.
     #[arg(long, requires = "ticket")]
     at: Option<String>,
-    /// Note attached to this slot. Requires ticket.
-    #[arg(long, requires = "ticket")]
-    note: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -77,9 +74,6 @@ struct EditArgs {
     /// Move the slot to a different ticket key
     #[arg(long)]
     ticket: Option<String>,
-    /// Set or clear the note (use empty string to clear)
-    #[arg(long)]
-    note: Option<String>,
     /// Set the start time (e.g. "14:30" or "2026-05-19 14:30")
     #[arg(long)]
     start: Option<String>,
@@ -196,11 +190,6 @@ pub(crate) async fn run() -> anyhow::Result<()> {
         Some(Command::Start(args)) => start::run(args).await,
         Some(Command::Stop(args)) => stop::run(args).await,
         Some(Command::Edit(args)) => {
-            let note = match args.note {
-                None => Change::Skip,
-                Some(s) if s.is_empty() => Change::Clear,
-                Some(s) => Change::Set(s),
-            };
             let started_at = args.start.as_deref().map(parse_time).transpose()?;
             let stopped_at = match &args.stop {
                 None => Change::Skip,
@@ -210,7 +199,6 @@ pub(crate) async fn run() -> anyhow::Result<()> {
             edit::run(edit::EditArgs {
                 slot_id: args.slot_id,
                 ticket_key: args.ticket,
-                note,
                 started_at,
                 stopped_at,
             })

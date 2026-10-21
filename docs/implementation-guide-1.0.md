@@ -129,8 +129,8 @@ publish_entry_slots(entry_id, slot_id)   -- a squash maps many slots to one entr
   light/dark/system.
 - Keychain stage: plaintext tokens move into the keyring where it is
   available.
-- The note column is dropped (no UI uses it). Decide whether old notes get
-  exported first.
+- The note column is dropped (no UI uses it). Notes are dropped without an
+  export, and the pre-migration backup keeps them.
 - **Migration tests** (required before the Stage 1 review), run in CI:
   - DB: a fixture `nirvana.db` produced by 0.3.0-alpha (`user_version` 2) with
     several connections, credentials, tickets, closed, running and published

@@ -44,7 +44,6 @@ impl Nirvana {
             connection_id: Set(connection_id),
             started_at: Set(now),
             stopped_at: Set(None),
-            published_at: Set(None),
             ..Default::default()
         }
         .insert(&self.db)
@@ -89,7 +88,6 @@ impl Nirvana {
             connection_id: Set(connection_id),
             started_at: Set(input.started_at),
             stopped_at: Set(Some(input.stopped_at)),
-            published_at: Set(None),
             ..Default::default()
         }
         .insert(&self.db)
@@ -191,15 +189,16 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use nirvana_entity::profile;
+    use nirvana_entity::publish_entry::Entity as PublishEntry;
+    use nirvana_entity::{profile, publish_entry};
     use sea_orm::ActiveValue::Unchanged;
     use sea_orm::prelude::Uuid;
-    use sea_orm::sea_query::Expr;
 
     use super::*;
     use crate::config::{AppConfig, CoreConfig, GuiConfig, IdleConfig};
     use crate::domain::{Change, ConnectionData, SlotEdit, SlotSort};
     use crate::errors::NirvanaError;
+    use crate::integration::IntegrationError;
     use crate::paths::AppPaths;
     use crate::storage;
 
@@ -305,6 +304,33 @@ mod tests {
         .id
     }
 
+    async fn publish(api: &Nirvana, slot_ids: &[i64], result: Result<(), IntegrationError>) {
+        let connection_id = api.config.core.active_connection.unwrap();
+        api.mark_pending(connection_id, slot_ids.iter().copied())
+            .await
+            .unwrap();
+        api.record_publish(connection_id, slot_ids, &result, 200)
+            .await
+            .unwrap();
+    }
+
+    async fn publish_entries(api: &Nirvana, slot_id: i64) -> Vec<publish_entry::Model> {
+        PublishEntry::find()
+            .filter(publish_entry::COLUMN.slot_id.eq(slot_id))
+            .all(&api.db)
+            .await
+            .unwrap()
+    }
+
+    async fn unpublished_ids(api: &Nirvana) -> Vec<i64> {
+        api.get_unpublished_slots(0, None)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|(slot, _)| slot.id)
+            .collect()
+    }
+
     fn slot_create(ticket_key: &str, started_at: i64, stopped_at: i64) -> SlotCreate {
         SlotCreate {
             ticket_key: ticket_key.to_string(),
@@ -326,7 +352,7 @@ mod tests {
         assert_eq!(ticket.ticket_key, "DES-1");
         assert_eq!(slot.started_at, 100);
         assert_eq!(slot.stopped_at, Some(160));
-        assert_eq!(slot.published_at, None);
+        assert!(publish_entries(&api, slot.id).await.is_empty());
     }
 
     #[tokio::test]
@@ -428,7 +454,6 @@ mod tests {
             connection_id: Set(connection_id),
             started_at: Set(300),
             stopped_at: Set(None),
-            published_at: Set(None),
             ..Default::default()
         }
         .insert(&api.db)
@@ -531,12 +556,7 @@ mod tests {
             .create_slot(slot_create("DES-1", 100, 160))
             .await
             .unwrap();
-        Slot::update_many()
-            .col_expr(slot::COLUMN.published_at, Expr::value(200))
-            .filter(slot::COLUMN.id.eq(slot.id))
-            .exec(&api.db)
-            .await
-            .unwrap();
+        publish(&api, &[slot.id], Ok(())).await;
 
         let error = api
             .edit_slot(
@@ -580,5 +600,148 @@ mod tests {
         assert_eq!(edited_ticket.ticket_key, "DES-1");
         assert_eq!(edited.started_at, 90);
         assert_eq!(edited.stopped_at, Some(170));
+    }
+
+    #[tokio::test]
+    async fn publish_marks_every_squashed_slot() {
+        let api = test_api().await;
+        insert_ticket(&api, "DES-1").await;
+        let (first, _) = api
+            .create_slot(slot_create("DES-1", 100, 160))
+            .await
+            .unwrap();
+        let (second, _) = api
+            .create_slot(slot_create("DES-1", 200, 260))
+            .await
+            .unwrap();
+
+        publish(&api, &[first.id, second.id], Ok(())).await;
+
+        for slot_id in [first.id, second.id] {
+            let entries = publish_entries(&api, slot_id).await;
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].published_at, Some(200));
+            assert_eq!(entries[0].error, None);
+        }
+        assert!(unpublished_ids(&api).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn failed_publish_keeps_slot_unpublished_and_editable() {
+        let api = test_api().await;
+        insert_ticket(&api, "DES-1").await;
+        let (slot, _) = api
+            .create_slot(slot_create("DES-1", 100, 160))
+            .await
+            .unwrap();
+
+        publish(
+            &api,
+            &[slot.id],
+            Err(IntegrationError::Auth("expired token".to_string())),
+        )
+        .await;
+
+        let entries = publish_entries(&api, slot.id).await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].published_at, None);
+        assert_eq!(
+            entries[0].error.as_deref(),
+            Some("authentication failed: expired token")
+        );
+        assert_eq!(unpublished_ids(&api).await, [slot.id]);
+
+        let (edited, _) = api
+            .edit_slot(
+                slot.id,
+                SlotEdit {
+                    ticket_key: None,
+                    started_at: Some(90),
+                    stopped_at: Change::Skip,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(edited.started_at, 90);
+    }
+
+    #[tokio::test]
+    async fn retried_publish_clears_error() {
+        let api = test_api().await;
+        insert_ticket(&api, "DES-1").await;
+        let (slot, _) = api
+            .create_slot(slot_create("DES-1", 100, 160))
+            .await
+            .unwrap();
+        publish(
+            &api,
+            &[slot.id],
+            Err(IntegrationError::Auth("expired token".to_string())),
+        )
+        .await;
+
+        publish(&api, &[slot.id], Ok(())).await;
+
+        let entries = publish_entries(&api, slot.id).await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].published_at, Some(200));
+        assert_eq!(entries[0].error, None);
+    }
+
+    #[tokio::test]
+    async fn failed_publish_keeps_ok_entry() {
+        let api = test_api().await;
+        insert_ticket(&api, "DES-1").await;
+        let (slot, _) = api
+            .create_slot(slot_create("DES-1", 100, 160))
+            .await
+            .unwrap();
+        publish(&api, &[slot.id], Ok(())).await;
+
+        publish(
+            &api,
+            &[slot.id],
+            Err(IntegrationError::Auth("expired token".to_string())),
+        )
+        .await;
+
+        let entries = publish_entries(&api, slot.id).await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].published_at, Some(200));
+        assert_eq!(entries[0].error, None);
+    }
+
+    #[tokio::test]
+    async fn pending_entry_keeps_slot_unpublished() {
+        let api = test_api().await;
+        insert_ticket(&api, "DES-1").await;
+        let (slot, _) = api
+            .create_slot(slot_create("DES-1", 100, 160))
+            .await
+            .unwrap();
+        let connection_id = api.config.core.active_connection.unwrap();
+
+        api.mark_pending(connection_id, [slot.id]).await.unwrap();
+
+        let entries = publish_entries(&api, slot.id).await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].published_at, None);
+        assert_eq!(entries[0].error, None);
+        assert_eq!(unpublished_ids(&api).await, [slot.id]);
+    }
+
+    #[tokio::test]
+    async fn deletes_published_slot_with_its_entries() {
+        let api = test_api().await;
+        insert_ticket(&api, "DES-1").await;
+        let (slot, _) = api
+            .create_slot(slot_create("DES-1", 100, 160))
+            .await
+            .unwrap();
+        publish(&api, &[slot.id], Ok(())).await;
+
+        api.delete_slot(slot.id).await.unwrap();
+
+        assert!(publish_entries(&api, slot.id).await.is_empty());
     }
 }

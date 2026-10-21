@@ -12,13 +12,7 @@ pub struct Model {
     pub summary: Option<String>,
     pub connection_id: i64,
     pub last_worked_at: i64,
-    #[sea_orm(
-        belongs_to,
-        from = "connection_id",
-        to = "id",
-        on_update = "NoAction",
-        on_delete = "NoAction"
-    )]
+    #[sea_orm(belongs_to, from = "connection_id", to = "id", on_delete = "NoAction")]
     pub connection: BelongsTo<super::connection::Entity>,
     #[sea_orm(has_many)]
     pub slots: HasMany<super::slot::Entity>,

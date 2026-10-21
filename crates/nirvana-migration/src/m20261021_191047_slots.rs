@@ -14,6 +14,8 @@ impl MigrationTrait for Migration {
 
     /// Rebuilds `slots` with a NOT NULL `uuid` column, following
     /// https://sqlite.org/lang_altertable.html#otheralter, and drops `note`.
+    /// Moves `published_at` into a new `publish_entries` table with one row
+    /// per published slot, then drops it with the `slots_unpublished` index.
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
 
@@ -26,7 +28,6 @@ impl MigrationTrait for Migration {
                     .col(integer("connection_id"))
                     .col(integer("started_at"))
                     .col(integer_null("stopped_at"))
-                    .col(integer_null("published_at"))
                     .col(blob("uuid"))
                     .foreign_key(
                         ForeignKey::create()
@@ -48,13 +49,37 @@ impl MigrationTrait for Migration {
             .await?;
         debug!("created slots_new table");
 
+        manager
+            .create_table(
+                Table::create()
+                    .table("publish_entries")
+                    .col(integer("slot_id"))
+                    .col(integer("connection_id"))
+                    .col(integer_null("published_at"))
+                    .col(text_null("error"))
+                    .primary_key(Index::create().col("slot_id").col("connection_id"))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .from("publish_entries", "slot_id")
+                            .to("slots_new", "id")
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .from("publish_entries", "connection_id")
+                            .to("connections", "id"),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        debug!("created publish_entries table");
+
         let columns = [
             "id",
             "ticket_id",
             "connection_id",
             "started_at",
             "stopped_at",
-            "published_at",
         ];
         let ids = db
             .query_all(Query::select().column("id").from("slots"))
@@ -78,6 +103,23 @@ impl MigrationTrait for Migration {
             .await?;
         }
         debug!("copied {} slots to slots_new with uuids", ids.len());
+
+        let res = db
+            .execute(
+                Query::insert()
+                    .into_table("publish_entries")
+                    .columns(["slot_id", "connection_id", "published_at"])
+                    .select_from(
+                        Query::select()
+                            .columns(["id", "connection_id", "published_at"])
+                            .from("slots")
+                            .and_where(Expr::col("published_at").is_not_null())
+                            .to_owned(),
+                    )
+                    .map_err(|e| DbErr::Migration(e.to_string()))?,
+            )
+            .await?;
+        debug!("created {} publish_entries entries", res.rows_affected());
 
         manager
             .drop_table(Table::drop().table("slots").to_owned())
@@ -113,19 +155,6 @@ impl MigrationTrait for Migration {
             )
             .await?;
         debug!("created index slots_by_ticket");
-
-        manager
-            .create_index(
-                Index::create()
-                    .name("slots_unpublished")
-                    .table("slots")
-                    .col("published_at")
-                    .col("started_at")
-                    .and_where(Expr::col("published_at").is_null())
-                    .to_owned(),
-            )
-            .await?;
-        debug!("created index slots_unpublished");
 
         manager
             .create_index(

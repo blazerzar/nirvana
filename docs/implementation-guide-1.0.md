@@ -99,9 +99,11 @@ tickets(id, profile_id, connection_id NULL, ticket_key, title, description,
         last_worked_at, synced_at)   -- NULL = owner not resolved yet
 slots(id, uuid, profile_id, ticket_id, started_at, stopped_at)
             -- one running slot per profile
-publish_entries(id, target_kind {connection, portal}, connection_id NULL,
-                remote_id, status {pending, ok, failed}, error, attempted_at)
-publish_entry_slots(entry_id, slot_id)   -- a squash maps many slots to one entry
+publish_entries(slot_id, connection_id, published_at NULL, error NULL)
+            -- primary key (slot_id, connection_id), one row per slot per target
+            -- pending: both NULL, ok: published_at set, failed: error set
+            -- deleting a slot cascades, deleting a connection does not
+            -- the Portal will probably be a connection
 ```
 
 - The machine config (`config.toml`) keeps machine-only state: active profile,
@@ -113,8 +115,8 @@ publish_entry_slots(entry_id, slot_id)   -- a squash maps many slots to one entr
   `squash = true`. New Jira connections get the column defaults
   (`publish = true`, `squash = false`). Add a uuid to every slot (rebuild
   `slots` with a NOT NULL `uuid` BLOB column and a unique `slots_by_uuid`
-  index). For slots that already have `published_at`, create a synthetic ok
-  `publish_entry` (no remote_id). `credentials` and `secret_store` stay (plaintext support).
+  index). For slots that already have `published_at`, create an ok
+  `publish_entries` row with the slot's `connection_id` and `published_at`. `credentials` and `secret_store` stay (plaintext support).
 - Config migration (Config stage): back up `config.toml` to
   `data_dir/backup`. `core.active_connection` becomes the active profile (all
   connections are active), `core.publish_squashed_worklogs` is dropped,
@@ -372,7 +374,8 @@ separate, explicit action ("send history to nirvana server").
 - Week grid block: published styling with a statusWarning left border.
 - Edit drawer: a per-target list, e.g. `✓ acme · Jira worklog 10423` and
   `× nirvana server · unreachable`. A slot becomes **read-only as soon as any
-  external target is ok**.
+  external target is ok**. Deleting a published slot is allowed, and the
+  frontend warns before it.
 - Publish modal: one section per target. Partial slots are listed only under
   the targets they're missing. If a target's health check is failing, the
   modal warns before publishing ("nirvana server unreachable: these logs stay

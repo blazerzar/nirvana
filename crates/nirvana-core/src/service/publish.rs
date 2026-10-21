@@ -1,12 +1,13 @@
 use chrono::{Local, TimeZone};
-use nirvana_entity::slot::Entity as Slot;
-use nirvana_entity::{slot, ticket};
+use nirvana_entity::publish_entry::Entity as PublishEntry;
+use nirvana_entity::{publish_entry, slot, ticket};
+use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::Expr;
-use sea_orm::{EntityTrait, QueryFilter};
+use sea_orm::{DbErr, EntityTrait, QueryFilter};
 
 use crate::domain::{PublishFailure, PublishResult};
 use crate::errors::TrackingError;
-use crate::integration;
+use crate::integration::{self, IntegrationError};
 use crate::service::Nirvana;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -59,15 +60,22 @@ impl Nirvana {
             slots_for_publish(&slots)
         };
         let now = chrono::Utc::now().timestamp();
-        let mut published_ids = Vec::new();
+        let slot_ids = worklogs
+            .iter()
+            .flat_map(|w| w.source_slot_ids.iter().copied());
+        self.mark_pending(connection_id, slot_ids).await?;
+
+        let mut published_count = 0;
         let mut failed = Vec::new();
 
         for worklog in &worklogs {
-            match integ
+            let result = integ
                 .publish_slot(&worklog.ticket_key, worklog.started_at, worklog.seconds)
-                .await
-            {
-                Ok(()) => published_ids.extend(worklog.source_slot_ids.iter().copied()),
+                .await;
+            self.record_publish(connection_id, &worklog.source_slot_ids, &result, now)
+                .await?;
+            match result {
+                Ok(()) => published_count += worklog.source_slot_ids.len(),
                 Err(e) => failed.push(PublishFailure {
                     ticket_key: worklog.ticket_key.clone(),
                     error: e.to_string(),
@@ -75,19 +83,60 @@ impl Nirvana {
             }
         }
 
-        if !published_ids.is_empty() {
-            Slot::update_many()
-                .col_expr(slot::COLUMN.published_at, Expr::value(now))
-                .filter(slot::COLUMN.id.is_in(published_ids.iter().copied()))
-                .exec(&self.db)
-                .await?;
-        }
-
         Ok(PublishResult {
-            published_count: published_ids.len(),
+            published_count,
             failed,
             timestamp: now,
         })
+    }
+
+    /// Inserts a pending entry per slot, keeping existing entries of earlier attempts.
+    pub(super) async fn mark_pending(
+        &self,
+        connection_id: i64,
+        slot_ids: impl IntoIterator<Item = i64>,
+    ) -> Result<(), DbErr> {
+        let entries = slot_ids
+            .into_iter()
+            .map(|slot_id| publish_entry::ActiveModel {
+                slot_id: Set(slot_id),
+                connection_id: Set(connection_id),
+                ..Default::default()
+            });
+        PublishEntry::insert_many(entries)
+            .on_conflict_do_nothing()
+            .exec_without_returning(&self.db)
+            .await?;
+        Ok(())
+    }
+
+    pub(super) async fn record_publish(
+        &self,
+        connection_id: i64,
+        slot_ids: &[i64],
+        result: &Result<(), IntegrationError>,
+        now: i64,
+    ) -> Result<(), DbErr> {
+        let (published_at, error) = match result {
+            Ok(()) => (Some(now), None),
+            Err(e) => (None, Some(e.to_string())),
+        };
+        PublishEntry::update_many()
+            .col_expr(
+                publish_entry::COLUMN.published_at,
+                Expr::value(published_at),
+            )
+            .col_expr(publish_entry::COLUMN.error, Expr::value(error))
+            .filter(publish_entry::COLUMN.connection_id.eq(connection_id))
+            .filter(
+                publish_entry::COLUMN
+                    .slot_id
+                    .is_in(slot_ids.iter().copied()),
+            )
+            .filter(publish_entry::COLUMN.published_at.is_null())
+            .exec(&self.db)
+            .await?;
+        Ok(())
     }
 }
 
@@ -199,7 +248,6 @@ mod tests {
                 connection_id: 1,
                 started_at,
                 stopped_at: Some(stopped_at),
-                published_at: None,
                 uuid: Uuid::nil(),
             },
             ticket::Model {

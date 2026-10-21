@@ -158,7 +158,7 @@ mod tests {
                 &db,
                 &format!(
                     "select name from pragma_table_info('{table}', 'old')
-                     where not ('{table}' = 'slots' and name = 'note')"
+                     where not ('{table}' = 'slots' and name in ('note', 'published_at'))"
                 ),
             )
             .await
@@ -212,6 +212,18 @@ mod tests {
                 &"jira_settings|connection_id|connections|id|NO ACTION|CASCADE".to_string()
             )
         );
+        assert!(
+            migrated_schema
+                .contains(&"publish_entries|slot_id|slots|id|NO ACTION|CASCADE".to_string())
+        );
+        assert!(migrated_schema.contains(
+            &"publish_entries|connection_id|connections|id|NO ACTION|NO ACTION".to_string()
+        ));
+        assert!(
+            !migrated_schema
+                .iter()
+                .any(|row| row.contains("slots_unpublished"))
+        );
         assert_eq!(schema(&fresh).await, migrated_schema);
         assert_eq!(Profile::find().count(&fresh).await.unwrap(), 0);
     }
@@ -231,6 +243,28 @@ mod tests {
         let slots = Slot::find().all(&db).await.unwrap().len();
         assert!(slots > 0);
         assert_eq!(counts, [format!("{slots}|{slots}|{slots}")]);
+    }
+
+    #[tokio::test]
+    async fn migrated_030_published_slots_get_ok_publish_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = migrate_fixture(dir.path()).await;
+
+        let entries = text_rows(
+            &db,
+            "select slot_id || '|' || connection_id || '|' || published_at || '|'
+                 || coalesce(error, 'null')
+             from main.publish_entries order by slot_id",
+        )
+        .await;
+        let published = text_rows(
+            &db,
+            "select id || '|' || connection_id || '|' || published_at || '|null'
+             from old.slots where published_at is not null order by id",
+        )
+        .await;
+        assert!(!published.is_empty());
+        assert_eq!(entries, published);
     }
 
     #[tokio::test]

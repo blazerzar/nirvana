@@ -76,7 +76,7 @@ logged from the start.
       (`jira_settings` with publish and squash), replacing global
       publish_squashed_worklogs. Credentials table and secret_store stay
       (plaintext support).
-- [ ] Add uuid to slots (needed for idempotent publishing to portal).
+- [x] Add uuid to slots (needed for idempotent publishing to portal).
 - [ ] Check entity attributes match the schema: `slot.stopped_at` is marked
       unique but the DB has only the partial `one_running_slot` index, and
       ids use `auto_increment = false` on rowid primary keys.

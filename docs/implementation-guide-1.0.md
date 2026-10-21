@@ -111,9 +111,10 @@ publish_entry_slots(entry_id, slot_id)   -- a squash maps many slots to one entr
   create profile `default`. Set every connection's `profile_id` and give
   every Jira connection a `jira_settings` row with `publish = true` and
   `squash = true`. New Jira connections get the column defaults
-  (`publish = true`, `squash = false`). Add a uuid to every slot. For slots that
-  already have `published_at`, create a synthetic ok `publish_entry` (no
-  remote_id). `credentials` and `secret_store` stay (plaintext support).
+  (`publish = true`, `squash = false`). Add a uuid to every slot (rebuild
+  `slots` with a NOT NULL `uuid` BLOB column and a unique `slots_by_uuid`
+  index). For slots that already have `published_at`, create a synthetic ok
+  `publish_entry` (no remote_id). `credentials` and `secret_store` stay (plaintext support).
 - Config migration (Config stage): back up `config.toml` to
   `data_dir/backup`. `core.active_connection` becomes the active profile (all
   connections are active), `core.publish_squashed_worklogs` is dropped,

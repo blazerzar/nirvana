@@ -1756,6 +1756,7 @@ version = "0.3.0-alpha"
 dependencies = [
  "chrono",
  "sea-orm",
+ "uuid",
 ]
 
 [[package]]
@@ -1764,6 +1765,7 @@ version = "0.3.0-alpha"
 dependencies = [
  "sea-orm-migration",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -3453,6 +3455,7 @@ version = "1.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cc1186384beb7dd8eedea376413fd654937285ea6c9cfbb928dc3043ea4b606"
 dependencies = [
+ "getrandom 0.4.3",
  "js-sys",
  "serde_core",
  "wasm-bindgen",

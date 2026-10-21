@@ -195,6 +195,8 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use nirvana_entity::profile;
+    use sea_orm::ActiveValue::Unchanged;
+    use sea_orm::prelude::Uuid;
     use sea_orm::sea_query::Expr;
 
     use super::*;
@@ -330,6 +332,45 @@ mod tests {
         assert_eq!(slot.started_at, 100);
         assert_eq!(slot.stopped_at, Some(160));
         assert_eq!(slot.published_at, None);
+    }
+
+    #[tokio::test]
+    async fn created_slot_gets_unique_uuid() {
+        let api = test_api().await;
+        insert_ticket(&api, "DES-1").await;
+
+        let (slot, ticket) = api
+            .create_slot(slot_create("DES-1", 100, 160))
+            .await
+            .unwrap();
+        assert!(!slot.uuid.is_nil());
+
+        let error = slot::ActiveModel {
+            ticket_id: Set(ticket.id),
+            connection_id: Set(slot.connection_id),
+            started_at: Set(200),
+            stopped_at: Set(Some(260)),
+            uuid: Set(slot.uuid),
+            ..Default::default()
+        }
+        .insert(&api.db)
+        .await
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("UNIQUE constraint failed: slots.uuid")
+        );
+
+        let error = slot::ActiveModel {
+            id: Unchanged(slot.id),
+            uuid: Set(Uuid::nil()),
+            ..Default::default()
+        }
+        .update(&api.db)
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("uuid must not change"));
     }
 
     #[tokio::test]

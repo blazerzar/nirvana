@@ -13,7 +13,7 @@ impl MigrationTrait for Migration {
     }
 
     /// Rebuilds `slots` with a NOT NULL `uuid` column, following
-    /// https://sqlite.org/lang_altertable.html#otheralter.
+    /// https://sqlite.org/lang_altertable.html#otheralter, and drops `note`.
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
 
@@ -24,7 +24,6 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new("id").integer().primary_key())
                     .col(integer("ticket_id"))
                     .col(integer("connection_id"))
-                    .col(text_null("note"))
                     .col(integer("started_at"))
                     .col(integer_null("stopped_at"))
                     .col(integer_null("published_at"))
@@ -53,7 +52,6 @@ impl MigrationTrait for Migration {
             "id",
             "ticket_id",
             "connection_id",
-            "note",
             "started_at",
             "stopped_at",
             "published_at",

@@ -9,8 +9,6 @@ pub struct Model {
     pub id: i64,
     pub ticket_id: i64,
     pub connection_id: i64,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub note: Option<String>,
     pub started_at: i64,
     #[sea_orm(unique)]
     pub stopped_at: Option<i64>,

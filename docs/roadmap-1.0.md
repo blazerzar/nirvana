@@ -89,7 +89,7 @@ logged from the start.
       ticket's first), one running slot per profile.
 - [ ] Tickets: add profile_id, title (from summary), description, synced_at,
       nullable connection_id, new unique key (implementation guide §9).
-- [ ] Remove note column (decide if notes get exported first).
+- [x] Remove note column (decide if notes get exported first).
 - [ ] Add DB migration tests: fixture DB created by 0.3.0-alpha (connections,
       credentials, tickets, slots incl. running and published) migrates
       correctly to the new schema without data loss. A fresh DB ends with the
@@ -141,6 +141,8 @@ logged from the start.
       connections (proposal in the implementation guide).
 - [ ] Let's update ticket name and description when interacting with it (async).
 - [ ] Validate overlaps on edit; published slots are read-only.
+- [ ] Validate overlaps on start with `--at` - a backdated start must not
+      cover closed or published slots (only manual create checks today).
 - [ ] Stop the running slot and start the new one in a single transaction.
 
 ## Linear

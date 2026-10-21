@@ -87,7 +87,6 @@ pub struct ConnectionData {
 #[derive(Debug)]
 pub struct SlotCreate {
     pub ticket_key: String,
-    pub note: Option<String>,
     pub started_at: i64,
     pub stopped_at: i64,
 }
@@ -118,7 +117,6 @@ pub struct AppSettings {
 #[derive(Debug, Default)]
 pub struct SlotEdit {
     pub ticket_key: Option<String>,
-    pub note: Change<String>,
     pub started_at: Option<i64>,
     pub stopped_at: Change<i64>,
 }

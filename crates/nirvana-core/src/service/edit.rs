@@ -26,12 +26,6 @@ impl Nirvana {
             return Err(TrackingError::SlotAlreadyPublished.into());
         }
 
-        let note_changed = match &edit.note {
-            Change::Skip => false,
-            Change::Clear => current.note.is_some(),
-            Change::Set(v) => current.note.as_ref() != Some(v),
-        };
-
         let started_changed = match edit.started_at {
             None => false,
             Some(v) => v != current.started_at,
@@ -51,7 +45,7 @@ impl Nirvana {
             .as_ref()
             .is_some_and(|ticket_key| ticket_key != &ticket.ticket_key);
 
-        if !ticket_changed && !note_changed && !started_changed && !stopped_changed {
+        if !ticket_changed && !started_changed && !stopped_changed {
             return Ok((current, ticket));
         }
 
@@ -88,11 +82,6 @@ impl Nirvana {
         let update = slot::ActiveModel {
             id: Unchanged(slot_id),
             ticket_id: next_ticket.as_ref().map_or(NotSet, |t| Set(t.id)),
-            note: if note_changed {
-                active_value(edit.note)
-            } else {
-                NotSet
-            },
             started_at: match edit.started_at {
                 Some(v) if started_changed => Set(v),
                 _ => NotSet,

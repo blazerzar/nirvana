@@ -156,7 +156,10 @@ mod tests {
         for table in tables {
             let columns = text_rows(
                 &db,
-                &format!("select name from pragma_table_info('{table}', 'old')"),
+                &format!(
+                    "select name from pragma_table_info('{table}', 'old')
+                     where not ('{table}' = 'slots' and name = 'note')"
+                ),
             )
             .await
             .join(", ");

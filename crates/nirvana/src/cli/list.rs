@@ -51,10 +51,9 @@ impl Column {
 const COLUMNS: &[Column] = &[
     Column::Unlimited("TICKET"),
     Column::Limited("SUMMARY", 30),
-    Column::Limited("NOTE", 20),
     Column::Static("STARTED", "HH:MM".len()),
-    Column::Static("STOPPED", "running…".len()),
-    Column::Static("DURATION", "1h 23m".len()),
+    Column::Static("STOPPED", "12h 34h".len()),
+    Column::Static("DURATION", "12h 34m".len()),
     Column::Limited("URL", 50),
 ];
 
@@ -108,7 +107,6 @@ pub(crate) async fn run(args: ListArgs) -> anyhow::Result<()> {
             [
                 ticket.ticket_key.clone(),
                 ticket.summary.clone().unwrap_or_default(),
-                s.note.clone().unwrap_or_default(),
                 started,
                 stopped,
                 duration,

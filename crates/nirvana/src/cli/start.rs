@@ -9,14 +9,14 @@ use crate::cli::StartArgs;
 pub(crate) async fn run(args: StartArgs) -> anyhow::Result<()> {
     let api = Nirvana::new().await?;
 
-    let (ticket, at, note) = match args.ticket {
-        Some(ticket) => (ticket, args.at, args.note),
+    let (ticket, at) = match args.ticket {
+        Some(ticket) => (ticket, args.at),
         None => interactive_prompt(&api).await?,
     };
 
     let at_ts = at.as_deref().map(parse_time).transpose()?;
 
-    let (slot, ticket) = api.start_slot(&ticket, at_ts, note.as_deref()).await?;
+    let (slot, ticket) = api.start_slot(&ticket, at_ts).await?;
     let time = format_timestamp(slot.started_at);
 
     println!(
@@ -31,9 +31,7 @@ pub(crate) async fn run(args: StartArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn interactive_prompt(
-    api: &Nirvana,
-) -> anyhow::Result<(String, Option<String>, Option<String>)> {
+async fn interactive_prompt(api: &Nirvana) -> anyhow::Result<(String, Option<String>)> {
     let theme = ColorfulTheme {
         active_item_prefix: console::Style::new().green().apply_to(String::from("❯")),
         ..ColorfulTheme::default()
@@ -75,14 +73,7 @@ async fn interactive_prompt(
         .interact_text()?;
     let at = if at.is_empty() { None } else { Some(at) };
 
-    let note: String = Input::with_theme(&theme)
-        .with_prompt("Note")
-        .default(String::new())
-        .allow_empty(true)
-        .interact_text()?;
-    let note = if note.is_empty() { None } else { Some(note) };
-
-    Ok((ticket, at, note))
+    Ok((ticket, at))
 }
 
 fn format_timestamp(ts: i64) -> String {

@@ -19,10 +19,6 @@ impl Nirvana {
                 .ok_or(TrackingError::SlotNotFound(slot_id))?,
         )?;
 
-        if slot.published_at.is_some() {
-            return Err(TrackingError::CannotDeletePublished.into());
-        }
-
         let deleted = Slot::delete_by_id(slot_id).exec(&self.db).await?;
         if deleted.rows_affected == 0 {
             return Err(TrackingError::SlotNotFound(slot_id).into());

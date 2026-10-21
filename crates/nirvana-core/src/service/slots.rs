@@ -67,12 +67,12 @@ impl Nirvana {
             .active_connection
             .ok_or(TrackingError::NoActiveConnection)?;
 
-        let records = Slot::find_with_ticket()
+        let records = Slot::find_unpublished(connection_id)
+            .find_also_related(ticket::Entity)
             .filter(slot::COLUMN.connection_id.eq(connection_id))
             .filter(slot::COLUMN.started_at.gte(from))
             .apply_if(to, |q, to| q.filter(slot::COLUMN.started_at.lt(to)))
             .filter(slot::COLUMN.stopped_at.is_not_null())
-            .filter(slot::COLUMN.published_at.is_null())
             .order_by_asc(slot::COLUMN.started_at)
             .all(&self.db)
             .await?;

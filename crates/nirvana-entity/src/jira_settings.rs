@@ -8,13 +8,8 @@ pub struct Model {
     pub connection_id: i64,
     pub publish: bool,
     pub squash: bool,
-    #[sea_orm(
-        belongs_to,
-        from = "connection_id",
-        to = "id",
-        on_update = "NoAction",
-        on_delete = "Cascade"
-    )]
+
+    #[sea_orm(belongs_to, from = "connection_id", to = "id", on_delete = "Cascade")]
     pub connection: BelongsTo<super::connection::Entity>,
 }
 

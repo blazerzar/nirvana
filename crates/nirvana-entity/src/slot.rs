@@ -1,5 +1,5 @@
 use sea_orm::entity::prelude::*;
-use sea_orm::{ExprTrait, SelectTwo, Set};
+use sea_orm::{ExprTrait, QueryTrait, SelectTwo, Set};
 
 #[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
@@ -12,25 +12,15 @@ pub struct Model {
     pub started_at: i64,
     #[sea_orm(unique)]
     pub stopped_at: Option<i64>,
-    pub published_at: Option<i64>,
     #[sea_orm(unique)]
     pub uuid: Uuid,
-    #[sea_orm(
-        belongs_to,
-        from = "connection_id",
-        to = "id",
-        on_update = "NoAction",
-        on_delete = "NoAction"
-    )]
+
+    #[sea_orm(belongs_to, from = "connection_id", to = "id", on_delete = "NoAction")]
     pub connection: BelongsTo<super::connection::Entity>,
-    #[sea_orm(
-        belongs_to,
-        from = "ticket_id",
-        to = "id",
-        on_update = "NoAction",
-        on_delete = "NoAction"
-    )]
+    #[sea_orm(belongs_to, from = "ticket_id", to = "id", on_delete = "NoAction")]
     pub ticket: BelongsTo<super::ticket::Entity>,
+    #[sea_orm(has_many)]
+    pub publish_entries: HasMany<super::publish_entry::Entity>,
 }
 
 #[async_trait::async_trait]
@@ -60,6 +50,23 @@ impl Entity {
             .filter(COLUMN.connection_id.eq(connection_id))
             .filter(COLUMN.started_at.lt(to))
             .filter(COLUMN.stopped_at.is_null().or(COLUMN.stopped_at.gt(from)))
+    }
+
+    pub fn find_unpublished(connection_id: i64) -> Select<Self> {
+        use super::publish_entry;
+
+        Self::find().filter(
+            Expr::exists(
+                publish_entry::Entity::find_published()
+                    .filter(publish_entry::COLUMN.connection_id.eq(connection_id))
+                    .filter(
+                        Expr::col((publish_entry::Entity, publish_entry::Column::SlotId))
+                            .equals((Entity, Column::Id)),
+                    )
+                    .into_query(),
+            )
+            .not(),
+        )
     }
 
     pub fn find_with_ticket() -> SelectTwo<Self, super::ticket::Entity> {

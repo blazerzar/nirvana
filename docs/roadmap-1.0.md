@@ -82,8 +82,8 @@ logged from the start.
       ids use `auto_increment = false` on rowid primary keys.
 - [ ] Check the duplicate connection name inside the insert transaction,
       backed by a unique index so concurrent adds cannot create duplicates.
-- [ ] Add publish entries table (target, remote id, status, error) with slot
-      link - covers worklog id, multiple targets and per log errors. Published
+- [x] Add publish entries table (slot_id, connection_id, published_at, error)
+      with slot link - covers multiple targets and per log errors. Published
       slots get a synthetic ok entry, then drop published_at.
 - [ ] Slots: add profile_id, drop connection_id (check it matches the
       ticket's first), one running slot per profile.

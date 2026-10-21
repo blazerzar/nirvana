@@ -1,7 +1,8 @@
+use nirvana_entity::publish_entry::Entity as PublishEntry;
 use nirvana_entity::slot::Entity as Slot;
-use nirvana_entity::{slot, ticket};
+use nirvana_entity::{publish_entry, slot, ticket};
 use sea_orm::ActiveValue::{NotSet, Set, Unchanged};
-use sea_orm::{ActiveModelTrait, ActiveValue, QueryFilter, Value};
+use sea_orm::{ActiveModelTrait, ActiveValue, PaginatorTrait, QueryFilter, Value};
 
 use crate::domain::{Change, SlotEdit};
 use crate::errors::{NirvanaError, TrackingError};
@@ -22,7 +23,11 @@ impl Nirvana {
                 .ok_or(TrackingError::SlotNotFound(slot_id))?,
         )?;
 
-        if current.published_at.is_some() {
+        let published = PublishEntry::find_published()
+            .filter(publish_entry::COLUMN.slot_id.eq(slot_id))
+            .count(&self.db)
+            .await?;
+        if published > 0 {
             return Err(TrackingError::SlotAlreadyPublished.into());
         }
 

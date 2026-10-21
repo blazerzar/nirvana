@@ -53,7 +53,7 @@ worklogs.
 | 14 | **One running slot per profile.** | Easier to show the state to the user than one running slot across profiles. |
 | 15 | **Legacy detection + backup.** Before applying pending migrations to an existing DB, the DB is copied to `data_dir/backup` with `VACUUM INTO`, a consistent single-file snapshot that includes rows still in the `-wal` file. The baseline migrations `m0001` and `m0002` skip their work when `user_version` is 2, which every released 0.x DB has. Every step is logged. The config does the same in the Config stage. | Never lose user data on upgrade. |
 | 16 | **Plaintext credentials stay supported** (probably needed on Linux). The `credentials` table and `connections.secret_store` stay in the Database stage. The keyring comes in the Keychain stage. | |
-| 17 | **Canonical SeaORM layout in two crates**: `nirvana-entity` (one file per table in the 2.0 `#[sea_orm::model]` format, plus `prelude.rs`) and `nirvana-migration` (`Migrator`, one file per migration, no `cli` feature or binary). `nirvana-core` depends on both and owns opening the DB, the backup and running `Migrator::up`. `nirvana` depends only on `nirvana-core`. No repository layer: services call entities directly. Table rows are entity `Model`s, which `nirvana-core` re-exports as `nirvana_core::entity`. `domain.rs` holds only types that are not a table row (inputs, results, `Change<T>`). Slot services return `(slot::Model, ticket::Model)` and frontends build the issue link with `Nirvana::issue_urls`. Shared queries are entity methods that return a `Select`, and timestamps are set in `ActiveModelBehavior::before_save`. | Matches SeaORM's canonical layout. Migrations are only run by the application, never from a CLI. |
+| 17 | **Canonical SeaORM layout in two crates**: `nirvana-entity` (one file per table in the 2.0 `#[sea_orm::model]` format, plus `prelude.rs`) and `nirvana-migration` (`Migrator`, one file per migration, no `cli` feature or binary). `nirvana-core` depends on both and owns opening the DB, the backup and running `Migrator::up`. `nirvana` depends only on `nirvana-core`. No repository layer: services call entities directly. Table rows are entity `Model`s, which `nirvana-core` re-exports as `nirvana_core::entity`. `domain.rs` holds only types that are not a table row (inputs, results, `Change<T>`, `Connection`). Connections are exposed as `domain::Connection`: the `connections` row plus `ConnectionKind`, which interprets the `kind` column and carries that kind's settings. Slot services return `(slot::Model, ticket::Model)` and frontends build the issue link with `Nirvana::issue_urls`. Shared queries are entity methods that return a `Select`, and timestamps are set in `ActiveModelBehavior::before_save`. | Matches SeaORM's canonical layout. Migrations are only run by the application, never from a CLI. |
 | 18 | **`profile_id` columns are `not null references profiles(id)` with no default, added with a table rebuild.** The migration returns `use_transaction() -> Some(false)` and skips itself when its work is already done. It turns `PRAGMA foreign_keys` off, then in one transaction: creates `<table>_new`, copies the rows with the `default` profile id, drops the old table, renames `<table>_new` to `<table>`, recreates the indexes and fails if `PRAGMA foreign_key_check` returns rows. After the commit (and on error) it turns `foreign_keys` back on. Tests check that the rows of every child table survive. | SQLite cannot add a `NOT NULL` column without a default, nor a `REFERENCES` column with a non-NULL default. A default would silently put rows in one profile. `PRAGMA foreign_keys` is ignored inside a transaction, and with it on `DROP TABLE` deletes the rows first, which fails on `tickets` and `slots` and cascades into `credentials`. This is the procedure from sqlite.org/lang_altertable.html. |
 
 ## 4. Current codebase (0.3.0-alpha) - what exists
@@ -88,10 +88,13 @@ profile_settings(profile_id, week_start, clock_24h, workday_start, workday_end,
                  expected_minutes_per_day, show_weekends,
                  portal_enabled, portal_url)
 connections(id, profile_id, name, kind {jira-cloud, jira-dc, linear}, host,
-            identity, secret_store {plaintext, keyring}, publish bool,
-            squash bool, created_at, updated_at)
+            identity, secret_store {plaintext, keyring}, created_at,
+            updated_at)
             -- unique (profile_id, name)
 credentials(connection_id, credential)   -- plaintext store only
+jira_settings(connection_id, publish bool default true,
+              squash bool default false)
+            -- one settings table per connection kind
 tickets(id, profile_id, connection_id NULL, ticket_key, title, description,
         last_worked_at, synced_at)   -- NULL = owner not resolved yet
 slots(id, uuid, profile_id, ticket_id, started_at, stopped_at)
@@ -105,15 +108,15 @@ publish_entry_slots(entry_id, slot_id)   -- a squash maps many slots to one entr
   desktop settings (launch at login, close to menu bar, idle, reminder,
   shortcuts, web server on/off + port, theme light/dark/system), log level.
 - 0.3 DB migration (Database stage): back up the DB to `data_dir/backup`,
-  create profile `default`. Set every connection's `profile_id`, plus
-  `publish = true` and `squash` from the global
-  `core.publish_squashed_worklogs` (read from the 0.3 config, so the DB
-  migrates before the config). Add a uuid to every slot. For slots that
+  create profile `default`. Set every connection's `profile_id` and give
+  every Jira connection a `jira_settings` row with `publish = true` and
+  `squash = true`. New Jira connections get the column defaults
+  (`publish = true`, `squash = false`). Add a uuid to every slot. For slots that
   already have `published_at`, create a synthetic ok `publish_entry` (no
   remote_id). `credentials` and `secret_store` stay (plaintext support).
 - Config migration (Config stage): back up `config.toml` to
   `data_dir/backup`. `core.active_connection` becomes the active profile (all
-  connections are active), `core.publish_squashed_worklogs` is removed,
+  connections are active), `core.publish_squashed_worklogs` is dropped,
   `[log] level` is added. A parse error fails instead of falling back to
   defaults. The `config/` module has one file per old format (0.1 flat, 0.3
   sectioned). Each only parses TOML and returns the latest config interface.
@@ -137,9 +140,8 @@ publish_entry_slots(entry_id, slot_id)   -- a squash maps many slots to one entr
     schema. The Keychain stage adds the token move (mock the keyring in
     tests).
   - Config: fixtures for the 0.1 flat format and the 0.3.0-alpha sectioned
-    format (`[core]`, `[gui]`, `[idle]`). Check that the squash flag moves into
-    connections, `active_connection` is dropped, and machine/idle settings are
-    kept.
+    format (`[core]`, `[gui]`, `[idle]`). Check that `active_connection` is
+    dropped and machine/idle settings are kept.
   - Fixtures are checked into the repo and never edited. Each new migration
     adds tests on top of them.
 
@@ -162,7 +164,8 @@ decisions here (rounding, single active connection, …).
   in profile UI.
 - A Jira or Linear connection is required (ticket names + descriptions).
 - No rounding anywhere.
-- Publishing to Jira/Linear is a per-connection setting (`publish`, `squash`).
+- Publishing is a per-connection setting. Each connection kind has its own
+  settings (Jira: `publish`, `squash`).
   Nirvana server publishing has its own toggle + url in web settings.
 - Default port **5167**.
 - Linear has no worklogs, so time is posted as a comment on the issue.

@@ -72,11 +72,10 @@ logged from the start.
       migrations. Log every step.
 - [x] Add profiles table - single DB, existing data becomes one profile with
       all connections. Add profile_id to connections, unique name per profile.
-- [ ] Add settings to connections - publish and squash columns, replacing
-      global publish_squashed_worklogs. Credentials table and secret_store
-      stay (plaintext support).
-- [ ] Add profile settings (week start, time format, workday, expected hours,
-      weekends, portal toggle + url).
+- [x] Add settings to connections - a settings table per connection kind
+      (`jira_settings` with publish and squash), replacing global
+      publish_squashed_worklogs. Credentials table and secret_store stay
+      (plaintext support).
 - [ ] Add uuid to slots (needed for idempotent publishing to portal).
 - [ ] Check entity attributes match the schema: `slot.stopped_at` is marked
       unique but the DB has only the partial `one_running_slot` index, and
@@ -114,11 +113,11 @@ logged from the start.
       overwriting the config.
 - [ ] Bump schema_version to 2, one migration step per version.
 - [ ] Replace active_connection with active profile.
-- [ ] Remove publish_squashed_worklogs (moved into connections).
+- [x] Remove publish_squashed_worklogs (moved into connections).
 - [ ] Add `[log] level`.
 - [ ] Add config migration tests: 0.1 flat and 0.3.0-alpha sectioned
-      config.toml fixtures migrate correctly (squash flag into connections,
-      active connection dropped, machine settings kept).
+      config.toml fixtures migrate correctly (active connection dropped,
+      machine settings kept).
 
 ## Keychain
 

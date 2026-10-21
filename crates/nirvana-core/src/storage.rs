@@ -79,8 +79,8 @@ async fn backup(db: &DatabaseConnection, db_file: &Path) -> Result<PathBuf, DbEr
 
 #[cfg(test)]
 mod tests {
-    use nirvana_entity::connection;
     use nirvana_entity::prelude::*;
+    use nirvana_entity::{connection, jira_settings, profile};
     use sea_orm::ActiveValue::{NotSet, Set};
     use sea_orm::{ActiveModelTrait, DbBackend, EntityTrait, PaginatorTrait, Statement};
 
@@ -202,6 +202,11 @@ mod tests {
 
         let migrated_schema = schema(&migrated).await;
         assert!(migrated_schema.contains(&"connections|profile_id|INTEGER|1||0".to_string()));
+        assert!(
+            migrated_schema.contains(
+                &"jira_settings|connection_id|connections|id|NO ACTION|CASCADE".to_string()
+            )
+        );
         assert_eq!(schema(&fresh).await, migrated_schema);
         assert_eq!(Profile::find().count(&fresh).await.unwrap(), 0);
     }
@@ -228,5 +233,72 @@ mod tests {
         assert!(error(insert("new", NotSet).await).contains("NOT NULL"));
         assert!(error(insert("new", Set(profile_id + 1)).await).contains("FOREIGN KEY"));
         assert!(error(insert("work", Set(profile_id)).await).contains("UNIQUE"));
+    }
+
+    #[tokio::test]
+    async fn migrated_030_jira_connections_publish_squashed() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = migrate_fixture(dir.path()).await;
+
+        let connections = Connection::find()
+            .find_also_related(JiraSettings)
+            .all(&db)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            connections
+                .iter()
+                .map(|(c, _)| c.kind.as_str())
+                .collect::<Vec<_>>(),
+            ["jira-cloud", "jira-dc"]
+        );
+        for (connection, settings) in connections {
+            let settings = settings.unwrap();
+            assert_eq!(settings.connection_id, connection.id);
+            assert!(settings.publish);
+            assert!(settings.squash);
+        }
+    }
+
+    #[tokio::test]
+    async fn jira_settings_default_and_cascade_on_delete() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = open(&dir.path().join("nirvana.db")).await.unwrap();
+        let profile = profile::ActiveModel {
+            name: Set("default".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let connection = connection::ActiveModel {
+            name: Set("work".to_string()),
+            kind: Set("jira-cloud".to_string()),
+            host: Set("host".to_string()),
+            identity: Set("identity".to_string()),
+            secret_store: Set("plaintext".to_string()),
+            profile_id: Set(profile.id),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let settings = jira_settings::ActiveModel {
+            connection_id: Set(connection.id),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        assert!(settings.publish);
+        assert!(!settings.squash);
+
+        Connection::delete_by_id(connection.id)
+            .exec(&db)
+            .await
+            .unwrap();
+
+        assert_eq!(JiraSettings::find().count(&db).await.unwrap(), 0);
     }
 }

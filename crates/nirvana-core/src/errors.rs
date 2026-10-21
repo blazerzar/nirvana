@@ -28,6 +28,12 @@ pub enum TrackingError {
     ConnectionNotFound(i64),
     #[error("cannot delete a connection with local history")]
     ConnectionHasHistory,
+    #[error("unsupported connection kind: {0}")]
+    UnsupportedConnectionKind(String),
+    #[error("connection {0} has no settings")]
+    MissingConnectionSettings(i64),
+    #[error("publishing is disabled for connection '{0}'")]
+    PublishDisabled(String),
     #[error("ticket not found: {0}")]
     TicketNotFound(String),
     #[error("slot not found: {0}")]

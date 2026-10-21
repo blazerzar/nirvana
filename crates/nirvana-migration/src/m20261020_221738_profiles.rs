@@ -1,7 +1,7 @@
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::*;
 use sea_orm_migration::sea_orm::raw_sql;
-use tracing::{debug, warn};
+use tracing::debug;
 
 const DEFAULT_PROFILE: &str = "default";
 
@@ -17,11 +17,6 @@ impl MigrationTrait for Migration {
     }
 
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        if manager.has_table("profiles").await? {
-            warn!("skipping migration, profiles table already exists");
-            return Ok(());
-        }
-
         let db = manager.get_connection();
         db.execute_unprepared("PRAGMA foreign_keys = OFF").await?;
         let result = add_profiles(manager).await;

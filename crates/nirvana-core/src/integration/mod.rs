@@ -1,8 +1,9 @@
 pub(crate) mod jira;
 
 use jira::JiraIntegration;
-use nirvana_entity::connection;
 use thiserror::Error;
+
+use crate::domain::{Connection, ConnectionKind};
 
 #[derive(Debug, Error)]
 pub enum IntegrationError {
@@ -12,8 +13,6 @@ pub enum IntegrationError {
     TicketNotFound(String),
     #[error("authentication failed: {0}")]
     Auth(String),
-    #[error("unsupported connection kind: {0}")]
-    UnsupportedKind(String),
 }
 
 pub(crate) struct IssueInfo {
@@ -29,19 +28,16 @@ pub(crate) struct Integration {
 }
 
 impl Integration {
-    pub fn build_for_url(connection: &connection::Model) -> Result<Integration, IntegrationError> {
-        let kind = match connection.kind.as_str() {
-            "jira-cloud" => IntegrationKind::Jira(JiraIntegration::new_unauthenticated(
-                &connection.host,
-                "jira-cloud",
-            )),
-            "jira-dc" => IntegrationKind::Jira(JiraIntegration::new_unauthenticated(
-                &connection.host,
-                "jira-dc",
-            )),
-            _ => return Err(IntegrationError::UnsupportedKind(connection.kind.clone())),
+    pub fn build_for_url(connection: &Connection) -> Integration {
+        let kind = match &connection.kind {
+            ConnectionKind::JiraCloud(_) | ConnectionKind::JiraDc(_) => {
+                IntegrationKind::Jira(JiraIntegration::new_unauthenticated(
+                    &connection.model.host,
+                    connection.kind.as_str(),
+                ))
+            }
         };
-        Ok(Integration { kind })
+        Integration { kind }
     }
 
     pub fn get_issue_link(&self, ticket_key: &str) -> String {
@@ -74,24 +70,16 @@ impl Integration {
     }
 }
 
-pub(crate) fn build_integration(
-    connection: &connection::Model,
-    token: &str,
-) -> Result<Integration, IntegrationError> {
-    let kind = match connection.kind.as_str() {
-        "jira-cloud" => IntegrationKind::Jira(JiraIntegration::new(
-            &connection.host,
-            &connection.identity,
-            token,
-            "jira-cloud",
-        )),
-        "jira-dc" => IntegrationKind::Jira(JiraIntegration::new(
-            &connection.host,
-            &connection.identity,
-            token,
-            "jira-dc",
-        )),
-        _ => return Err(IntegrationError::UnsupportedKind(connection.kind.clone())),
+pub(crate) fn build_integration(connection: &Connection, token: &str) -> Integration {
+    let kind = match &connection.kind {
+        ConnectionKind::JiraCloud(_) | ConnectionKind::JiraDc(_) => {
+            IntegrationKind::Jira(JiraIntegration::new(
+                &connection.model.host,
+                &connection.model.identity,
+                token,
+                connection.kind.as_str(),
+            ))
+        }
     };
-    Ok(Integration { kind })
+    Integration { kind }
 }

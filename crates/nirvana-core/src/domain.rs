@@ -1,3 +1,7 @@
+use nirvana_entity::{connection, jira_settings};
+
+use crate::errors::TrackingError;
+
 pub enum SlotSort {
     StartedAt,
     TicketId,
@@ -9,6 +13,65 @@ pub enum Change<T> {
     Skip,
     Clear,
     Set(T),
+}
+
+#[derive(Debug)]
+pub struct Connection {
+    pub model: connection::Model,
+    pub kind: ConnectionKind,
+}
+
+impl Connection {
+    pub(crate) fn new(
+        model: connection::Model,
+        jira_settings: Option<jira_settings::Model>,
+    ) -> Result<Self, TrackingError> {
+        let kind = match (model.kind.as_str(), jira_settings.map(JiraSettings::from)) {
+            ("jira-cloud", Some(settings)) => ConnectionKind::JiraCloud(settings),
+            ("jira-dc", Some(settings)) => ConnectionKind::JiraDc(settings),
+            ("jira-cloud" | "jira-dc", None) => {
+                return Err(TrackingError::MissingConnectionSettings(model.id));
+            }
+            (kind, _) => return Err(TrackingError::UnsupportedConnectionKind(kind.to_string())),
+        };
+        Ok(Self { model, kind })
+    }
+}
+
+#[derive(Debug)]
+pub enum ConnectionKind {
+    JiraCloud(JiraSettings),
+    JiraDc(JiraSettings),
+}
+
+impl ConnectionKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::JiraCloud(_) => "jira-cloud",
+            Self::JiraDc(_) => "jira-dc",
+        }
+    }
+
+    pub fn jira_settings(&self) -> &JiraSettings {
+        match self {
+            Self::JiraCloud(settings) | Self::JiraDc(settings) => settings,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct JiraSettings {
+    pub publish: bool,
+    pub squash: bool,
+}
+
+impl From<jira_settings::Model> for JiraSettings {
+    fn from(model: jira_settings::Model) -> Self {
+        Self {
+            publish: model.publish,
+            squash: model.squash,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -44,7 +107,6 @@ pub struct PublishFailure {
 
 #[derive(Debug, Clone)]
 pub struct AppSettings {
-    pub publish_squashed_worklogs: bool,
     pub font_scale: f64,
     pub theme: String,
     pub show_tray_icon: bool,

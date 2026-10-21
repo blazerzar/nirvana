@@ -202,6 +202,8 @@ mod tests {
 
         let migrated_schema = schema(&migrated).await;
         assert!(migrated_schema.contains(&"connections|profile_id|INTEGER|1||0".to_string()));
+        assert!(migrated_schema.contains(&"slots|uuid|BLOB|1||0".to_string()));
+        assert!(migrated_schema.contains(&"slots|slots_by_uuid|1|0|0|uuid".to_string()));
         assert!(
             migrated_schema.contains(
                 &"jira_settings|connection_id|connections|id|NO ACTION|CASCADE".to_string()
@@ -209,6 +211,23 @@ mod tests {
         );
         assert_eq!(schema(&fresh).await, migrated_schema);
         assert_eq!(Profile::find().count(&fresh).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn migrated_030_slots_get_distinct_blob_uuids() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = migrate_fixture(dir.path()).await;
+
+        let counts = text_rows(
+            &db,
+            "select count(*) || '|' || count(distinct uuid) || '|' || count(*) filter
+                 (where typeof(uuid) = 'blob' and length(uuid) = 16)
+             from slots",
+        )
+        .await;
+        let slots = Slot::find().all(&db).await.unwrap().len();
+        assert!(slots > 0);
+        assert_eq!(counts, [format!("{slots}|{slots}|{slots}")]);
     }
 
     #[tokio::test]

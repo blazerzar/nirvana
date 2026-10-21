@@ -182,6 +182,8 @@ fn slots_for_publish(slots: &[(slot::Model, ticket::Model)]) -> Vec<PublishWorkl
 
 #[cfg(test)]
 mod tests {
+    use sea_orm::prelude::Uuid;
+
     use super::*;
 
     fn slot(
@@ -199,6 +201,7 @@ mod tests {
                 started_at,
                 stopped_at: Some(stopped_at),
                 published_at: None,
+                uuid: Uuid::nil(),
             },
             ticket::Model {
                 id: 1,

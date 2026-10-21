@@ -1,5 +1,5 @@
 use sea_orm::entity::prelude::*;
-use sea_orm::{ExprTrait, SelectTwo};
+use sea_orm::{ExprTrait, SelectTwo, Set};
 
 #[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
@@ -15,6 +15,8 @@ pub struct Model {
     #[sea_orm(unique)]
     pub stopped_at: Option<i64>,
     pub published_at: Option<i64>,
+    #[sea_orm(unique)]
+    pub uuid: Uuid,
     #[sea_orm(
         belongs_to,
         from = "connection_id",
@@ -33,7 +35,22 @@ pub struct Model {
     pub ticket: BelongsTo<super::ticket::Entity>,
 }
 
-impl ActiveModelBehavior for ActiveModel {}
+#[async_trait::async_trait]
+impl ActiveModelBehavior for ActiveModel {
+    async fn before_save<C>(mut self, _db: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        if !insert && self.uuid.is_set() {
+            return Err(DbErr::Custom("uuid must not change".into()));
+        }
+        if insert && self.uuid.is_not_set() {
+            self.uuid = Set(Uuid::new_v4());
+        }
+
+        Ok(self)
+    }
+}
 
 impl Entity {
     pub fn find_running() -> Select<Self> {

@@ -3,6 +3,7 @@ pub use sea_orm_migration::prelude::*;
 mod m20261018_204621_init;
 mod m20261018_204643_tickets_slots;
 mod m20261020_221738_profiles;
+mod m20261021_180204_jira_settings;
 
 pub struct Migrator;
 
@@ -13,6 +14,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261018_204621_init::Migration),
             Box::new(m20261018_204643_tickets_slots::Migration),
             Box::new(m20261020_221738_profiles::Migration),
+            Box::new(m20261021_180204_jira_settings::Migration),
         ]
     }
 }

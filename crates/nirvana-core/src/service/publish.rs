@@ -37,8 +37,12 @@ impl Nirvana {
             .ok_or(TrackingError::NoActiveConnection)?;
 
         let connection = self.get_connection(connection_id).await?;
+        let settings = connection.kind.jira_settings();
+        if !settings.publish {
+            return Err(TrackingError::PublishDisabled(connection.model.name).into());
+        }
         let token = self.get_token(connection_id).await?;
-        let integ = integration::build_integration(&connection, &token)?;
+        let integ = integration::build_integration(&connection, &token);
 
         let slots = self.get_unpublished_slots(from, to).await?;
         if slots.is_empty() {
@@ -49,7 +53,7 @@ impl Nirvana {
             });
         }
 
-        let worklogs = if self.config.core.publish_squashed_worklogs {
+        let worklogs = if settings.squash {
             squash_slots_for_publish(&slots)
         } else {
             slots_for_publish(&slots)

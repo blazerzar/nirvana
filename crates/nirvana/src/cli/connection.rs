@@ -5,8 +5,7 @@ use clap::ValueEnum;
 use console::{Style, Term};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Input, Password, Select};
-use nirvana_core::domain::ConnectionData;
-use nirvana_core::entity::connection;
+use nirvana_core::domain::{Connection, ConnectionData};
 use nirvana_core::service::Nirvana;
 
 use crate::cli::{AddArgs, ConnectionKind, SecretStore};
@@ -78,19 +77,19 @@ pub(crate) async fn list() -> anyhow::Result<()> {
         .iter()
         .map(|c| {
             let updated = Local
-                .timestamp_opt(c.updated_at, 0)
+                .timestamp_opt(c.model.updated_at, 0)
                 .single()
                 .unwrap()
                 .date_naive()
                 .to_string();
             let active = if is_active(c, &api) { "*" } else { "" };
             [
-                c.id.to_string(),
+                c.model.id.to_string(),
                 active.to_string(),
-                c.name.clone(),
-                c.kind.clone(),
-                c.host.clone(),
-                c.identity.clone(),
+                c.model.name.clone(),
+                c.kind.as_str().to_string(),
+                c.model.host.clone(),
+                c.model.identity.clone(),
                 updated,
             ]
         })
@@ -120,8 +119,8 @@ pub(crate) async fn list() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn is_active(conn: &connection::Model, api: &Nirvana) -> bool {
-    api.active_connection() == Some(conn.id)
+fn is_active(conn: &Connection, api: &Nirvana) -> bool {
+    api.active_connection() == Some(conn.model.id)
 }
 
 fn print_row(
@@ -171,39 +170,43 @@ pub(crate) async fn activate(query: Option<&str>) -> anyhow::Result<()> {
     };
     let chosen = &connections[idx];
 
-    api.set_active_connection(chosen.id).await?;
+    api.set_active_connection(chosen.model.id).await?;
     let term = Term::stdout();
     term.write_line(&format!(
         "Active connection set to '{}' (id {})",
-        chosen.name, chosen.id
+        chosen.model.name, chosen.model.id
     ))?;
     Ok(())
 }
 
-fn resolve_query(query: &str, connections: &[connection::Model]) -> anyhow::Result<usize> {
+fn resolve_query(query: &str, connections: &[Connection]) -> anyhow::Result<usize> {
     if let Ok(id) = query.parse::<i64>()
-        && let Some(idx) = connections.iter().position(|c| c.id == id)
+        && let Some(idx) = connections.iter().position(|c| c.model.id == id)
     {
         return Ok(idx);
     }
-    if let Some(idx) = connections.iter().position(|c| c.name == query) {
+    if let Some(idx) = connections.iter().position(|c| c.model.name == query) {
         return Ok(idx);
     }
     anyhow::bail!("Connection '{query}' not found")
 }
 
-fn pick_interactive(connections: &[connection::Model]) -> anyhow::Result<usize> {
+fn pick_interactive(connections: &[Connection]) -> anyhow::Result<usize> {
     let dim = Style::new().dim();
-    let name_width = connections.iter().map(|c| c.name.len()).max().unwrap_or(0);
+    let name_width = connections
+        .iter()
+        .map(|c| c.model.name.len())
+        .max()
+        .unwrap_or(0);
 
     let items: Vec<String> = connections
         .iter()
         .map(|c| {
             format!(
                 "{:name_w$}  {} {}",
-                c.name,
-                dim.apply_to(&c.identity),
-                dim.apply_to(format!("({})", c.kind)),
+                c.model.name,
+                dim.apply_to(&c.model.identity),
+                dim.apply_to(format!("({})", c.kind.as_str())),
                 name_w = name_width,
             )
         })
@@ -239,7 +242,7 @@ pub(crate) async fn add(args: AddArgs) -> anyhow::Result<()> {
     let term = Term::stdout();
     term.write_line(&format!(
         "Added connection '{}' (id {})",
-        connection.name, connection.id
+        connection.model.name, connection.model.id
     ))?;
 
     let use_it = dialoguer::Confirm::new()
@@ -248,10 +251,10 @@ pub(crate) async fn add(args: AddArgs) -> anyhow::Result<()> {
         .interact()?;
 
     if use_it {
-        api.set_active_connection(connection.id).await?;
+        api.set_active_connection(connection.model.id).await?;
         term.write_line(&format!(
             "Active connection set to '{}' (id {})",
-            connection.name, connection.id
+            connection.model.name, connection.model.id
         ))?;
     }
 

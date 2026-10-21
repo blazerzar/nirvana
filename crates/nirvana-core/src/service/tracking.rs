@@ -1,12 +1,12 @@
 use nirvana_entity::slot::Entity as Slot;
 use nirvana_entity::ticket::Entity as Ticket;
-use nirvana_entity::{connection, slot, ticket};
+use nirvana_entity::{connection, jira_settings, slot, ticket};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ActiveModelTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder,
 };
 
-use crate::domain::SlotCreate;
+use crate::domain::{Connection, SlotCreate};
 use crate::errors::{DbError, IntegrationError, TrackingError};
 use crate::integration;
 use crate::service::Nirvana;
@@ -124,21 +124,18 @@ impl Nirvana {
         Ok(Some((slot, ticket)))
     }
 
-    pub(crate) async fn get_connection(
-        &self,
-        id: i64,
-    ) -> Result<connection::Model, super::NirvanaError> {
-        connection::Entity::find_by_id(id)
+    pub(crate) async fn get_connection(&self, id: i64) -> Result<Connection, super::NirvanaError> {
+        let (model, jira_settings) = connection::Entity::find_by_id(id)
+            .find_also_related(jira_settings::Entity)
             .one(&self.db)
             .await?
-            .ok_or(super::NirvanaError::Tracking(
-                TrackingError::NoActiveConnection,
-            ))
+            .ok_or(TrackingError::NoActiveConnection)?;
+        Ok(Connection::new(model, jira_settings)?)
     }
 
     pub(crate) async fn resolve_ticket_for_work(
         &self,
-        connection: &connection::Model,
+        connection: &Connection,
         connection_id: i64,
         ticket_key: &str,
         last_worked_at: i64,
@@ -156,7 +153,7 @@ impl Nirvana {
             }
             None => {
                 let token = self.get_token(connection_id).await?;
-                let integ = integration::build_integration(connection, &token)?;
+                let integ = integration::build_integration(connection, &token);
                 let issue = integ.fetch_issue(ticket_key).await.map_err(|e| match e {
                     IntegrationError::TicketNotFound(key) => {
                         super::NirvanaError::Tracking(TrackingError::TicketNotFound(key))
@@ -255,7 +252,6 @@ mod tests {
                 schema_version: Some(1),
                 core: CoreConfig {
                     active_connection: None,
-                    publish_squashed_worklogs: true,
                 },
                 gui: GuiConfig {
                     font_scale: 1.0,
@@ -288,7 +284,7 @@ mod tests {
             })
             .await
             .unwrap();
-        api.config.core.active_connection = Some(connection.id);
+        api.config.core.active_connection = Some(connection.model.id);
 
         TestApi {
             api: Some(api),

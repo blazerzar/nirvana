@@ -30,6 +30,8 @@ pub struct Model {
     pub profile: BelongsTo<super::profile::Entity>,
     #[sea_orm(has_one)]
     pub credential: HasOne<super::credential::Entity>,
+    #[sea_orm(has_one)]
+    pub jira_settings: HasOne<super::jira_settings::Entity>,
     #[sea_orm(has_many)]
     pub slots: HasMany<super::slot::Entity>,
     #[sea_orm(has_many)]

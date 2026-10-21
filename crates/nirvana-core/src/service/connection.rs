@@ -1,25 +1,29 @@
-use nirvana_entity::connection::Entity as Connection;
+use nirvana_entity::connection::Entity as ConnectionEntity;
 use nirvana_entity::profile::Entity as Profile;
-use nirvana_entity::{connection, credential, profile, slot, ticket};
+use nirvana_entity::{connection, credential, jira_settings, profile, slot, ticket};
 use sea_orm::{
     ActiveModelTrait, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set,
     TransactionTrait,
 };
 
-use crate::domain::ConnectionData;
+use crate::domain::{Connection, ConnectionData};
 use crate::errors::{DbError, NirvanaError, TrackingError};
 use crate::integration;
 use crate::service::Nirvana;
 
 impl Nirvana {
-    pub async fn list_connections(&self) -> Result<Vec<connection::Model>, NirvanaError> {
-        Ok(Connection::find()
+    pub async fn list_connections(&self) -> Result<Vec<Connection>, NirvanaError> {
+        ConnectionEntity::find()
+            .find_also_related(jira_settings::Entity)
             .order_by_asc(connection::COLUMN.id)
             .all(&self.db)
-            .await?)
+            .await?
+            .into_iter()
+            .map(|(model, jira_settings)| Ok(Connection::new(model, jira_settings)?))
+            .collect()
     }
 
-    pub async fn get_active_connection(&self) -> Result<Option<connection::Model>, NirvanaError> {
+    pub async fn get_active_connection(&self) -> Result<Option<Connection>, NirvanaError> {
         let Some(connection_id) = self.config.core.active_connection else {
             return Ok(None);
         };
@@ -32,7 +36,7 @@ impl Nirvana {
     }
 
     pub async fn set_active_connection(&mut self, id: i64) -> Result<(), NirvanaError> {
-        if (Connection::find_by_id(id).one(&self.db).await?).is_none() {
+        if (ConnectionEntity::find_by_id(id).one(&self.db).await?).is_none() {
             return Err(TrackingError::ConnectionNotFound(id).into());
         }
 
@@ -42,7 +46,7 @@ impl Nirvana {
     }
 
     pub async fn delete_connection(&mut self, id: i64) -> Result<(), NirvanaError> {
-        if (Connection::find_by_id(id).one(&self.db).await?).is_none() {
+        if (ConnectionEntity::find_by_id(id).one(&self.db).await?).is_none() {
             return Err(TrackingError::ConnectionNotFound(id).into());
         }
 
@@ -58,10 +62,10 @@ impl Nirvana {
             return Err(TrackingError::ConnectionHasHistory.into());
         }
 
-        Connection::delete_by_id(id).exec(&self.db).await?;
+        ConnectionEntity::delete_by_id(id).exec(&self.db).await?;
 
         if self.config.core.active_connection == Some(id) {
-            self.config.core.active_connection = (Connection::find()
+            self.config.core.active_connection = (ConnectionEntity::find()
                 .order_by_asc(connection::COLUMN.id)
                 .one(&self.db)
                 .await?)
@@ -75,7 +79,7 @@ impl Nirvana {
     pub async fn add_connection(
         &self,
         connection: ConnectionData,
-    ) -> Result<connection::Model, NirvanaError> {
+    ) -> Result<Connection, NirvanaError> {
         if connection.secret_store != "plaintext" {
             unimplemented!("only plaintext secret store is currently supported");
         }
@@ -86,7 +90,7 @@ impl Nirvana {
             .await?
             .ok_or(TrackingError::NoActiveProfile)?;
 
-        let duplicates = Connection::find()
+        let duplicates = ConnectionEntity::find()
             .filter(connection::COLUMN.profile_id.eq(profile.id))
             .filter(connection::COLUMN.name.eq(&connection.name))
             .count(&self.db)
@@ -113,9 +117,21 @@ impl Nirvana {
         }
         .insert(&txn)
         .await?;
+        let jira_settings = match model.kind.as_str() {
+            "jira-cloud" | "jira-dc" => Some(
+                jira_settings::ActiveModel {
+                    connection_id: Set(model.id),
+                    ..Default::default()
+                }
+                .insert(&txn)
+                .await?,
+            ),
+            _ => None,
+        };
+        let connection = Connection::new(model, jira_settings)?;
         txn.commit().await?;
 
-        Ok(model)
+        Ok(connection)
     }
 
     pub async fn test_connection_data(
@@ -134,7 +150,13 @@ impl Nirvana {
             updated_at: 0,
             profile_id: 0,
         };
-        let integ = integration::build_integration(&candidate, &connection.token)?;
+        let settings = jira_settings::Model {
+            connection_id: 0,
+            publish: false,
+            squash: false,
+        };
+        let candidate = Connection::new(candidate, Some(settings))?;
+        let integ = integration::build_integration(&candidate, &connection.token);
         integ.test_connection().await?;
         Ok(())
     }
@@ -148,7 +170,7 @@ impl Nirvana {
 
         let connection = self.get_connection(connection_id).await?;
         let token = self.get_token(connection_id).await?;
-        let integ = integration::build_integration(&connection, &token)?;
+        let integ = integration::build_integration(&connection, &token);
         integ.test_connection().await?;
         Ok(())
     }
@@ -165,10 +187,10 @@ impl Nirvana {
 
     pub fn issue_urls<'a>(
         &self,
-        connection: &connection::Model,
+        connection: &Connection,
         tickets: impl IntoIterator<Item = &'a ticket::Model>,
     ) -> Result<Vec<String>, NirvanaError> {
-        let integ = integration::Integration::build_for_url(connection)?;
+        let integ = integration::Integration::build_for_url(connection);
         Ok(tickets
             .into_iter()
             .map(|ticket| integ.get_issue_link(&ticket.ticket_key))

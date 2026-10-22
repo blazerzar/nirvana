@@ -252,10 +252,12 @@ mod tests {
             },
             ticket::Model {
                 id: 1,
+                profile_id: 1,
+                connection_id: Some(1),
                 ticket_key: ticket_key.to_string(),
-                summary: None,
-                connection_id: 1,
+                title: None,
                 last_worked_at: 0,
+                synced_at: 0,
             },
         )
     }

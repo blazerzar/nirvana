@@ -106,7 +106,7 @@ pub(crate) async fn run(args: ListArgs) -> anyhow::Result<()> {
             let duration = format_duration(ended - s.started_at);
             [
                 ticket.ticket_key.clone(),
-                ticket.summary.clone().unwrap_or_default(),
+                ticket.title.clone().unwrap_or_default(),
                 started,
                 stopped,
                 duration,

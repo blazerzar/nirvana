@@ -3,7 +3,8 @@ use nirvana_entity::ticket::Entity as Ticket;
 use nirvana_entity::{connection, jira_settings, slot, ticket};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
-    ActiveModelTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder,
+    ActiveModelTrait, ConnectionTrait, DbErr, EntityTrait, IntoActiveModel, PaginatorTrait,
+    QueryFilter, QueryOrder, TransactionTrait,
 };
 
 use crate::domain::{Connection, SlotCreate};
@@ -135,37 +136,42 @@ impl Nirvana {
         ticket_key: &str,
         last_worked_at: i64,
     ) -> Result<ticket::Model, super::NirvanaError> {
-        let existing = Ticket::find()
-            .filter(ticket::COLUMN.ticket_key.eq(ticket_key))
-            .filter(ticket::COLUMN.connection_id.eq(connection_id))
-            .one(&self.db)
-            .await?;
-        match existing {
-            Some(t) => {
-                let mut t = t.into_active_model();
-                t.last_worked_at = Set(last_worked_at);
-                Ok(t.update(&self.db).await?)
+        let profile_id = connection.model.profile_id;
+        let find = Ticket::find()
+            .filter(ticket::COLUMN.profile_id.eq(profile_id))
+            .filter(ticket::COLUMN.ticket_key.eq(ticket_key));
+        if let Some(t) = find.clone().one(&self.db).await? {
+            return Ok(touch_ticket(t, last_worked_at, &self.db).await?);
+        }
+
+        let token = self.get_token(connection_id).await?;
+        let integ = integration::build_integration(connection, &token);
+        let issue = integ.fetch_issue(ticket_key).await.map_err(|e| match e {
+            IntegrationError::TicketNotFound(key) => {
+                super::NirvanaError::Tracking(TrackingError::TicketNotFound(key))
             }
+            other => super::NirvanaError::Integration(other),
+        })?;
+
+        let txn = self.db.begin().await?;
+        let ticket = match find.one(&txn).await? {
+            Some(t) => touch_ticket(t, last_worked_at, &txn).await?,
             None => {
-                let token = self.get_token(connection_id).await?;
-                let integ = integration::build_integration(connection, &token);
-                let issue = integ.fetch_issue(ticket_key).await.map_err(|e| match e {
-                    IntegrationError::TicketNotFound(key) => {
-                        super::NirvanaError::Tracking(TrackingError::TicketNotFound(key))
-                    }
-                    other => super::NirvanaError::Integration(other),
-                })?;
-                Ok(ticket::ActiveModel {
+                ticket::ActiveModel {
+                    profile_id: Set(profile_id),
                     ticket_key: Set(ticket_key.to_string()),
-                    summary: Set(Some(issue.summary)),
-                    connection_id: Set(connection_id),
+                    title: Set(Some(issue.summary)),
+                    connection_id: Set(Some(connection_id)),
                     last_worked_at: Set(last_worked_at),
+                    synced_at: Set(chrono::Utc::now().timestamp()),
                     ..Default::default()
                 }
-                .insert(&self.db)
-                .await?)
+                .insert(&txn)
+                .await?
             }
-        }
+        };
+        txn.commit().await?;
+        Ok(ticket)
     }
 
     pub async fn list_recent_tickets(&self) -> Result<Vec<ticket::Model>, super::NirvanaError> {
@@ -174,12 +180,23 @@ impl Nirvana {
             .core
             .active_connection
             .ok_or(TrackingError::NoActiveConnection)?;
+        let profile_id = self.get_connection(connection_id).await?.model.profile_id;
         Ok(Ticket::find()
-            .filter(ticket::COLUMN.connection_id.eq(connection_id))
+            .filter(ticket::COLUMN.profile_id.eq(profile_id))
             .order_by_desc(ticket::COLUMN.last_worked_at)
             .all(&self.db)
             .await?)
     }
+}
+
+async fn touch_ticket(
+    ticket: ticket::Model,
+    last_worked_at: i64,
+    db: &impl ConnectionTrait,
+) -> Result<ticket::Model, DbErr> {
+    let mut ticket = ticket.into_active_model();
+    ticket.last_worked_at = Set(last_worked_at);
+    ticket.update(db).await
 }
 
 #[cfg(test)]
@@ -291,11 +308,19 @@ mod tests {
     }
 
     async fn insert_ticket(api: &Nirvana, key: &str) -> i64 {
+        let connection_id = api.config.core.active_connection.unwrap();
         ticket::ActiveModel {
+            profile_id: Set(api
+                .get_connection(connection_id)
+                .await
+                .unwrap()
+                .model
+                .profile_id),
             ticket_key: Set(key.to_string()),
-            summary: Set(Some("Existing ticket".to_string())),
-            connection_id: Set(api.config.core.active_connection.unwrap()),
+            title: Set(Some("Existing ticket".to_string())),
+            connection_id: Set(Some(connection_id)),
             last_worked_at: Set(0),
+            synced_at: Set(0),
             ..Default::default()
         }
         .insert(&api.db)

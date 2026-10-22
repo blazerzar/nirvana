@@ -72,6 +72,7 @@ logged from the start.
       migrations. Log every step.
 - [x] Add profiles table - single DB, existing data becomes one profile with
       all connections. Add profile_id to connections, unique name per profile.
+      Deleting a profile cascades to its connections and tickets.
 - [x] Add settings to connections - a settings table per connection kind
       (`jira_settings` with publish and squash), replacing global
       publish_squashed_worklogs. Credentials table and secret_store stay
@@ -85,10 +86,12 @@ logged from the start.
 - [x] Add publish entries table (slot_id, connection_id, published_at, error)
       with slot link - covers multiple targets and per log errors. Published
       slots get a synthetic ok entry, then drop published_at.
-- [ ] Slots: add profile_id, drop connection_id (check it matches the
-      ticket's first), one running slot per profile.
-- [ ] Tickets: add profile_id, title (from summary), description, synced_at,
-      nullable connection_id, new unique key (implementation guide §9).
+- [ ] Slots: add profile_id (deleting a profile cascades), drop
+      connection_id (check it matches the ticket's first), one running slot
+      per profile.
+- [x] Tickets: add profile_id, title (from summary), synced_at,
+      nullable connection_id, no unique key besides id, deleting a profile
+      cascades.
 - [x] Remove note column (decide if notes get exported first).
 - [ ] Add DB migration tests: fixture DB created by 0.3.0-alpha (connections,
       credentials, tickets, slots incl. running and published) migrates

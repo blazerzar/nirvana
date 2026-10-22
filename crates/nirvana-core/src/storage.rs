@@ -80,7 +80,7 @@ async fn backup(db: &DatabaseConnection, db_file: &Path) -> Result<PathBuf, DbEr
 #[cfg(test)]
 mod tests {
     use nirvana_entity::prelude::*;
-    use nirvana_entity::{connection, jira_settings, profile};
+    use nirvana_entity::{connection, credential, jira_settings, profile, ticket};
     use sea_orm::ActiveValue::{NotSet, Set};
     use sea_orm::{ActiveModelTrait, DbBackend, EntityTrait, PaginatorTrait, Statement};
 
@@ -158,7 +158,8 @@ mod tests {
                 &db,
                 &format!(
                     "select name from pragma_table_info('{table}', 'old')
-                     where not ('{table}' = 'slots' and name in ('note', 'published_at'))"
+                     where not ('{table}' = 'slots' and name in ('note', 'published_at'))
+                         and not ('{table}' = 'tickets' and name = 'summary')"
                 ),
             )
             .await
@@ -197,6 +198,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn migrated_030_tickets_get_default_profile_and_title() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = migrate_fixture(dir.path()).await;
+
+        let profile_id = Profile::find().one(&db).await.unwrap().unwrap().id;
+        let tickets = text_rows(
+            &db,
+            &format!(
+                "select json_array(t.id, t.profile_id = {profile_id}, t.title is o.summary,
+                     t.connection_id is o.connection_id, t.synced_at = o.last_worked_at)
+                 from main.tickets t join old.tickets o on o.id = t.id order by t.id"
+            ),
+        )
+        .await;
+        let expected = text_rows(
+            &db,
+            "select json_array(id, 1, 1, 1, 1) from old.tickets order by id",
+        )
+        .await;
+        assert!(!expected.is_empty());
+        assert_eq!(tickets, expected);
+        assert_eq!(
+            text_rows(&db, "select cast(count(*) as text) from main.slots").await,
+            text_rows(&db, "select cast(count(*) as text) from old.slots").await
+        );
+    }
+
+    #[tokio::test]
     async fn migrated_030_db_matches_fresh_schema() {
         let migrated_dir = tempfile::tempdir().unwrap();
         let migrated = migrate_fixture(migrated_dir.path()).await;
@@ -205,6 +234,31 @@ mod tests {
 
         let migrated_schema = schema(&migrated).await;
         assert!(migrated_schema.contains(&"connections|profile_id|INTEGER|1||0".to_string()));
+        assert!(migrated_schema.contains(&"tickets|profile_id|INTEGER|1||0".to_string()));
+        assert!(migrated_schema.contains(&"tickets|connection_id|INTEGER|0||0".to_string()));
+        assert!(migrated_schema.contains(&"tickets|title|TEXT|0||0".to_string()));
+        assert!(migrated_schema.contains(&"tickets|synced_at|INTEGER|1||0".to_string()));
+        assert!(
+            migrated_schema
+                .contains(&"connections|profile_id|profiles|id|NO ACTION|CASCADE".to_string())
+        );
+        assert!(
+            migrated_schema
+                .contains(&"tickets|profile_id|profiles|id|NO ACTION|CASCADE".to_string())
+        );
+        assert!(
+            migrated_schema
+                .contains(&"tickets|tickets_by_last_worked|0|0|0|profile_id".to_string())
+        );
+        assert!(
+            migrated_schema
+                .contains(&"tickets|tickets_by_profile_key|0|0|1|ticket_key".to_string())
+        );
+        assert!(
+            !migrated_schema
+                .iter()
+                .any(|row| row.starts_with("tickets|sqlite_autoindex"))
+        );
         assert!(migrated_schema.contains(&"slots|uuid|BLOB|1||0".to_string()));
         assert!(migrated_schema.contains(&"slots|slots_by_uuid|1|0|0|uuid".to_string()));
         assert!(
@@ -356,5 +410,61 @@ mod tests {
             .unwrap();
 
         assert_eq!(JiraSettings::find().count(&db).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn profile_delete_cascades() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = open(&dir.path().join("nirvana.db")).await.unwrap();
+        let profile = profile::ActiveModel {
+            name: Set("default".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let connection = connection::ActiveModel {
+            name: Set("work".to_string()),
+            kind: Set("jira-cloud".to_string()),
+            host: Set("host".to_string()),
+            identity: Set("identity".to_string()),
+            secret_store: Set("plaintext".to_string()),
+            profile_id: Set(profile.id),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        credential::ActiveModel {
+            connection_id: Set(connection.id),
+            credential: Set("token".to_string()),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        jira_settings::ActiveModel {
+            connection_id: Set(connection.id),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        ticket::ActiveModel {
+            profile_id: Set(profile.id),
+            connection_id: Set(Some(connection.id)),
+            ticket_key: Set("KEY-1".to_string()),
+            synced_at: Set(0),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        Profile::delete_by_id(profile.id).exec(&db).await.unwrap();
+
+        assert_eq!(Connection::find().count(&db).await.unwrap(), 0);
+        assert_eq!(Credential::find().count(&db).await.unwrap(), 0);
+        assert_eq!(JiraSettings::find().count(&db).await.unwrap(), 0);
+        assert_eq!(Ticket::find().count(&db).await.unwrap(), 0);
     }
 }

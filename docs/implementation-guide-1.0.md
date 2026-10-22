@@ -91,12 +91,15 @@ connections(id, profile_id, name, kind {jira-cloud, jira-dc, linear}, host,
             identity, secret_store {plaintext, keyring}, created_at,
             updated_at)
             -- unique (profile_id, name)
+            -- deleting a profile cascades
 credentials(connection_id, credential)   -- plaintext store only
 jira_settings(connection_id, publish bool default true,
               squash bool default false)
             -- one settings table per connection kind
-tickets(id, profile_id, connection_id NULL, ticket_key, title, description,
+tickets(id, profile_id, connection_id NULL, ticket_key, title,
         last_worked_at, synced_at)   -- NULL = owner not resolved yet
+            -- no unique key besides id
+            -- deleting a profile cascades
 slots(id, uuid, profile_id, ticket_id, started_at, stopped_at)
             -- one running slot per profile
 publish_entries(slot_id, connection_id, published_at NULL, error NULL)
@@ -446,9 +449,7 @@ possible now:
    Proposed: ask every connection (async), cache the first hit in
    `tickets.connection_id`, and ask the user if several answer. A ticket with
    no owner is allowed ("checked when published") and resolved on the next
-   sync or at publish time. Decides the tickets unique key, since
-   `unique (ticket_key, connection_id)` allows duplicates once
-   `connection_id` is nullable.
+   sync or at publish time. Tickets have no unique key besides `id`.
 2. Leptos CSR vs SSR for the local web (CSR recommended, §3 #10).
 3. The per-profile DB path in the design versus the single-DB decision:
    adjust the copy on the profile card, Settings → data and setup ("logs are

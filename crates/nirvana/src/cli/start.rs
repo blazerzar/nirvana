@@ -23,7 +23,7 @@ pub(crate) async fn run(args: StartArgs) -> anyhow::Result<()> {
         "{} {} {} {} {}",
         style("Started").green().bold(),
         style(&ticket.ticket_key).bold(),
-        style(ticket.summary.as_deref().unwrap_or("")).dim(),
+        style(ticket.title.as_deref().unwrap_or("")).dim(),
         style("at").white(),
         time,
     );
@@ -46,7 +46,7 @@ async fn interactive_prompt(api: &Nirvana) -> anyhow::Result<(String, Option<Str
     } else {
         let items: Vec<String> = tickets
             .iter()
-            .map(|t| match &t.summary {
+            .map(|t| match &t.title {
                 Some(s) => format!("{}  {}", t.ticket_key, s),
                 None => t.ticket_key.clone(),
             })

@@ -16,7 +16,7 @@ pub(crate) async fn run(args: StopArgs) -> anyhow::Result<()> {
                 "{} {} {} {}",
                 style("Stopped").green().bold(),
                 style(&ticket.ticket_key).bold(),
-                style(ticket.summary.as_deref().unwrap_or("")).dim(),
+                style(ticket.title.as_deref().unwrap_or("")).dim(),
                 style(format!("({})", style(format_duration(duration)))).white(),
             );
         }

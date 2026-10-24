@@ -14,7 +14,7 @@ pub struct Model {
 
     #[sea_orm(belongs_to, from = "slot_id", to = "id", on_delete = "Cascade")]
     pub slot: BelongsTo<super::slot::Entity>,
-    #[sea_orm(belongs_to, from = "connection_id", to = "id")]
+    #[sea_orm(belongs_to, from = "connection_id", to = "id", on_delete = "NoAction")]
     pub connection: BelongsTo<super::connection::Entity>,
 }
 

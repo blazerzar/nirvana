@@ -6,7 +6,9 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub connection_id: i64,
+    #[sea_orm(default_value = true)]
     pub publish: bool,
+    #[sea_orm(default_value = false)]
     pub squash: bool,
 
     #[sea_orm(belongs_to, from = "connection_id", to = "id", on_delete = "Cascade")]

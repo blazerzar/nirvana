@@ -10,8 +10,9 @@ pub struct Model {
     pub connection_id: Option<i64>,
     #[sea_orm(column_type = "Text")]
     pub ticket_key: String,
-    #[sea_orm(column_type = "Text", nullable)]
+    #[sea_orm(column_type = "Text")]
     pub title: Option<String>,
+    #[sea_orm(default_value = 0)]
     pub last_worked_at: i64,
     pub synced_at: i64,
 

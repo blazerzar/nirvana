@@ -33,7 +33,10 @@ impl Nirvana {
             .resolve_ticket_for_work(&connection, connection_id, &ticket_key, now)
             .await?;
 
-        if let Some(running) = Slot::find_running().one(&self.db).await? {
+        if let Some(running) = Slot::find_running(connection.model.profile_id)
+            .one(&self.db)
+            .await?
+        {
             let stopped_at = std::cmp::max(running.started_at + 1, now);
             let mut running = running.into_active_model();
             running.stopped_at = Set(Some(stopped_at));
@@ -42,7 +45,7 @@ impl Nirvana {
 
         let slot = slot::ActiveModel {
             ticket_id: Set(ticket.id),
-            connection_id: Set(connection_id),
+            profile_id: Set(connection.model.profile_id),
             started_at: Set(now),
             stopped_at: Set(None),
             ..Default::default()
@@ -71,14 +74,18 @@ impl Nirvana {
             return Err(TrackingError::FutureTime.into());
         }
 
-        let overlapping = Slot::find_overlapping(connection_id, input.started_at, input.stopped_at)
-            .count(&self.db)
-            .await?;
+        let connection = self.get_connection(connection_id).await?;
+        let overlapping = Slot::find_overlapping(
+            connection.model.profile_id,
+            input.started_at,
+            input.stopped_at,
+        )
+        .count(&self.db)
+        .await?;
         if overlapping > 0 {
             return Err(TrackingError::SlotOverlap.into());
         }
 
-        let connection = self.get_connection(connection_id).await?;
         let ticket_key = input.ticket_key.to_uppercase();
         let ticket = self
             .resolve_ticket_for_work(&connection, connection_id, &ticket_key, input.stopped_at)
@@ -86,7 +93,7 @@ impl Nirvana {
 
         let slot = slot::ActiveModel {
             ticket_id: Set(ticket.id),
-            connection_id: Set(connection_id),
+            profile_id: Set(connection.model.profile_id),
             started_at: Set(input.started_at),
             stopped_at: Set(Some(input.stopped_at)),
             ..Default::default()
@@ -100,8 +107,12 @@ impl Nirvana {
         &self,
         at: Option<i64>,
     ) -> Result<Option<(slot::Model, ticket::Model)>, super::NirvanaError> {
+        let connection = self
+            .get_active_connection()
+            .await?
+            .ok_or(TrackingError::NoActiveConnection)?;
         let now = at.unwrap_or_else(|| chrono::Utc::now().timestamp());
-        let Some(running) = Slot::find_running()
+        let Some(running) = Slot::find_running(connection.model.profile_id)
             .find_also_related(ticket::Entity)
             .one(&self.db)
             .await?
@@ -393,7 +404,7 @@ mod tests {
 
         let error = slot::ActiveModel {
             ticket_id: Set(ticket.id),
-            connection_id: Set(slot.connection_id),
+            profile_id: Set(slot.profile_id),
             started_at: Set(200),
             stopped_at: Set(Some(260)),
             uuid: Set(slot.uuid),
@@ -473,10 +484,16 @@ mod tests {
     async fn does_not_stop_existing_running_slot() {
         let api = test_api().await;
         let ticket_id = insert_ticket(&api, "DES-1").await;
-        let connection_id = api.config.core.active_connection.unwrap();
+        let profile_id = api
+            .get_active_connection()
+            .await
+            .unwrap()
+            .unwrap()
+            .model
+            .profile_id;
         let running = slot::ActiveModel {
             ticket_id: Set(ticket_id),
-            connection_id: Set(connection_id),
+            profile_id: Set(profile_id),
             started_at: Set(300),
             stopped_at: Set(None),
             ..Default::default()
@@ -489,7 +506,11 @@ mod tests {
             .create_slot(slot_create("DES-1", 100, 160))
             .await
             .unwrap();
-        let still_running = Slot::find_running().one(&api.db).await.unwrap().unwrap();
+        let still_running = Slot::find_running(profile_id)
+            .one(&api.db)
+            .await
+            .unwrap()
+            .unwrap();
 
         assert_eq!(slot.stopped_at, Some(160));
         assert_eq!(still_running.id, running.id);

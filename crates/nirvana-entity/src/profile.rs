@@ -16,6 +16,8 @@ pub struct Model {
     pub connections: HasMany<super::connection::Entity>,
     #[sea_orm(has_many)]
     pub tickets: HasMany<super::ticket::Entity>,
+    #[sea_orm(has_many)]
+    pub slots: HasMany<super::slot::Entity>,
 }
 
 #[async_trait::async_trait]

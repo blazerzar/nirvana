@@ -36,6 +36,8 @@ pub enum TrackingError {
     PublishDisabled(String),
     #[error("ticket not found: {0}")]
     TicketNotFound(String),
+    #[error("ticket {0} has no connection")]
+    TicketHasNoConnection(String),
     #[error("slot not found: {0}")]
     SlotNotFound(i64),
     #[error("cannot edit a published slot")]

@@ -245,7 +245,7 @@ mod tests {
             slot::Model {
                 id,
                 ticket_id: 1,
-                connection_id: 1,
+                profile_id: 1,
                 started_at,
                 stopped_at: Some(stopped_at),
                 uuid: Uuid::nil(),

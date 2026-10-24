@@ -78,15 +78,14 @@ logged from the start.
       publish_squashed_worklogs. Credentials table and secret_store stay
       (plaintext support).
 - [x] Add uuid to slots (needed for idempotent publishing to portal).
-- [ ] Check entity attributes match the schema: `slot.stopped_at` is marked
-      unique but the DB has only the partial `one_running_slot` index, and
-      ids use `auto_increment = false` on rowid primary keys.
+- [ ] Check entity attributes match the schema: ids use
+      `auto_increment = false` on rowid primary keys.
 - [ ] Check the duplicate connection name inside the insert transaction,
       backed by a unique index so concurrent adds cannot create duplicates.
 - [x] Add publish entries table (slot_id, connection_id, published_at, error)
       with slot link - covers multiple targets and per log errors. Published
       slots get a synthetic ok entry, then drop published_at.
-- [ ] Slots: add profile_id (deleting a profile cascades), drop
+- [x] Slots: add profile_id (deleting a profile cascades), drop
       connection_id (check it matches the ticket's first), one running slot
       per profile.
 - [x] Tickets: add profile_id, title (from summary), synced_at,

@@ -1,6 +1,6 @@
 use nirvana_entity::connection::Entity as ConnectionEntity;
 use nirvana_entity::profile::Entity as Profile;
-use nirvana_entity::{connection, credential, jira_settings, profile, slot, ticket};
+use nirvana_entity::{connection, credential, jira_settings, profile, ticket};
 use sea_orm::{
     ActiveModelTrait, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set,
     TransactionTrait,
@@ -54,11 +54,7 @@ impl Nirvana {
             .filter(ticket::COLUMN.connection_id.eq(id))
             .count(&self.db)
             .await?;
-        let slots = slot::Entity::find()
-            .filter(slot::COLUMN.connection_id.eq(id))
-            .count(&self.db)
-            .await?;
-        if tickets > 0 || slots > 0 {
+        if tickets > 0 {
             return Err(TrackingError::ConnectionHasHistory.into());
         }
 

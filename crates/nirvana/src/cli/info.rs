@@ -9,7 +9,7 @@ const COMMIT_DATE: Option<&str> = option_env!("COMMIT_DATE");
 
 pub(crate) async fn run() -> anyhow::Result<()> {
     let api = Nirvana::new().await?;
-    let info = api.info();
+    let info = api.info().await?;
     let term = Term::stdout();
     let bold = Style::new().bold();
 
@@ -32,6 +32,7 @@ pub(crate) async fn run() -> anyhow::Result<()> {
         print_row("Commit hash", hash)?;
         print_row("Commit date", date)?;
     }
+    print_row("SQLite", &info.sqlite_version)?;
     print_row("Config", &info.config_file.display().to_string())?;
     print_row("Database", &info.db_file.display().to_string())?;
     print_row("Log file", &info.log_file.display().to_string())?;

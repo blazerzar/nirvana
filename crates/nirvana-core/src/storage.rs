@@ -79,6 +79,14 @@ async fn backup(db: &DatabaseConnection, db_file: &Path) -> Result<PathBuf, DbEr
     Ok(backup_path)
 }
 
+pub(crate) async fn sqlite_version(db: &DatabaseConnection) -> Result<String, DbError> {
+    let row = db
+        .query_one_raw(raw_sql!(Sqlite, "select sqlite_version()"))
+        .await?
+        .ok_or_else(|| DbErr::Custom("select sqlite_version() returned no row".into()))?;
+    Ok(row.try_get_by_index(0)?)
+}
+
 #[cfg(test)]
 mod tests {
     use nirvana_entity::prelude::*;

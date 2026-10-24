@@ -30,6 +30,7 @@ pub struct AppInfo {
     pub config_file: PathBuf,
     pub db_file: PathBuf,
     pub log_file: PathBuf,
+    pub sqlite_version: String,
     pub is_dev: bool,
 }
 

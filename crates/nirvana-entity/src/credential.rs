@@ -7,6 +7,8 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub connection_id: i64,
     #[sea_orm(column_type = "Text")]
+    pub secret_store: String,
+    #[sea_orm(column_type = "Text")]
     pub credential: String,
 
     #[sea_orm(belongs_to, from = "connection_id", to = "id", on_delete = "Cascade")]

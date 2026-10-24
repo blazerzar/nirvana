@@ -92,7 +92,6 @@ impl Nirvana {
             kind: Set(connection.kind),
             host: Set(normalize_host(&connection.host)),
             identity: Set(connection.identity),
-            secret_store: Set(connection.secret_store),
             profile_id: Set(profile.id),
             ..Default::default()
         }
@@ -104,6 +103,7 @@ impl Nirvana {
         })?;
         credential::ActiveModel {
             connection_id: Set(model.id),
+            secret_store: Set(connection.secret_store),
             credential: Set(connection.token),
         }
         .insert(&txn)
@@ -136,7 +136,6 @@ impl Nirvana {
             kind: connection.kind,
             host: connection.host,
             identity: connection.identity,
-            secret_store: connection.secret_store,
             created_at: 0,
             updated_at: 0,
             profile_id: 0,

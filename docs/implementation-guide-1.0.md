@@ -55,6 +55,7 @@ worklogs.
 | 16 | **Plaintext credentials stay supported** (probably needed on Linux). The `credentials` table and `connections.secret_store` stay in the Database stage. The keyring comes in the Keychain stage. | |
 | 17 | **Canonical SeaORM layout in two crates**: `nirvana-entity` (one file per table in the 2.0 `#[sea_orm::model]` format, plus `prelude.rs`) and `nirvana-migration` (`Migrator`, one file per migration, no `cli` feature or binary). `nirvana-core` depends on both and owns opening the DB, the backup and running `Migrator::up`. `nirvana` depends only on `nirvana-core`. No repository layer: services call entities directly. Table rows are entity `Model`s, which `nirvana-core` re-exports as `nirvana_core::entity`. `domain.rs` holds only types that are not a table row (inputs, results, `Change<T>`, `Connection`). Connections are exposed as `domain::Connection`: the `connections` row plus `ConnectionKind`, which interprets the `kind` column and carries that kind's settings. Slot services return `(slot::Model, ticket::Model)` and frontends build the issue link with `Nirvana::issue_urls`. Shared queries are entity methods that return a `Select`, and timestamps are set in `ActiveModelBehavior::before_save`. | Matches SeaORM's canonical layout. Migrations are only run by the application, never from a CLI. |
 | 18 | **`profile_id` columns are `not null references profiles(id)` with no default, added with a table rebuild.** The migration returns `use_transaction() -> Some(false)` and skips itself when its work is already done. It turns `PRAGMA foreign_keys` off, then in one transaction: creates `<table>_new`, copies the rows with the `default` profile id, drops the old table, renames `<table>_new` to `<table>`, recreates the indexes and fails if `PRAGMA foreign_key_check` returns rows. After the commit (and on error) it turns `foreign_keys` back on. Tests check that the rows of every child table survive. | SQLite cannot add a `NOT NULL` column without a default, nor a `REFERENCES` column with a non-NULL default. A default would silently put rows in one profile. `PRAGMA foreign_keys` is ignored inside a transaction, and with it on `DROP TABLE` deletes the rows first, which fails on `tickets` and `slots` and cascades into `credentials`. This is the procedure from sqlite.org/lang_altertable.html. |
+| 19 | **Keychain.** `secret_store` moves from `connections` to `credentials` (`not null default 'plaintext'`) and is `plaintext`, `keyring` or `env`. `credentials.credential` holds the token for `plaintext`, and a random 6 character key (`A-Z0-9`) for `keyring` and `env`. `keyring` stores the token under service `nirvana`, account = key, through `keyring-core` with `apple-native-keyring-store` (macOS), `windows-native-keyring-store` (Windows) and `zbus-secret-service-keyring-store` (Linux, Secret Service: gnome-keyring, KWallet on Plasma 6, KeePassXC). `env` reads the token only from `NIRVANA_TOKEN_<PROFILE>_<KEY>` (profile name upper-cased, other characters as `_`), for CI and headless machines. `Nirvana::new` creates the keyring store once without touching any item, and `nirvana info` shows the backend or why it is unavailable. Plaintext tokens are not migrated: users move them into the keyring themselves. Tokens are `secrecy::SecretString`, keyring calls run in `spawn_blocking`. Tests use the `keyring_core` mock store, and `#[ignore]` tests against the real keyring are run manually on full machines. | The store and the credential are read together, and moving a token updates one row. Random keys keep dev and production DBs apart in one keyring. The Secret Service covers both GNOME and KDE. `keyring-core` is synchronous and providers can show unlock dialogs. |
 
 ## 4. Current codebase (0.3.0-alpha) - what exists
 
@@ -88,11 +89,12 @@ profile_settings(profile_id, week_start, clock_24h, workday_start, workday_end,
                  expected_minutes_per_day, show_weekends,
                  portal_enabled, portal_url)
 connections(id, profile_id, name, kind {jira-cloud, jira-dc, linear}, host,
-            identity, secret_store {plaintext, keyring}, created_at,
-            updated_at)
+            identity, created_at, updated_at)
             -- unique (profile_id, name)
             -- deleting a profile cascades
-credentials(connection_id, credential)   -- plaintext store only
+credentials(connection_id, secret_store {plaintext, keyring, env},
+            credential)
+            -- plaintext: the token, keyring and env: a random 6 char key
 jira_settings(connection_id, publish bool default true,
               squash bool default false)
             -- one settings table per connection kind
@@ -136,8 +138,8 @@ publish_entries(slot_id, connection_id, published_at NULL, error NULL)
   settings map to the new machine settings where an equivalent exists, unused
   keys (font scale, tray icon) are removed, old theme names map to
   light/dark/system.
-- Keychain stage: plaintext tokens move into the keyring where it is
-  available.
+- Keychain stage: plaintext tokens stay where they are. Users move them into
+  the keyring themselves (decision 19).
 - The note column is dropped (no UI uses it). Notes are dropped without an
   export, and the pre-migration backup keeps them.
 - **Migration tests** (required before the Stage 1 review), run in CI:
@@ -147,8 +149,7 @@ publish_entries(slot_id, connection_id, published_at NULL, error NULL)
     `default` profile, connection settings set, uuids assigned, publish
     entries created for published slots, backup created. Also cover a fresh
     DB, and check that a fresh DB and a migrated one end with the same
-    schema. The Keychain stage adds the token move (mock the keyring in
-    tests).
+    schema.
   - Config: fixtures for the 0.1 flat format and the 0.3.0-alpha sectioned
     format (`[core]`, `[gui]`, `[idle]`). Check that `active_connection` is
     dropped and machine/idle settings are kept.
@@ -481,9 +482,10 @@ possible now:
 - The local server manages tokens, so: bind to `127.0.0.1` only, validate the
   `Host` header (against DNS rebinding), check `Origin` / use CSRF tokens on
   mutating requests, and never return tokens over the API.
-- Keyring: service `nirvana`, account per connection (use a stable id, not a
-  renameable name). Env override `NIRVANA_TOKEN_<NAME>` (connection name,
-  upper-cased) for CI/headless.
+- Keyring: service `nirvana`, account = the connection's random key from
+  `credentials` (never a renameable name). Keys are random so a dev and a
+  production DB never overwrite each other's entries. The `env` store reads
+  `NIRVANA_TOKEN_<PROFILE>_<KEY>` for CI/headless.
   Without a stable macOS Developer ID signature the keychain prompts after
   every update, so signing is part of CICD.
 - Tokens in memory: `secrecy::SecretString`. Redact them in logs.
@@ -501,7 +503,9 @@ possible now:
    tickets changes, drop notes, migration tests.
 5. **Config**: 0.3 detection + backup, schema_version 2, active profile,
    `[log] level`, migration tests.
-6. **Keychain**.
+6. **Keychain**: `secret_store` moved to `credentials`, keyring on macOS,
+   Windows and Linux, `env` store, user-driven token move, manual keyring
+   tests, arm64 CI.
 7. **Tickets**: commands + tests, owner resolution, async title/description
    sync.
 8. **Linear** integration.

@@ -172,7 +172,8 @@ mod tests {
                     "select name from pragma_table_info('{table}', 'old')
                      where not ('{table}' = 'slots'
                              and name in ('note', 'published_at', 'connection_id'))
-                         and not ('{table}' = 'tickets' and name = 'summary')"
+                         and not ('{table}' = 'tickets' and name = 'summary')
+                         and not ('{table}' = 'connections' and name = 'secret_store')"
                 ),
             )
             .await
@@ -362,14 +363,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db = migrate_fixture(dir.path()).await;
 
-        let credentials_sql = |schema: &str| {
-            format!("select sql from {schema}.sqlite_master where name = 'credentials'")
-        };
-        assert_eq!(
-            text_rows(&db, &credentials_sql("main")).await,
-            text_rows(&db, &credentials_sql("old")).await
-        );
-
         let names: Vec<String> = Migrator::migrations()
             .iter()
             .map(|migration| migration.name().to_string())
@@ -390,18 +383,65 @@ mod tests {
         );
     }
 
-    /// Runs `sql` on a copy of the 0.3 fixture, then returns the migration error.
-    async fn migrate_changed_fixture(sql: &str) -> String {
-        let dir = tempfile::tempdir().unwrap();
-        let db_file = dir.path().join("nirvana.db");
+    /// Copies the 0.3 fixture into `dir` and runs `sql` on it without migrating.
+    async fn changed_fixture(dir: &Path, sql: &str) -> PathBuf {
+        let db_file = dir.join("nirvana.db");
         std::fs::copy(FIXTURE_030, &db_file).unwrap();
         let fixture = sea_orm::Database::connect(format!("sqlite://{}", db_file.display()))
             .await
             .unwrap();
         fixture.execute_unprepared(sql).await.unwrap();
         fixture.close().await.unwrap();
+        db_file
+    }
+
+    /// Runs `sql` on a copy of the 0.3 fixture, then returns the migration error.
+    async fn migrate_changed_fixture(sql: &str) -> String {
+        let dir = tempfile::tempdir().unwrap();
+        let db_file = changed_fixture(dir.path(), sql).await;
 
         open(&db_file).await.unwrap_err().to_string()
+    }
+
+    #[tokio::test]
+    async fn migrated_030_credentials_get_connection_secret_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_file = changed_fixture(
+            dir.path(),
+            "update connections set secret_store = 'keyring' where id = 2",
+        )
+        .await;
+        let db = open(&db_file).await.unwrap();
+
+        let credentials = text_rows(
+            &db,
+            "select connection_id || '|' || secret_store || '|' || credential
+             from credentials order by connection_id",
+        )
+        .await;
+        assert_eq!(
+            credentials,
+            ["1|plaintext|hidden-token-1", "2|keyring|hidden-token-2"]
+        );
+
+        let schema = schema(&db).await;
+        assert!(schema.contains(&"credentials|secret_store|TEXT|1||0".to_string()));
+        assert!(
+            schema.contains(
+                &"credentials|connection_id|connections|id|NO ACTION|CASCADE".to_string()
+            )
+        );
+        assert!(
+            !schema
+                .iter()
+                .any(|row| row.starts_with("connections|secret_store|"))
+        );
+
+        let error = db
+            .execute_unprepared("update credentials set secret_store = 'keychain'")
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("CHECK constraint failed"));
     }
 
     #[tokio::test]
@@ -539,7 +579,6 @@ mod tests {
                 kind: Set("jira-cloud".to_string()),
                 host: Set("host".to_string()),
                 identity: Set("identity".to_string()),
-                secret_store: Set("plaintext".to_string()),
                 profile_id,
                 ..Default::default()
             }
@@ -594,7 +633,6 @@ mod tests {
             kind: Set("jira-cloud".to_string()),
             host: Set("host".to_string()),
             identity: Set("identity".to_string()),
-            secret_store: Set("plaintext".to_string()),
             profile_id: Set(profile.id),
             ..Default::default()
         }
@@ -635,7 +673,6 @@ mod tests {
             kind: Set("jira-cloud".to_string()),
             host: Set("host".to_string()),
             identity: Set("identity".to_string()),
-            secret_store: Set("plaintext".to_string()),
             profile_id: Set(profile.id),
             ..Default::default()
         }
@@ -644,6 +681,7 @@ mod tests {
         .unwrap();
         credential::ActiveModel {
             connection_id: Set(connection.id),
+            secret_store: Set("plaintext".to_string()),
             credential: Set("token".to_string()),
         }
         .insert(&db)

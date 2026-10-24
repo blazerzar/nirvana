@@ -119,11 +119,19 @@ logged from the start.
 
 ## Keychain
 
-- [ ] Add support for storing connection tokens in keychain (keyring crate).
-- [ ] Support macOS, Windows and Linux.
+- [x] Move secret_store from connections to credentials (default plaintext,
+      every 0.3 row is plaintext).
+- [ ] Add support for storing connection tokens in keychain (keyring-core),
+      macOS and Windows. The credentials row holds a random 6 character key
+      instead of the token. Show keyring availability in `nirvana info`.
+- [ ] Support Linux through the Secret Service (gnome-keyring, KWallet).
 - [ ] Keep plaintext credentials supported (needed on Linux for now).
-- [ ] Migrate plaintext tokens from credentials table into keyring and delete them.
-- [ ] Env override NIRVANA_TOKEN_<NAME> for CI and headless use.
+- [ ] Add the `env` secret store for CI and headless use: the token comes
+      from `NIRVANA_TOKEN_<PROFILE>_<KEY>`.
+- [ ] Let users move plaintext tokens into the keyring.
+- [ ] Add keyring tests that are run manually on full machines (macOS,
+      Windows, Linux with gnome-keyring and with KWallet).
+- [ ] Build and test on Windows and Linux arm64 in CI.
 
 ## Tickets
 

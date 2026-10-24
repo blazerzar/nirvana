@@ -5,6 +5,7 @@ mod m20261018_204643_tickets_slots;
 mod m20261020_221738_profiles;
 mod m20261021_180204_jira_settings;
 mod m20261021_191047_slots;
+mod m20261024_204000_credentials;
 
 pub struct Migrator;
 
@@ -17,6 +18,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261020_221738_profiles::Migration),
             Box::new(m20261021_180204_jira_settings::Migration),
             Box::new(m20261021_191047_slots::Migration),
+            Box::new(m20261024_204000_credentials::Migration),
         ]
     }
 }

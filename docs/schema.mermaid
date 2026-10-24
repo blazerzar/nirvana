@@ -14,30 +14,47 @@ erDiagram
         bigint connection_id PK,FK
         text credential
     }
+    jira_settings {
+        bigint connection_id PK,FK
+        bool publish
+        bool squash
+    }
     profiles {
         bigint id PK
         text name UK
         bigint created_at
         bigint updated_at
     }
+    publish_entries {
+        bigint slot_id PK,FK
+        bigint connection_id PK,FK
+        bigint published_at
+        text error
+    }
     slots {
         bigint id PK
         bigint ticket_id FK
-        bigint connection_id FK
-        text note
+        bigint profile_id FK,UK
         bigint started_at
-        bigint stopped_at UK
-        bigint published_at
+        bigint stopped_at
+        blob uuid UK
     }
     tickets {
         bigint id PK
-        text ticket_key
-        text summary
+        bigint profile_id FK
         bigint connection_id FK
+        text ticket_key
+        text title
         bigint last_worked_at
+        bigint synced_at
     }
     connections }o--|| profiles : "profile_id"
+    connections }o--o{ slots : "[publish_entries]"
     credentials }o--|| connections : "connection_id"
-    slots }o--|| connections : "connection_id"
+    jira_settings }o--|| connections : "connection_id"
+    publish_entries }o--|| connections : "connection_id"
+    publish_entries }o--|| slots : "slot_id"
+    slots }o--|| profiles : "profile_id"
     slots }o--|| tickets : "ticket_id"
     tickets }o--|| connections : "connection_id"
+    tickets }o--|| profiles : "profile_id"

@@ -2,7 +2,7 @@ use nirvana_entity::connection::Entity as ConnectionEntity;
 use nirvana_entity::profile::Entity as Profile;
 use nirvana_entity::{connection, credential, jira_settings, profile, ticket};
 use sea_orm::{
-    ActiveModelTrait, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set, SqlErr,
     TransactionTrait,
 };
 
@@ -86,18 +86,9 @@ impl Nirvana {
             .await?
             .ok_or(TrackingError::NoActiveProfile)?;
 
-        let duplicates = ConnectionEntity::find()
-            .filter(connection::COLUMN.profile_id.eq(profile.id))
-            .filter(connection::COLUMN.name.eq(&connection.name))
-            .count(&self.db)
-            .await?;
-        if duplicates > 0 {
-            return Err(DbError::DuplicateName(connection.name).into());
-        }
-
         let txn = self.db.begin().await?;
         let model = connection::ActiveModel {
-            name: Set(connection.name),
+            name: Set(connection.name.clone()),
             kind: Set(connection.kind),
             host: Set(normalize_host(&connection.host)),
             identity: Set(connection.identity),
@@ -106,7 +97,11 @@ impl Nirvana {
             ..Default::default()
         }
         .insert(&txn)
-        .await?;
+        .await
+        .map_err(|e| match e.sql_err() {
+            Some(SqlErr::UniqueConstraintViolation(_)) => DbError::DuplicateName(connection.name),
+            _ => e.into(),
+        })?;
         credential::ActiveModel {
             connection_id: Set(model.id),
             credential: Set(connection.token),
@@ -200,4 +195,32 @@ fn normalize_host(url: &str) -> String {
     let s = s.strip_prefix("http://").unwrap_or(s);
     let s = s.strip_suffix('/').unwrap_or(s);
     s.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::service::test_support::test_api;
+
+    #[tokio::test]
+    async fn rejects_duplicate_connection_name() {
+        let api = test_api().await;
+
+        let result = api
+            .add_connection(ConnectionData {
+                name: "Test Jira".to_string(),
+                kind: "jira-cloud".to_string(),
+                host: "https://other.atlassian.net".to_string(),
+                identity: "tester@example.com".to_string(),
+                secret_store: "plaintext".to_string(),
+                token: "token".to_string(),
+            })
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(NirvanaError::Db(DbError::DuplicateName(name))) if name == "Test Jira"
+        ));
+        assert_eq!(api.list_connections().await.unwrap().len(), 1);
+    }
 }

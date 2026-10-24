@@ -80,7 +80,7 @@ logged from the start.
 - [x] Add uuid to slots (needed for idempotent publishing to portal).
 - [ ] Check entity attributes match the schema: ids use
       `auto_increment = false` on rowid primary keys.
-- [ ] Check the duplicate connection name inside the insert transaction,
+- [x] Check the duplicate connection name inside the insert transaction,
       backed by a unique index so concurrent adds cannot create duplicates.
 - [x] Add publish entries table (slot_id, connection_id, published_at, error)
       with slot link - covers multiple targets and per log errors. Published

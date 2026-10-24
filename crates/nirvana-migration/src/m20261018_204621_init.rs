@@ -19,47 +19,38 @@ impl MigrationTrait for Migration {
             return Ok(());
         }
 
-        manager
-            .create_table(
-                Table::create()
-                    .table("connections")
-                    .col(ColumnDef::new("id").integer().primary_key())
-                    .col(text("name"))
-                    .col(text("kind"))
-                    .col(text("host"))
-                    .col(text("identity"))
-                    .col(text("secret_store").default("keyring"))
-                    .col(integer("created_at"))
-                    .col(integer("updated_at"))
-                    .to_owned(),
-            )
-            .await?;
+        let stmt = Table::create()
+            .table("connections")
+            .col(ColumnDef::new("id").integer().primary_key())
+            .col(text("name"))
+            .col(text("kind"))
+            .col(text("host"))
+            .col(text("identity"))
+            .col(text("secret_store").default("keyring"))
+            .col(integer("created_at"))
+            .col(integer("updated_at"))
+            .to_owned();
+        manager.create_table(stmt).await?;
 
-        manager
-            .create_index(
-                Index::create()
-                    .name("connections_by_name")
-                    .table("connections")
-                    .col("name")
-                    .to_owned(),
-            )
-            .await?;
+        let stmt = Index::create()
+            .name("connections_by_name")
+            .table("connections")
+            .col("name")
+            .to_owned();
+        manager.create_index(stmt).await?;
 
-        manager
-            .create_table(
-                Table::create()
-                    .table("credentials")
-                    .col(integer("connection_id"))
-                    .col(text("credential"))
-                    .primary_key(Index::create().col("connection_id"))
-                    .foreign_key(
-                        ForeignKey::create()
-                            .from("credentials", "connection_id")
-                            .to("connections", "id")
-                            .on_delete(ForeignKeyAction::Cascade),
-                    )
-                    .to_owned(),
+        let stmt = Table::create()
+            .table("credentials")
+            .col(integer("connection_id"))
+            .col(text("credential"))
+            .primary_key(Index::create().col("connection_id"))
+            .foreign_key(
+                ForeignKey::create()
+                    .from("credentials", "connection_id")
+                    .to("connections", "id")
+                    .on_delete(ForeignKeyAction::Cascade),
             )
-            .await
+            .to_owned();
+        manager.create_table(stmt).await
     }
 }

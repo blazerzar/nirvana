@@ -5,6 +5,8 @@ mod info;
 mod publish;
 mod settings;
 mod slots;
+#[cfg(test)]
+mod test_support;
 mod tracking;
 
 use std::path::PathBuf;

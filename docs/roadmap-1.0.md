@@ -92,16 +92,12 @@ logged from the start.
       nullable connection_id, no unique key besides id, deleting a profile
       cascades.
 - [x] Remove note column (decide if notes get exported first).
-- [ ] Add DB migration tests: fixture DB created by 0.3.0-alpha (connections,
+- [x] Add DB migration tests: fixture DB created by 0.3.0-alpha (connections,
       credentials, tickets, slots incl. running and published) migrates
       correctly to the new schema without data loss. A fresh DB ends with the
       same schema as a migrated one. A backup is created. Baseline
       migrations are skipped for user_version 2 and recorded as applied.
-- [ ] Add service tests removed while porting to SeaORM: deleting a
-      connection removes its credentials, deleting a connection with history
-      is blocked, the next connection becomes active or none is left, an
-      unknown id is rejected.
-- [ ] Keep these fixtures in the repo and run them in CI so every future
+- [x] Keep these fixtures in the repo and run them in CI so every future
       migration is tested against today's data.
 
 ## Config

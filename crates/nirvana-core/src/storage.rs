@@ -253,6 +253,135 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn migrated_030_running_slot_keeps_running() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = migrate_fixture(dir.path()).await;
+
+        let running = |schema: &str| {
+            format!("select cast(id as text) from {schema}.slots where stopped_at is null")
+        };
+        let old_running = text_rows(&db, &running("old")).await;
+        assert_eq!(old_running.len(), 1);
+        assert_eq!(text_rows(&db, &running("main")).await, old_running);
+    }
+
+    #[tokio::test]
+    async fn migrating_030_db_backs_it_up_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = migrate_fixture(dir.path()).await;
+
+        let backups: Vec<_> = std::fs::read_dir(dir.path().join("backup"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        assert_eq!(backups.len(), 1);
+        let backup = &backups[0];
+        let name = backup.file_name().unwrap().to_str().unwrap();
+        assert!(name.starts_with("nirvana.db.") && name.ends_with(".bak"));
+
+        db.execute_unprepared(&format!("attach '{}' as bak", backup.display()))
+            .await
+            .unwrap();
+        let user_version: i32 = db
+            .query_one_raw(Statement::from_string(
+                DbBackend::Sqlite,
+                "pragma bak.user_version",
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get_by_index(0)
+            .unwrap();
+        assert_eq!(user_version, 2);
+        let schema_sql = |schema: &str| {
+            format!("select sql from {schema}.sqlite_master where sql is not null order by name")
+        };
+        assert_eq!(
+            text_rows(&db, &schema_sql("bak")).await,
+            text_rows(&db, &schema_sql("old")).await
+        );
+        for table in text_rows(
+            &db,
+            "select name from old.sqlite_master where type = 'table'",
+        )
+        .await
+        {
+            let count =
+                |schema: &str| format!("select cast(count(*) as text) from {schema}.{table}");
+            assert_eq!(
+                text_rows(&db, &count("bak")).await,
+                text_rows(&db, &count("old")).await
+            );
+            assert_eq!(
+                text_rows(
+                    &db,
+                    &format!(
+                        "select cast(count(*) as text) from
+                             (select * from bak.{table} except select * from old.{table})"
+                    )
+                )
+                .await,
+                ["0"],
+                "{table} rows differ in backup"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn fresh_db_is_not_backed_up() {
+        let dir = tempfile::tempdir().unwrap();
+        open(&dir.path().join("nirvana.db")).await.unwrap();
+        assert!(!dir.path().join("backup").exists());
+    }
+
+    #[tokio::test]
+    async fn reopening_migrated_db_skips_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = migrate_fixture(dir.path()).await;
+        db.close().await.unwrap();
+        open(&dir.path().join("nirvana.db")).await.unwrap();
+        assert_eq!(
+            std::fs::read_dir(dir.path().join("backup"))
+                .unwrap()
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn migrated_030_db_skips_baselines_and_records_them_as_applied() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = migrate_fixture(dir.path()).await;
+
+        let credentials_sql = |schema: &str| {
+            format!("select sql from {schema}.sqlite_master where name = 'credentials'")
+        };
+        assert_eq!(
+            text_rows(&db, &credentials_sql("main")).await,
+            text_rows(&db, &credentials_sql("old")).await
+        );
+
+        let names: Vec<String> = Migrator::migrations()
+            .iter()
+            .map(|migration| migration.name().to_string())
+            .collect();
+        assert_eq!(
+            text_rows(
+                &db,
+                "select version from main.seaql_migrations order by version"
+            )
+            .await,
+            names
+        );
+        assert!(
+            Migrator::get_pending_migrations(&db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
     /// Runs `sql` on a copy of the 0.3 fixture, then returns the migration error.
     async fn migrate_changed_fixture(sql: &str) -> String {
         let dir = tempfile::tempdir().unwrap();

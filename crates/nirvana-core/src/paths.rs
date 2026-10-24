@@ -30,8 +30,8 @@
 //! Each directory can be overridden with `NIRVANA_CONFIG_DIR`,
 //! `NIRVANA_DATA_DIR` and `NIRVANA_LOG_DIR`.
 
-use std::env;
 use std::path::PathBuf;
+use std::{env, io};
 
 use directories::ProjectDirs;
 
@@ -54,24 +54,24 @@ impl AppPaths {
     /// Reads `NIRVANA_DEV` and, in release mode, the `NIRVANA_*_DIR`
     /// overrides. Empty values are ignored. Directories are not created.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the platform directories or the current executable path
-    /// cannot be determined.
-    pub fn resolve() -> Self {
+    /// Returns an error if the platform directories or the current executable
+    /// path cannot be determined.
+    pub fn resolve() -> io::Result<Self> {
         Self::resolve_with(|key| env::var(key).ok())
     }
 
-    fn resolve_with(var: impl Fn(&str) -> Option<String>) -> Self {
+    fn resolve_with(var: impl Fn(&str) -> Option<String>) -> io::Result<Self> {
         let var = |key: &str| var(key).filter(|value| !value.is_empty());
         let is_dev = Self::is_dev_mode(&var);
 
         let (config_dir, data_dir, log_dir) = if is_dev {
-            let exe_dir = Self::exe_dir();
+            let exe_dir = Self::exe_dir()?;
             (exe_dir.clone(), exe_dir.clone(), exe_dir.clone())
         } else {
             let dirs = ProjectDirs::from("", "", "nirvana")
-                .expect("failed to determine platform directories");
+                .ok_or_else(|| not_found("failed to determine platform directories"))?;
             (
                 var("NIRVANA_CONFIG_DIR")
                     .map(PathBuf::from)
@@ -81,7 +81,7 @@ impl AppPaths {
                     .unwrap_or_else(|| dirs.data_dir().to_path_buf()),
                 var("NIRVANA_LOG_DIR")
                     .map(PathBuf::from)
-                    .unwrap_or_else(|| Self::platform_log_dir(&dirs)),
+                    .map_or_else(|| Self::platform_log_dir(&dirs), Ok)?,
             )
         };
 
@@ -89,7 +89,7 @@ impl AppPaths {
         let db_file = data_dir.join("nirvana.db");
         let log_file = log_dir.join("nirvana.log");
 
-        Self {
+        Ok(Self {
             config_dir,
             data_dir,
             log_dir,
@@ -97,7 +97,7 @@ impl AppPaths {
             db_file,
             log_file,
             is_dev,
-        }
+        })
     }
 
     /// When in debug mode or overwritten using NIRVANA_DEV env var.
@@ -109,30 +109,36 @@ impl AppPaths {
         }
     }
 
-    fn exe_dir() -> PathBuf {
-        env::current_exe()
-            .expect("failed to get current exe path")
+    fn exe_dir() -> io::Result<PathBuf> {
+        let exe = env::current_exe()?;
+        let dir = exe
             .parent()
-            .expect("exe has no parent directory")
-            .to_path_buf()
+            .ok_or_else(|| not_found("exe has no parent directory"))?;
+        Ok(dir.to_path_buf())
     }
 
     #[cfg(target_os = "macos")]
-    fn platform_log_dir(dirs: &ProjectDirs) -> PathBuf {
-        directories::BaseDirs::new()
-            .expect("failed to determine home directory")
+    fn platform_log_dir(dirs: &ProjectDirs) -> io::Result<PathBuf> {
+        let base_dirs = directories::BaseDirs::new()
+            .ok_or_else(|| not_found("failed to determine home directory"))?;
+        Ok(base_dirs
             .home_dir()
             .join("Library/Logs")
-            .join(dirs.project_path())
+            .join(dirs.project_path()))
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn platform_log_dir(dirs: &ProjectDirs) -> PathBuf {
+    fn platform_log_dir(dirs: &ProjectDirs) -> io::Result<PathBuf> {
         // Windows has no state dir and falls back to %LOCALAPPDATA%
-        dirs.state_dir()
+        Ok(dirs
+            .state_dir()
             .unwrap_or_else(|| dirs.data_local_dir())
-            .to_path_buf()
+            .to_path_buf())
     }
+}
+
+fn not_found(message: &str) -> io::Error {
+    io::Error::new(io::ErrorKind::NotFound, message)
 }
 
 #[cfg(test)]
@@ -172,8 +178,8 @@ mod tests {
 
     #[test]
     fn dev_mode_places_files_next_to_executable() {
-        let paths = AppPaths::resolve_with(env(&[("NIRVANA_DEV", "1")]));
-        let exe_dir = AppPaths::exe_dir();
+        let paths = AppPaths::resolve_with(env(&[("NIRVANA_DEV", "1")])).unwrap();
+        let exe_dir = AppPaths::exe_dir().unwrap();
 
         assert!(paths.is_dev);
         assert_eq!(paths.config_dir, exe_dir);
@@ -191,8 +197,9 @@ mod tests {
             ("NIRVANA_CONFIG_DIR", "/override/config"),
             ("NIRVANA_DATA_DIR", "/override/data"),
             ("NIRVANA_LOG_DIR", "/override/log"),
-        ]));
-        let exe_dir = AppPaths::exe_dir();
+        ]))
+        .unwrap();
+        let exe_dir = AppPaths::exe_dir().unwrap();
 
         assert_eq!(paths.config_dir, exe_dir);
         assert_eq!(paths.data_dir, exe_dir);
@@ -201,7 +208,7 @@ mod tests {
 
     #[test]
     fn release_mode_uses_platform_dirs() {
-        let paths = AppPaths::resolve_with(env(&[("NIRVANA_DEV", "0")]));
+        let paths = AppPaths::resolve_with(env(&[("NIRVANA_DEV", "0")])).unwrap();
         let dirs = platform_dirs();
 
         assert!(!paths.is_dev);
@@ -215,7 +222,7 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     fn release_mode_logs_to_library_logs_on_macos() {
-        let paths = AppPaths::resolve_with(env(&[("NIRVANA_DEV", "0")]));
+        let paths = AppPaths::resolve_with(env(&[("NIRVANA_DEV", "0")])).unwrap();
         let home = PathBuf::from(env::var("HOME").unwrap());
 
         assert_eq!(paths.log_dir, home.join("Library/Logs/nirvana"));
@@ -224,7 +231,7 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn release_mode_logs_to_state_dir_on_linux() {
-        let paths = AppPaths::resolve_with(env(&[("NIRVANA_DEV", "0")]));
+        let paths = AppPaths::resolve_with(env(&[("NIRVANA_DEV", "0")])).unwrap();
         let state_home = env::var("XDG_STATE_HOME")
             .ok()
             .filter(|dir| dir.starts_with('/'))
@@ -237,7 +244,7 @@ mod tests {
     #[test]
     #[cfg(target_os = "windows")]
     fn release_mode_logs_to_local_app_data_on_windows() {
-        let paths = AppPaths::resolve_with(env(&[("NIRVANA_DEV", "0")]));
+        let paths = AppPaths::resolve_with(env(&[("NIRVANA_DEV", "0")])).unwrap();
         let local_app_data = PathBuf::from(env::var("LOCALAPPDATA").unwrap());
 
         assert_eq!(paths.log_dir, local_app_data.join("nirvana").join("data"));
@@ -250,7 +257,8 @@ mod tests {
             ("NIRVANA_CONFIG_DIR", "/override/config"),
             ("NIRVANA_DATA_DIR", "/override/data"),
             ("NIRVANA_LOG_DIR", "/override/log"),
-        ]));
+        ]))
+        .unwrap();
 
         assert_eq!(paths.config_dir, PathBuf::from("/override/config"));
         assert_eq!(paths.data_dir, PathBuf::from("/override/data"));
@@ -270,8 +278,9 @@ mod tests {
             ("NIRVANA_CONFIG_DIR", ""),
             ("NIRVANA_DATA_DIR", ""),
             ("NIRVANA_LOG_DIR", ""),
-        ]));
-        let defaults = AppPaths::resolve_with(env(&[("NIRVANA_DEV", "0")]));
+        ]))
+        .unwrap();
+        let defaults = AppPaths::resolve_with(env(&[("NIRVANA_DEV", "0")])).unwrap();
 
         assert_eq!(paths.config_dir, defaults.config_dir);
         assert_eq!(paths.data_dir, defaults.data_dir);

@@ -1,28 +1,29 @@
 use chrono::{Local, TimeZone};
 use console::style;
-use dialoguer::{FuzzySelect, Input, theme::ColorfulTheme};
-use nirvana_core::api::NirvanaApi;
+use dialoguer::theme::ColorfulTheme;
+use dialoguer::{FuzzySelect, Input};
+use nirvana_core::service::Nirvana;
 
 use crate::cli::StartArgs;
 
-pub(crate) fn run(args: StartArgs) -> anyhow::Result<()> {
-    let api = NirvanaApi::new()?;
+pub(crate) async fn run(args: StartArgs) -> anyhow::Result<()> {
+    let api = Nirvana::new().await?;
 
-    let (ticket, at, note) = match args.ticket {
-        Some(ticket) => (ticket, args.at, args.note),
-        None => interactive_prompt(&api)?,
+    let (ticket, at) = match args.ticket {
+        Some(ticket) => (ticket, args.at),
+        None => interactive_prompt(&api).await?,
     };
 
     let at_ts = at.as_deref().map(parse_time).transpose()?;
 
-    let slot = api.start_slot(&ticket, at_ts, note.as_deref())?;
+    let (slot, ticket) = api.start_slot(&ticket, at_ts).await?;
     let time = format_timestamp(slot.started_at);
 
     println!(
         "{} {} {} {} {}",
         style("Started").green().bold(),
-        style(&slot.ticket_key).bold(),
-        style(slot.summary.as_deref().unwrap_or("")).dim(),
+        style(&ticket.ticket_key).bold(),
+        style(ticket.title.as_deref().unwrap_or("")).dim(),
         style("at").white(),
         time,
     );
@@ -30,15 +31,13 @@ pub(crate) fn run(args: StartArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn interactive_prompt(
-    api: &NirvanaApi,
-) -> anyhow::Result<(String, Option<String>, Option<String>)> {
+async fn interactive_prompt(api: &Nirvana) -> anyhow::Result<(String, Option<String>)> {
     let theme = ColorfulTheme {
         active_item_prefix: console::Style::new().green().apply_to(String::from("❯")),
         ..ColorfulTheme::default()
     };
 
-    let tickets = api.list_recent_tickets()?;
+    let tickets = api.list_recent_tickets().await?;
 
     let ticket = if tickets.is_empty() {
         Input::with_theme(&theme)
@@ -47,7 +46,7 @@ fn interactive_prompt(
     } else {
         let items: Vec<String> = tickets
             .iter()
-            .map(|t| match &t.summary {
+            .map(|t| match &t.title {
                 Some(s) => format!("{}  {}", t.ticket_key, s),
                 None => t.ticket_key.clone(),
             })
@@ -74,14 +73,7 @@ fn interactive_prompt(
         .interact_text()?;
     let at = if at.is_empty() { None } else { Some(at) };
 
-    let note: String = Input::with_theme(&theme)
-        .with_prompt("Note")
-        .default(String::new())
-        .allow_empty(true)
-        .interact_text()?;
-    let note = if note.is_empty() { None } else { Some(note) };
-
-    Ok((ticket, at, note))
+    Ok((ticket, at))
 }
 
 fn format_timestamp(ts: i64) -> String {

@@ -8,10 +8,11 @@ mod start;
 mod stop;
 mod time;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
-use nirvana_core::api::domain::Change;
 use std::fmt;
 use std::fmt::Display;
+
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use nirvana_core::domain::Change;
 pub(crate) use time::parse_time;
 use tracing::debug;
 
@@ -57,9 +58,6 @@ struct StartArgs {
     /// Start time (e.g. "14:30" or "2026-05-19 14:30"). Requires ticket.
     #[arg(long, requires = "ticket")]
     at: Option<String>,
-    /// Note attached to this slot. Requires ticket.
-    #[arg(long, requires = "ticket")]
-    note: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -76,9 +74,6 @@ struct EditArgs {
     /// Move the slot to a different ticket key
     #[arg(long)]
     ticket: Option<String>,
-    /// Set or clear the note (use empty string to clear)
-    #[arg(long)]
-    note: Option<String>,
     /// Set the start time (e.g. "14:30" or "2026-05-19 14:30")
     #[arg(long)]
     start: Option<String>,
@@ -181,7 +176,7 @@ impl Display for SecretStore {
     }
 }
 
-pub(crate) fn run() -> anyhow::Result<()> {
+pub(crate) async fn run() -> anyhow::Result<()> {
     let args: Vec<_> = std::env::args_os()
         .skip(1)
         .map(|arg| arg.to_string_lossy().into_owned())
@@ -191,15 +186,10 @@ pub(crate) fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Command::Info) => info::run(),
-        Some(Command::Start(args)) => start::run(args),
-        Some(Command::Stop(args)) => stop::run(args),
+        Some(Command::Info) => info::run().await,
+        Some(Command::Start(args)) => start::run(args).await,
+        Some(Command::Stop(args)) => stop::run(args).await,
         Some(Command::Edit(args)) => {
-            let note = match args.note {
-                None => Change::Skip,
-                Some(s) if s.is_empty() => Change::Clear,
-                Some(s) => Change::Set(s),
-            };
             let started_at = args.start.as_deref().map(parse_time).transpose()?;
             let stopped_at = match &args.stop {
                 None => Change::Skip,
@@ -209,21 +199,24 @@ pub(crate) fn run() -> anyhow::Result<()> {
             edit::run(edit::EditArgs {
                 slot_id: args.slot_id,
                 ticket_key: args.ticket,
-                note,
                 started_at,
                 stopped_at,
             })
+            .await
         }
-        Some(Command::Delete(args)) => delete::run(delete::DeleteArgs {
-            slot_id: args.slot_id,
-        }),
-        Some(Command::List(args)) => list::run(args),
-        Some(Command::Publish(args)) => publish::run(args),
+        Some(Command::Delete(args)) => {
+            delete::run(delete::DeleteArgs {
+                slot_id: args.slot_id,
+            })
+            .await
+        }
+        Some(Command::List(args)) => list::run(args).await,
+        Some(Command::Publish(args)) => publish::run(args).await,
         Some(Command::Connection { command }) => match command {
-            Connection::Add(args) => connection::add(args),
-            Connection::List => connection::list(),
-            Connection::Use { query } => connection::activate(query.as_deref()),
-            Connection::Test => connection::test(),
+            Connection::Add(args) => connection::add(args).await,
+            Connection::List => connection::list().await,
+            Connection::Use { query } => connection::activate(query.as_deref()).await,
+            Connection::Test => connection::test().await,
         },
         None => Ok(()),
     }

@@ -59,44 +59,79 @@ logged from the start.
 
 ## Database
 
-- [ ] Back up the DB and config.toml before running migrations.
-- [ ] Make core async (tokio, async reqwest).
-- [ ] Add SeaORM.
-- [ ] Bridge existing user_version migrations (v1, v2) into SeaORM baseline
-      that detects 0.3 DB.
-- [ ] Add profiles table - single DB, existing data becomes one profile with
-      all connections.
-- [ ] Add settings to connections - publish and squash columns, replacing
-      global publish_squashed_worklogs.
-- [ ] Add profile settings (week start, time format, workday, expected hours,
-      weekends, portal toggle + url).
-- [ ] Add uuid to slots (needed for idempotent publishing to portal).
-- [ ] Add publish entries table (target, remote id, status, error) with slot
-      link - covers worklog id, multiple targets and per log errors.
-- [ ] Migrate config.toml: active connection obsolete, squash flag into
-      connections, machine settings for desktop app.
-- [ ] Remove note column (decide if notes get exported first).
-- [ ] Add DB migration tests: fixture DB created by 0.3.0-alpha (connections,
+- [x] Capture 0.3.0-alpha fixtures: build the `v0.3.0-alpha` tag and create a
+      DB (connections, plaintext credentials, tickets, closed, running and
+      published slots, notes) and config.toml files (0.1 flat and 0.3
+      sectioned). Check them into the repo, never edit them.
+- [x] Make core async (tokio, async reqwest).
+- [x] Add SeaORM and replace the raw SQL migration files with SeaORM
+      migrations (0001 and 0002 rewritten as the baseline).
+- [x] Adopt <= 0.3.0-alpha DBs: baseline migrations skip their work when
+      user_version is 2 (every released 0.x DB). Back up the DB
+      to `data_dir/backup` with `VACUUM INTO` before applying pending
+      migrations. Log every step.
+- [x] Add profiles table - single DB, existing data becomes one profile with
+      all connections. Add profile_id to connections, unique name per profile.
+      Deleting a profile cascades to its connections and tickets.
+- [x] Add settings to connections - a settings table per connection kind
+      (`jira_settings` with publish and squash), replacing global
+      publish_squashed_worklogs. Credentials table and secret_store stay
+      (plaintext support).
+- [x] Add uuid to slots (needed for idempotent publishing to portal).
+- [x] Check entity attributes match the schema: ids use
+      `auto_increment = false` on rowid primary keys.
+- [x] Check the duplicate connection name inside the insert transaction,
+      backed by a unique index so concurrent adds cannot create duplicates.
+- [x] Add publish entries table (slot_id, connection_id, published_at, error)
+      with slot link - covers multiple targets and per log errors. Published
+      slots get a synthetic ok entry, then drop published_at.
+- [x] Slots: add profile_id (deleting a profile cascades), drop
+      connection_id (check it matches the ticket's first), one running slot
+      per profile.
+- [x] Tickets: add profile_id, title (from summary), synced_at,
+      nullable connection_id, no unique key besides id, deleting a profile
+      cascades.
+- [x] Remove note column (decide if notes get exported first).
+- [x] Add DB migration tests: fixture DB created by 0.3.0-alpha (connections,
       credentials, tickets, slots incl. running and published) migrates
-      correctly to the new schema without data loss.
-- [ ] Add config migration tests: legacy flat and 0.3.0-alpha sectioned
-      config.toml fixtures migrate correctly (squash flag into connections,
-      active connection dropped, machine settings kept).
-- [ ] Keep these fixtures in the repo and run them in CI so every future
+      correctly to the new schema without data loss. A fresh DB ends with the
+      same schema as a migrated one. A backup is created. Baseline
+      migrations are skipped for user_version 2 and recorded as applied.
+- [x] Keep these fixtures in the repo and run them in CI so every future
       migration is tested against today's data.
-- [ ] Check if we need SQL formatter (without bringing back Node).
+
+## Config
+
+- [ ] Move config into a `config/` module with one file per old format (0.1
+      flat, 0.3 sectioned). Each only parses TOML and returns the latest
+      config interface.
+- [ ] Detect an old config.toml (0.1 flat or schema_version 1), back it up to
+      `data_dir/backup` and migrate. Log every step.
+- [ ] Fail on parse errors instead of falling back to defaults and
+      overwriting the config.
+- [ ] Bump schema_version to 2, one migration step per version.
+- [ ] Replace active_connection with active profile.
+- [x] Remove publish_squashed_worklogs (moved into connections).
+- [ ] Add `[log] level`.
+- [ ] Add config migration tests: 0.1 flat and 0.3.0-alpha sectioned
+      config.toml fixtures migrate correctly (active connection dropped,
+      machine settings kept).
 
 ## Keychain
 
 - [ ] Add support for storing connection tokens in keychain (keyring crate).
 - [ ] Support macOS, Windows and Linux.
+- [ ] Keep plaintext credentials supported (needed on Linux for now).
 - [ ] Migrate plaintext tokens from credentials table into keyring and delete them.
 - [ ] Env override NIRVANA_TOKEN_<NAME> for CI and headless use.
 
 ## Tickets
 
 - [ ] Make sure start, stop, resume, switch, edit, delete are working and tested.
+- [ ] Add `nirvana profile add` - a fresh DB has no profile, so connections
+      cannot be added until one is created.
 - [ ] Get these commands working in CLI and start integration testing as well.
+- [ ] Check for blocking calls inside async code while refactoring the CLI.
 - [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
       through the public API).
 - [ ] Add e2e tests for nirvana (run the built binary).
@@ -104,6 +139,9 @@ logged from the start.
       connections (proposal in the implementation guide).
 - [ ] Let's update ticket name and description when interacting with it (async).
 - [ ] Validate overlaps on edit; published slots are read-only.
+- [ ] Validate overlaps on start with `--at` - a backdated start must not
+      cover closed or published slots (only manual create checks today).
+- [ ] Stop the running slot and start the new one in a single transaction.
 
 ## Linear
 
@@ -112,6 +150,8 @@ logged from the start.
 - [ ] Add Linear integration - GraphQL, ticket name + description, workspace
       and user detected from key.
 - [ ] Publish time to Linear as issue comment.
+- [ ] Build HTTP clients with `reqwest::Client::builder()` (timeout set on the
+      client instead of per request).
 
 ## Publishing
 
@@ -132,6 +172,8 @@ logged from the start.
 
 - [ ] Check if we should rework the API interface of the core.
 - [ ] The same goes for DB and config API.
+- [ ] Return the issue URL from core with slots, so frontends do not fetch
+      the active connection and build it themselves.
 - [ ] Separate profile settings from machine settings.
 - [ ] Export logs to CSV and JSON.
 - [ ] Connection health checks (ping every 60 s, latency, auth status).
@@ -174,6 +216,9 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [ ] Global shortcuts, launch at login, close to menu bar.
 - [ ] Idle detection (take from main), not tracking reminder.
 - [ ] GUI will have its own settings that are related to the GUI application.
+- [ ] Migrate `[gui]` and `[idle]` to desktop settings: remove unused keys
+      (font_scale, show_tray_icon), map old themes to light / dark / system
+      (new schema_version, backup, migration tests).
 - [ ] Log to stdout when running the GUI with cargo run.
 
 ## Webserver

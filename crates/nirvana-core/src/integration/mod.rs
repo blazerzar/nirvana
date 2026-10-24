@@ -1,8 +1,9 @@
 pub(crate) mod jira;
 
-use crate::api::domain::Connection;
 use jira::JiraIntegration;
 use thiserror::Error;
+
+use crate::domain::{Connection, ConnectionKind};
 
 #[derive(Debug, Error)]
 pub enum IntegrationError {
@@ -12,8 +13,6 @@ pub enum IntegrationError {
     TicketNotFound(String),
     #[error("authentication failed: {0}")]
     Auth(String),
-    #[error("unsupported connection kind: {0}")]
-    UnsupportedKind(String),
 }
 
 pub(crate) struct IssueInfo {
@@ -29,19 +28,16 @@ pub(crate) struct Integration {
 }
 
 impl Integration {
-    pub fn build_for_url(connection: &Connection) -> Result<Integration, IntegrationError> {
-        let kind = match connection.kind.as_str() {
-            "jira-cloud" => IntegrationKind::Jira(JiraIntegration::new_unauthenticated(
-                &connection.host,
-                "jira-cloud",
-            )),
-            "jira-dc" => IntegrationKind::Jira(JiraIntegration::new_unauthenticated(
-                &connection.host,
-                "jira-dc",
-            )),
-            _ => return Err(IntegrationError::UnsupportedKind(connection.kind.clone())),
+    pub fn build_for_url(connection: &Connection) -> Integration {
+        let kind = match &connection.kind {
+            ConnectionKind::JiraCloud(_) | ConnectionKind::JiraDc(_) => {
+                IntegrationKind::Jira(JiraIntegration::new_unauthenticated(
+                    &connection.model.host,
+                    connection.kind.as_str(),
+                ))
+            }
         };
-        Ok(Integration { kind })
+        Integration { kind }
     }
 
     pub fn get_issue_link(&self, ticket_key: &str) -> String {
@@ -50,48 +46,40 @@ impl Integration {
         }
     }
 
-    pub fn test_connection(&self) -> Result<(), IntegrationError> {
+    pub async fn test_connection(&self) -> Result<(), IntegrationError> {
         match &self.kind {
-            IntegrationKind::Jira(j) => j.test_connection(),
+            IntegrationKind::Jira(j) => j.test_connection().await,
         }
     }
 
-    pub fn fetch_issue(&self, ticket_key: &str) -> Result<IssueInfo, IntegrationError> {
+    pub async fn fetch_issue(&self, ticket_key: &str) -> Result<IssueInfo, IntegrationError> {
         match &self.kind {
-            IntegrationKind::Jira(j) => j.fetch_issue(ticket_key),
+            IntegrationKind::Jira(j) => j.fetch_issue(ticket_key).await,
         }
     }
 
-    pub fn publish_slot(
+    pub async fn publish_slot(
         &self,
         ticket_key: &str,
         started_at: i64,
         seconds: i64,
     ) -> Result<(), IntegrationError> {
         match &self.kind {
-            IntegrationKind::Jira(j) => j.publish_slot(ticket_key, started_at, seconds),
+            IntegrationKind::Jira(j) => j.publish_slot(ticket_key, started_at, seconds).await,
         }
     }
 }
 
-pub(crate) fn build_integration(
-    connection: &Connection,
-    token: &str,
-) -> Result<Integration, IntegrationError> {
-    let kind = match connection.kind.as_str() {
-        "jira-cloud" => IntegrationKind::Jira(JiraIntegration::new(
-            &connection.host,
-            &connection.identity,
-            token,
-            "jira-cloud",
-        )),
-        "jira-dc" => IntegrationKind::Jira(JiraIntegration::new(
-            &connection.host,
-            &connection.identity,
-            token,
-            "jira-dc",
-        )),
-        _ => return Err(IntegrationError::UnsupportedKind(connection.kind.clone())),
+pub(crate) fn build_integration(connection: &Connection, token: &str) -> Integration {
+    let kind = match &connection.kind {
+        ConnectionKind::JiraCloud(_) | ConnectionKind::JiraDc(_) => {
+            IntegrationKind::Jira(JiraIntegration::new(
+                &connection.model.host,
+                &connection.model.identity,
+                token,
+                connection.kind.as_str(),
+            ))
+        }
     };
-    Ok(Integration { kind })
+    Integration { kind }
 }

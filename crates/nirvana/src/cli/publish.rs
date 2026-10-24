@@ -1,11 +1,11 @@
 use chrono::{Local, NaiveTime, TimeZone};
 use console::Term;
-use nirvana_core::api::NirvanaApi;
+use nirvana_core::service::Nirvana;
 
 use crate::cli::{PublishArgs, parse_time};
 
-pub(crate) fn run(args: PublishArgs) -> anyhow::Result<()> {
-    let api = NirvanaApi::new()?;
+pub(crate) async fn run(args: PublishArgs) -> anyhow::Result<()> {
+    let api = Nirvana::new().await?;
 
     let today = Local::now().date_naive();
     let from = args
@@ -21,7 +21,7 @@ pub(crate) fn run(args: PublishArgs) -> anyhow::Result<()> {
     let to = args.stop.as_deref().map(parse_time).transpose()?;
 
     let term = Term::stdout();
-    let result = api.publish(from, to)?;
+    let result = api.publish(from, to).await?;
 
     if result.published_count == 0 && result.failed.is_empty() {
         term.write_line("No unpublished slots found.")?;

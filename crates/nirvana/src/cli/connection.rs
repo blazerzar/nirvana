@@ -1,11 +1,14 @@
-use crate::cli::{AddArgs, ConnectionKind, SecretStore};
+use std::cmp::max;
+
 use chrono::{Local, TimeZone};
 use clap::ValueEnum;
 use console::{Style, Term};
-use dialoguer::{Input, Password, Select, theme::ColorfulTheme};
-use nirvana_core::api::NirvanaApi;
-use nirvana_core::api::domain::{Connection, ConnectionData};
-use std::cmp::max;
+use dialoguer::theme::ColorfulTheme;
+use dialoguer::{Input, Password, Select};
+use nirvana_core::domain::{Connection, ConnectionData};
+use nirvana_core::service::Nirvana;
+
+use crate::cli::{AddArgs, ConnectionKind, SecretStore};
 
 enum Column {
     Unlimited(&'static str),
@@ -59,9 +62,9 @@ const COLUMNS: &[Column] = &[
     Column::Static("UPDATED", "2026-05-17".len()),
 ];
 
-pub(crate) fn list() -> anyhow::Result<()> {
-    let api = NirvanaApi::new()?;
-    let connections = api.list_connections()?;
+pub(crate) async fn list() -> anyhow::Result<()> {
+    let api = Nirvana::new().await?;
+    let connections = api.list_connections().await?;
 
     let term = Term::stdout();
     if connections.is_empty() {
@@ -74,19 +77,19 @@ pub(crate) fn list() -> anyhow::Result<()> {
         .iter()
         .map(|c| {
             let updated = Local
-                .timestamp_opt(c.updated_at, 0)
+                .timestamp_opt(c.model.updated_at, 0)
                 .single()
                 .unwrap()
                 .date_naive()
                 .to_string();
             let active = if is_active(c, &api) { "*" } else { "" };
             [
-                c.id.to_string(),
+                c.model.id.to_string(),
                 active.to_string(),
-                c.name.clone(),
-                c.kind.clone(),
-                c.host.clone(),
-                c.identity.clone(),
+                c.model.name.clone(),
+                c.kind.as_str().to_string(),
+                c.model.host.clone(),
+                c.model.identity.clone(),
                 updated,
             ]
         })
@@ -116,8 +119,8 @@ pub(crate) fn list() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn is_active(conn: &Connection, api: &NirvanaApi) -> bool {
-    api.active_connection() == Some(conn.id)
+fn is_active(conn: &Connection, api: &Nirvana) -> bool {
+    api.active_connection() == Some(conn.model.id)
 }
 
 fn print_row(
@@ -150,9 +153,9 @@ fn print_row(
     Ok(())
 }
 
-pub(crate) fn activate(query: Option<&str>) -> anyhow::Result<()> {
-    let mut api = NirvanaApi::new()?;
-    let connections = api.list_connections()?;
+pub(crate) async fn activate(query: Option<&str>) -> anyhow::Result<()> {
+    let mut api = Nirvana::new().await?;
+    let connections = api.list_connections().await?;
 
     if connections.is_empty() {
         let term = Term::stdout();
@@ -167,22 +170,22 @@ pub(crate) fn activate(query: Option<&str>) -> anyhow::Result<()> {
     };
     let chosen = &connections[idx];
 
-    api.set_active_connection(chosen.id)?;
+    api.set_active_connection(chosen.model.id).await?;
     let term = Term::stdout();
     term.write_line(&format!(
         "Active connection set to '{}' (id {})",
-        chosen.name, chosen.id
+        chosen.model.name, chosen.model.id
     ))?;
     Ok(())
 }
 
 fn resolve_query(query: &str, connections: &[Connection]) -> anyhow::Result<usize> {
     if let Ok(id) = query.parse::<i64>()
-        && let Some(idx) = connections.iter().position(|c| c.id == id)
+        && let Some(idx) = connections.iter().position(|c| c.model.id == id)
     {
         return Ok(idx);
     }
-    if let Some(idx) = connections.iter().position(|c| c.name == query) {
+    if let Some(idx) = connections.iter().position(|c| c.model.name == query) {
         return Ok(idx);
     }
     anyhow::bail!("Connection '{query}' not found")
@@ -190,16 +193,20 @@ fn resolve_query(query: &str, connections: &[Connection]) -> anyhow::Result<usiz
 
 fn pick_interactive(connections: &[Connection]) -> anyhow::Result<usize> {
     let dim = Style::new().dim();
-    let name_width = connections.iter().map(|c| c.name.len()).max().unwrap_or(0);
+    let name_width = connections
+        .iter()
+        .map(|c| c.model.name.len())
+        .max()
+        .unwrap_or(0);
 
     let items: Vec<String> = connections
         .iter()
         .map(|c| {
             format!(
                 "{:name_w$}  {} {}",
-                c.name,
-                dim.apply_to(&c.identity),
-                dim.apply_to(format!("({})", c.kind)),
+                c.model.name,
+                dim.apply_to(&c.model.identity),
+                dim.apply_to(format!("({})", c.kind.as_str())),
                 name_w = name_width,
             )
         })
@@ -222,20 +229,20 @@ fn pick_interactive(connections: &[Connection]) -> anyhow::Result<usize> {
     }
 }
 
-pub(crate) fn add(args: AddArgs) -> anyhow::Result<()> {
+pub(crate) async fn add(args: AddArgs) -> anyhow::Result<()> {
     let data = if args.name.is_none() {
         add_interactive()?
     } else {
         add_command(args)?
     };
 
-    let mut api = NirvanaApi::new()?;
-    let connection = api.add_connection(data)?;
+    let mut api = Nirvana::new().await?;
+    let connection = api.add_connection(data).await?;
 
     let term = Term::stdout();
     term.write_line(&format!(
         "Added connection '{}' (id {})",
-        connection.name, connection.id
+        connection.model.name, connection.model.id
     ))?;
 
     let use_it = dialoguer::Confirm::new()
@@ -244,10 +251,10 @@ pub(crate) fn add(args: AddArgs) -> anyhow::Result<()> {
         .interact()?;
 
     if use_it {
-        api.set_active_connection(connection.id)?;
+        api.set_active_connection(connection.model.id).await?;
         term.write_line(&format!(
             "Active connection set to '{}' (id {})",
-            connection.name, connection.id
+            connection.model.name, connection.model.id
         ))?;
     }
 
@@ -362,11 +369,11 @@ fn add_interactive() -> anyhow::Result<ConnectionData> {
     })
 }
 
-pub(crate) fn test() -> anyhow::Result<()> {
-    let api = NirvanaApi::new()?;
+pub(crate) async fn test() -> anyhow::Result<()> {
+    let api = Nirvana::new().await?;
     let term = Term::stdout();
 
-    match api.test_connection() {
+    match api.test_connection().await {
         Ok(()) => term.write_line("Connection OK")?,
         Err(e) => return Err(e.into()),
     }

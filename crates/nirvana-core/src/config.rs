@@ -1,7 +1,10 @@
-use crate::paths::AppPaths;
+use std::fs;
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
 use thiserror::Error;
+
+use crate::paths::AppPaths;
 
 const CURRENT_SCHEMA_VERSION: i64 = 1;
 
@@ -19,8 +22,6 @@ pub enum ConfigError {
 pub(crate) struct CoreConfig {
     #[serde(default)]
     pub active_connection: Option<i64>,
-    #[serde(default = "default_publish_squashed_worklogs")]
-    pub publish_squashed_worklogs: bool,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -69,8 +70,6 @@ pub struct AppConfig {
 struct LegacyAppConfig {
     #[serde(default)]
     pub active_connection: Option<i64>,
-    #[serde(default = "default_publish_squashed_worklogs")]
-    pub publish_squashed_worklogs: bool,
     #[serde(default = "default_font_scale")]
     pub font_scale: f64,
     #[serde(default = "default_theme")]
@@ -83,7 +82,6 @@ impl From<LegacyAppConfig> for AppConfig {
             schema_version: Some(CURRENT_SCHEMA_VERSION),
             core: CoreConfig {
                 active_connection: legacy.active_connection,
-                publish_squashed_worklogs: legacy.publish_squashed_worklogs,
             },
             gui: GuiConfig {
                 font_scale: legacy.font_scale,
@@ -105,7 +103,6 @@ impl Default for AppConfig {
             schema_version: Some(CURRENT_SCHEMA_VERSION),
             core: CoreConfig {
                 active_connection: None,
-                publish_squashed_worklogs: default_publish_squashed_worklogs(),
             },
             gui: GuiConfig {
                 font_scale: default_font_scale(),
@@ -119,10 +116,6 @@ impl Default for AppConfig {
             },
         }
     }
-}
-
-fn default_publish_squashed_worklogs() -> bool {
-    true
 }
 
 fn default_font_scale() -> f64 {
@@ -217,9 +210,9 @@ impl AppConfig {
         Ok(())
     }
 
-    pub fn load_from_default_path() -> Self {
-        let paths = AppPaths::resolve();
-        Self::load(&paths.config_file).unwrap_or_default()
+    pub fn load_from_default_path() -> Result<Self, ConfigError> {
+        let paths = AppPaths::resolve()?;
+        Ok(Self::load(&paths.config_file).unwrap_or_default())
     }
 }
 
@@ -229,7 +222,6 @@ impl Clone for AppConfig {
             schema_version: self.schema_version,
             core: CoreConfig {
                 active_connection: self.core.active_connection,
-                publish_squashed_worklogs: self.core.publish_squashed_worklogs,
             },
             gui: GuiConfig {
                 font_scale: self.gui.font_scale,
@@ -248,13 +240,6 @@ impl Clone for AppConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn defaults_publish_squashed_worklogs_to_enabled() {
-        let config = AppConfig::parse("[core]\nactive_connection = 1\n").unwrap();
-
-        assert!(config.core.publish_squashed_worklogs);
-    }
 
     #[test]
     fn defaults_show_tray_icon_to_false() {
@@ -283,7 +268,6 @@ show_tray_icon = true
 
         assert_eq!(config.schema_version, Some(1));
         assert_eq!(config.core.active_connection, Some(42));
-        assert!(!config.core.publish_squashed_worklogs);
         assert!((config.gui.font_scale - 1.1).abs() < f64::EPSILON);
         assert_eq!(config.gui.theme, "soft-light");
         assert!(config.gui.show_tray_icon);
@@ -306,7 +290,6 @@ theme = "nirvana-dark"
 
         assert_eq!(config.schema_version, Some(CURRENT_SCHEMA_VERSION));
         assert_eq!(config.core.active_connection, Some(1));
-        assert!(!config.core.publish_squashed_worklogs);
         assert!((config.gui.font_scale - 1.2).abs() < f64::EPSILON);
         assert_eq!(config.gui.theme, "nirvana-dark");
         assert!(!config.gui.show_tray_icon);

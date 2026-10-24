@@ -1,7 +1,10 @@
-pub mod api;
 pub mod config;
-mod credentials;
+pub mod domain;
+pub mod errors;
 mod integration;
-pub mod logs;
+pub mod logging;
 mod paths;
+pub mod service;
 mod storage;
+
+pub use nirvana_entity as entity;

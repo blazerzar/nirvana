@@ -1,0 +1,43 @@
+erDiagram
+    connections {
+        bigint id PK
+        text name UK
+        text kind
+        text host
+        text identity
+        text secret_store
+        bigint created_at
+        bigint updated_at
+        bigint profile_id FK,UK
+    }
+    credentials {
+        bigint connection_id PK,FK
+        text credential
+    }
+    profiles {
+        bigint id PK
+        text name UK
+        bigint created_at
+        bigint updated_at
+    }
+    slots {
+        bigint id PK
+        bigint ticket_id FK
+        bigint connection_id FK
+        text note
+        bigint started_at
+        bigint stopped_at UK
+        bigint published_at
+    }
+    tickets {
+        bigint id PK
+        text ticket_key
+        text summary
+        bigint connection_id FK
+        bigint last_worked_at
+    }
+    connections }o--|| profiles : "profile_id"
+    credentials }o--|| connections : "connection_id"
+    slots }o--|| connections : "connection_id"
+    slots }o--|| tickets : "ticket_id"
+    tickets }o--|| connections : "connection_id"

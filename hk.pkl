@@ -8,7 +8,18 @@ local formatters = new Mapping<String, Step> {
   ["newlines"] = Builtins.newlines
   ["dprint"] = Builtins.dprint
   ["pkl-format"] = Builtins.pkl_format
-  ["cargo-fmt"] = Builtins.cargo_fmt
+  ["cargo-fmt"] = (Builtins.cargo_fmt) {
+    check {
+      command = "cargo +$RUSTFMT_TOOLCHAIN fmt --check --manifest-path {{workspace_indicator}}"
+    }
+    check_list_files {
+      command =
+        "cargo +$RUSTFMT_TOOLCHAIN fmt --check --manifest-path {{workspace_indicator}} -- --files-with-diff"
+    }
+    fix {
+      command = "cargo +$RUSTFMT_TOOLCHAIN fmt --manifest-path {{workspace_indicator}}"
+    }
+  }
 }
 
 local linters = new Mapping<String, Step> {

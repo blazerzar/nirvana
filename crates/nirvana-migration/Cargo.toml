@@ -1,0 +1,18 @@
+[package]
+name = "nirvana-migration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+tracing = "0.1.44"
+uuid = { version = "1.28.0", features = ["v4"] }
+
+[dependencies.sea-orm-migration]
+default-features = false
+features = [
+  "sqlx-sqlite",
+  "runtime-tokio",
+]
+version = "2.0.4"

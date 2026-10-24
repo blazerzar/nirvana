@@ -92,30 +92,41 @@ impl MigrationTrait for Migration {
         debug!("created publish_entries table");
 
         let columns = ["id", "ticket_id", "started_at", "stopped_at"];
-        let stmt = Query::select().column("id").from("slots").to_owned();
-        let ids = db.query_all(&stmt).await?;
-        for row in &ids {
-            let id: i64 = row.try_get_by_index(0)?;
-            let select = Query::select()
-                .columns(columns.map(|c| ("slots", c)))
-                .column(("tickets", "profile_id"))
-                .expr(Expr::val(Uuid::new_v4().as_bytes().to_vec()))
-                .from("slots")
-                .inner_join(
-                    "tickets",
-                    Expr::col(("slots", "ticket_id")).equals(("tickets", "id")),
-                )
-                .and_where(Expr::col(("slots", "id")).eq(id))
-                .to_owned();
-            let stmt = Query::insert()
+        let stmt = Query::select()
+            .columns(columns.map(|c| ("slots", c)))
+            .column(("tickets", "profile_id"))
+            .from("slots")
+            .inner_join(
+                "tickets",
+                Expr::col(("slots", "ticket_id")).equals(("tickets", "id")),
+            )
+            .to_owned();
+        let rows = db.query_all(&stmt).await?;
+        for chunk in rows.chunks(1000) {
+            let mut stmt = Query::insert()
                 .into_table("slots_new")
                 .columns(columns.into_iter().chain(["profile_id", "uuid"]))
-                .select_from(select)
-                .map_err(|e| DbErr::Migration(e.to_string()))?
                 .to_owned();
+            for row in chunk {
+                let (id, ticket_id, started_at, stopped_at, profile_id): (
+                    i64,
+                    i64,
+                    i64,
+                    Option<i64>,
+                    i64,
+                ) = row.try_get_many_by_index()?;
+                stmt.values_panic([
+                    id.into(),
+                    ticket_id.into(),
+                    started_at.into(),
+                    stopped_at.into(),
+                    profile_id.into(),
+                    Uuid::new_v4().as_bytes().to_vec().into(),
+                ]);
+            }
             db.execute(&stmt).await?;
         }
-        debug!("copied {} slots to slots_new with uuids", ids.len());
+        debug!("copied {} slots to slots_new with uuids", rows.len());
 
         let select = Query::select()
             .columns(["id", "connection_id", "published_at"])

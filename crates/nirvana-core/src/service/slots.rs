@@ -10,13 +10,12 @@ impl Nirvana {
     pub async fn get_running_slot(
         &self,
     ) -> Result<Option<(slot::Model, ticket::Model)>, NirvanaError> {
-        let Some(connection_id) = self.config.core.active_connection else {
+        let Some(connection) = self.get_active_connection().await? else {
             return Ok(None);
         };
 
-        let running = Slot::find_running()
+        let running = Slot::find_running(connection.model.profile_id)
             .find_also_related(ticket::Entity)
-            .filter(slot::COLUMN.connection_id.eq(connection_id))
             .one(&self.db)
             .await?;
 
@@ -36,7 +35,7 @@ impl Nirvana {
             .ok_or(TrackingError::NoActiveConnection)?;
 
         let query = Slot::find_with_ticket()
-            .filter(slot::COLUMN.connection_id.eq(connection_id))
+            .filter(ticket::COLUMN.connection_id.eq(connection_id))
             .filter(
                 slot::COLUMN
                     .stopped_at
@@ -69,7 +68,7 @@ impl Nirvana {
 
         let records = Slot::find_unpublished(connection_id)
             .find_also_related(ticket::Entity)
-            .filter(slot::COLUMN.connection_id.eq(connection_id))
+            .filter(ticket::COLUMN.connection_id.eq(connection_id))
             .filter(slot::COLUMN.started_at.gte(from))
             .apply_if(to, |q, to| q.filter(slot::COLUMN.started_at.lt(to)))
             .filter(slot::COLUMN.stopped_at.is_not_null())

@@ -67,14 +67,17 @@ impl Nirvana {
         }
 
         let next_ticket = if ticket_changed {
-            let connection = self.get_connection(current.connection_id).await?;
+            let connection_id = ticket
+                .connection_id
+                .ok_or_else(|| TrackingError::TicketHasNoConnection(ticket.ticket_key.clone()))?;
+            let connection = self.get_connection(connection_id).await?;
             let ticket_key = normalized_ticket_key.as_deref().unwrap_or_default();
             let last_worked_at =
                 effective_stopped.unwrap_or_else(|| chrono::Utc::now().timestamp());
             Some(
                 self.resolve_ticket_for_work(
                     &connection,
-                    current.connection_id,
+                    connection_id,
                     ticket_key,
                     last_worked_at,
                 )

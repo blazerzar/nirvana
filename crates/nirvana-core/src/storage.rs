@@ -4,7 +4,7 @@ use nirvana_migration::{Migrator, MigratorTrait};
 use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbErr, RuntimeErr, raw_sql};
 use thiserror::Error;
-use tracing::info;
+use tracing::{error, info};
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -48,7 +48,9 @@ pub(crate) async fn open(db_file: &Path) -> Result<DatabaseConnection, DbError> 
             let backup_path = backup(&db, db_file).await?;
             info!("db backed up to {}", backup_path.display());
         }
-        Migrator::up(&db, None).await?;
+        Migrator::up(&db, None)
+            .await
+            .inspect_err(|e| error!("db migration failed: {e}"))?;
         info!("db migration complete");
     }
 
@@ -80,7 +82,9 @@ async fn backup(db: &DatabaseConnection, db_file: &Path) -> Result<PathBuf, DbEr
 #[cfg(test)]
 mod tests {
     use nirvana_entity::prelude::*;
-    use nirvana_entity::{connection, credential, jira_settings, profile, ticket};
+    use nirvana_entity::{
+        connection, credential, jira_settings, profile, publish_entry, slot, ticket,
+    };
     use sea_orm::ActiveValue::{NotSet, Set};
     use sea_orm::{ActiveModelTrait, DbBackend, EntityTrait, PaginatorTrait, Statement};
 
@@ -158,7 +162,8 @@ mod tests {
                 &db,
                 &format!(
                     "select name from pragma_table_info('{table}', 'old')
-                     where not ('{table}' = 'slots' and name in ('note', 'published_at'))
+                     where not ('{table}' = 'slots'
+                             and name in ('note', 'published_at', 'connection_id'))
                          and not ('{table}' = 'tickets' and name = 'summary')"
                 ),
             )
@@ -226,6 +231,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn migrated_030_slots_get_default_profile() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = migrate_fixture(dir.path()).await;
+
+        let profile_id = Profile::find().one(&db).await.unwrap().unwrap().id;
+        let slots = Slot::find().all(&db).await.unwrap();
+        assert!(!slots.is_empty());
+        assert!(slots.iter().all(|s| s.profile_id == profile_id));
+        assert_eq!(
+            text_rows(
+                &db,
+                "select cast(count(*) as text) from main.publish_entries"
+            )
+            .await,
+            text_rows(
+                &db,
+                "select cast(count(*) as text) from old.slots where published_at is not null"
+            )
+            .await
+        );
+    }
+
+    /// Runs `sql` on a copy of the 0.3 fixture, then returns the migration error.
+    async fn migrate_changed_fixture(sql: &str) -> String {
+        let dir = tempfile::tempdir().unwrap();
+        let db_file = dir.path().join("nirvana.db");
+        std::fs::copy(FIXTURE_030, &db_file).unwrap();
+        let fixture = sea_orm::Database::connect(format!("sqlite://{}", db_file.display()))
+            .await
+            .unwrap();
+        fixture.execute_unprepared(sql).await.unwrap();
+        fixture.close().await.unwrap();
+
+        open(&db_file).await.unwrap_err().to_string()
+    }
+
+    #[tokio::test]
+    async fn migration_fails_when_slot_connection_differs_from_ticket() {
+        let error =
+            migrate_changed_fixture("update slots set connection_id = 2 where id = 1").await;
+
+        assert!(error.contains("slot 1 has a different connection than its ticket"));
+    }
+
+    #[tokio::test]
+    async fn migration_fails_when_slot_ticket_is_missing() {
+        let error = migrate_changed_fixture(
+            "pragma foreign_keys = off; update slots set ticket_id = 999 where id = 1",
+        )
+        .await;
+
+        assert!(error.contains("foreign key violations after adding profiles"));
+    }
+
+    #[tokio::test]
     async fn migrated_030_db_matches_fresh_schema() {
         let migrated_dir = tempfile::tempdir().unwrap();
         let migrated = migrate_fixture(migrated_dir.path()).await;
@@ -260,6 +320,16 @@ mod tests {
                 .any(|row| row.starts_with("tickets|sqlite_autoindex"))
         );
         assert!(migrated_schema.contains(&"slots|uuid|BLOB|1||0".to_string()));
+        assert!(migrated_schema.contains(&"slots|profile_id|INTEGER|1||0".to_string()));
+        assert!(
+            !migrated_schema
+                .iter()
+                .any(|row| row.starts_with("slots|connection_id"))
+        );
+        assert!(
+            migrated_schema.contains(&"slots|profile_id|profiles|id|NO ACTION|CASCADE".to_string())
+        );
+        assert!(migrated_schema.contains(&"slots|one_running_slot|1|1|0|profile_id".to_string()));
         assert!(migrated_schema.contains(&"slots|slots_by_uuid|1|0|0|uuid".to_string()));
         assert!(
             migrated_schema.contains(
@@ -449,12 +519,31 @@ mod tests {
         .insert(&db)
         .await
         .unwrap();
-        ticket::ActiveModel {
+        let ticket = ticket::ActiveModel {
             profile_id: Set(profile.id),
             connection_id: Set(Some(connection.id)),
             ticket_key: Set("KEY-1".to_string()),
             synced_at: Set(0),
             ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let slot = slot::ActiveModel {
+            ticket_id: Set(ticket.id),
+            profile_id: Set(profile.id),
+            started_at: Set(100),
+            stopped_at: Set(Some(160)),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        publish_entry::ActiveModel {
+            slot_id: Set(slot.id),
+            connection_id: Set(connection.id),
+            published_at: Set(Some(200)),
+            error: Set(None),
         }
         .insert(&db)
         .await
@@ -466,5 +555,50 @@ mod tests {
         assert_eq!(Credential::find().count(&db).await.unwrap(), 0);
         assert_eq!(JiraSettings::find().count(&db).await.unwrap(), 0);
         assert_eq!(Ticket::find().count(&db).await.unwrap(), 0);
+        assert_eq!(Slot::find().count(&db).await.unwrap(), 0);
+        assert_eq!(PublishEntry::find().count(&db).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn one_running_slot_per_profile() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = open(&dir.path().join("nirvana.db")).await.unwrap();
+        let mut running = Vec::new();
+        for name in ["work", "home"] {
+            let profile = profile::ActiveModel {
+                name: Set(name.to_string()),
+                ..Default::default()
+            }
+            .insert(&db)
+            .await
+            .unwrap();
+            let ticket = ticket::ActiveModel {
+                profile_id: Set(profile.id),
+                ticket_key: Set("KEY-1".to_string()),
+                synced_at: Set(0),
+                ..Default::default()
+            }
+            .insert(&db)
+            .await
+            .unwrap();
+            running.push(slot::ActiveModel {
+                ticket_id: Set(ticket.id),
+                profile_id: Set(profile.id),
+                started_at: Set(100),
+                stopped_at: Set(None),
+                ..Default::default()
+            });
+        }
+
+        for slot in running.clone() {
+            slot.insert(&db).await.unwrap();
+        }
+        let error = running[0].clone().insert(&db).await.unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("UNIQUE constraint failed: slots.profile_id")
+        );
     }
 }

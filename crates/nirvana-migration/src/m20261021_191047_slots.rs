@@ -12,12 +12,37 @@ impl MigrationTrait for Migration {
         Some(true)
     }
 
-    /// Rebuilds `slots` with a NOT NULL `uuid` column, following
+    /// Rebuilds `slots` with NOT NULL `uuid` and `profile_id` columns, following
     /// https://sqlite.org/lang_altertable.html#otheralter, and drops `note`.
-    /// Moves `published_at` into a new `publish_entries` table with one row
-    /// per published slot, then drops it with the `slots_unpublished` index.
+    /// `profile_id` comes from the slot's ticket and replaces `connection_id`,
+    /// which must match the ticket's. Moves `published_at` into a new
+    /// `publish_entries` table with one row per published slot, then drops it
+    /// with the `slots_unpublished` index. Allows one running slot per profile.
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
+
+        let mismatched = db
+            .query_one(
+                Query::select()
+                    .column(("slots", "id"))
+                    .from("slots")
+                    .inner_join(
+                        "tickets",
+                        Expr::col(("tickets", "id")).equals(("slots", "ticket_id")),
+                    )
+                    .and_where(
+                        Expr::col(("slots", "connection_id"))
+                            .is_not(Expr::col(("tickets", "connection_id"))),
+                    )
+                    .limit(1),
+            )
+            .await?;
+        if let Some(row) = mismatched {
+            let id: i64 = row.try_get_by_index(0)?;
+            return Err(DbErr::Migration(format!(
+                "slot {id} has a different connection than its ticket"
+            )));
+        }
 
         manager
             .create_table(
@@ -25,7 +50,7 @@ impl MigrationTrait for Migration {
                     .table("slots_new")
                     .col(ColumnDef::new("id").integer().primary_key())
                     .col(integer("ticket_id"))
-                    .col(integer("connection_id"))
+                    .col(integer("profile_id"))
                     .col(integer("started_at"))
                     .col(integer_null("stopped_at"))
                     .col(blob("uuid"))
@@ -36,8 +61,9 @@ impl MigrationTrait for Migration {
                     )
                     .foreign_key(
                         ForeignKey::create()
-                            .from("slots_new", "connection_id")
-                            .to("connections", "id"),
+                            .from("slots_new", "profile_id")
+                            .to("profiles", "id")
+                            .on_delete(ForeignKeyAction::Cascade),
                     )
                     .check(
                         Expr::col("stopped_at")
@@ -74,13 +100,7 @@ impl MigrationTrait for Migration {
             .await?;
         debug!("created publish_entries table");
 
-        let columns = [
-            "id",
-            "ticket_id",
-            "connection_id",
-            "started_at",
-            "stopped_at",
-        ];
+        let columns = ["id", "ticket_id", "started_at", "stopped_at"];
         let ids = db
             .query_all(Query::select().column("id").from("slots"))
             .await?;
@@ -89,13 +109,18 @@ impl MigrationTrait for Migration {
             db.execute(
                 Query::insert()
                     .into_table("slots_new")
-                    .columns(columns.into_iter().chain(["uuid"]))
+                    .columns(columns.into_iter().chain(["profile_id", "uuid"]))
                     .select_from(
                         Query::select()
-                            .columns(columns)
+                            .columns(columns.map(|c| ("slots", c)))
+                            .column(("tickets", "profile_id"))
                             .expr(Expr::val(Uuid::new_v4().as_bytes().to_vec()))
                             .from("slots")
-                            .and_where(Expr::col("id").eq(id))
+                            .inner_join(
+                                "tickets",
+                                Expr::col(("slots", "ticket_id")).equals(("tickets", "id")),
+                            )
+                            .and_where(Expr::col(("slots", "id")).eq(id))
                             .to_owned(),
                     )
                     .map_err(|e| DbErr::Migration(e.to_string()))?,
@@ -136,7 +161,7 @@ impl MigrationTrait for Migration {
                 Index::create()
                     .name("one_running_slot")
                     .table("slots")
-                    .col("stopped_at")
+                    .col("profile_id")
                     .and_where(Expr::col("stopped_at").is_null())
                     .unique()
                     .to_owned(),

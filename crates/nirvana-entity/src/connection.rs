@@ -15,7 +15,7 @@ pub struct Model {
     pub host: String,
     #[sea_orm(column_type = "Text")]
     pub identity: String,
-    #[sea_orm(column_type = "Text")]
+    #[sea_orm(column_type = "Text", default_value = "keyring")]
     pub secret_store: String,
     pub created_at: i64,
     pub updated_at: i64,

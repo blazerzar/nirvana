@@ -78,7 +78,7 @@ logged from the start.
       publish_squashed_worklogs. Credentials table and secret_store stay
       (plaintext support).
 - [x] Add uuid to slots (needed for idempotent publishing to portal).
-- [ ] Check entity attributes match the schema: ids use
+- [x] Check entity attributes match the schema: ids use
       `auto_increment = false` on rowid primary keys.
 - [x] Check the duplicate connection name inside the insert transaction,
       backed by a unique index so concurrent adds cannot create duplicates.

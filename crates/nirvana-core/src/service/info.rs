@@ -1,6 +1,6 @@
 use crate::errors::NirvanaError;
 use crate::service::{AppInfo, Nirvana};
-use crate::storage;
+use crate::{secrets, storage};
 
 impl Nirvana {
     pub async fn info(&self) -> Result<AppInfo, NirvanaError> {
@@ -10,6 +10,7 @@ impl Nirvana {
             db_file: self.paths.db_file.clone(),
             log_file: self.paths.log_file.clone(),
             sqlite_version: storage::sqlite_version(&self.db).await?,
+            keyring: secrets::status().await,
             is_dev: self.paths.is_dev,
         })
     }

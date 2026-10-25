@@ -4,6 +4,7 @@ pub mod errors;
 mod integration;
 pub mod logging;
 mod paths;
+pub mod secrets;
 pub mod service;
 mod storage;
 

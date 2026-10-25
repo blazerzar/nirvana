@@ -1,21 +1,23 @@
 use std::time::Duration;
 
+use secrecy::{ExposeSecret, SecretString};
+
 use crate::integration::{IntegrationError, IssueInfo};
 
 pub(crate) struct JiraIntegration {
     host: String,
     identity: String,
-    token: String,
+    token: SecretString,
     client: reqwest::Client,
     kind: String,
 }
 
 impl JiraIntegration {
-    pub(crate) fn new(host: &str, identity: &str, token: &str, kind: &str) -> Self {
+    pub(crate) fn new(host: &str, identity: &str, token: &SecretString, kind: &str) -> Self {
         Self {
             host: host.to_string(),
             identity: identity.to_string(),
-            token: token.to_string(),
+            token: token.clone(),
             client: reqwest::Client::new(),
             kind: kind.to_string(),
         }
@@ -25,7 +27,7 @@ impl JiraIntegration {
         Self {
             host: host.to_string(),
             identity: String::new(),
-            token: String::new(),
+            token: SecretString::default(),
             client: reqwest::Client::new(),
             kind: kind.to_string(),
         }
@@ -43,12 +45,12 @@ impl JiraIntegration {
             "jira-cloud" => self
                 .client
                 .get(&url)
-                .basic_auth(&self.identity, Some(&self.token)),
+                .basic_auth(&self.identity, Some(self.token.expose_secret())),
 
-            _ => self.client.get(&url).header(
-                reqwest::header::AUTHORIZATION,
-                format!("Bearer {}", self.token),
-            ),
+            _ => self
+                .client
+                .get(&url)
+                .bearer_auth(self.token.expose_secret()),
         })
         .timeout(Duration::from_secs(30))
         .send()
@@ -79,12 +81,12 @@ impl JiraIntegration {
             "jira-cloud" => self
                 .client
                 .get(&url)
-                .basic_auth(&self.identity, Some(&self.token)),
+                .basic_auth(&self.identity, Some(self.token.expose_secret())),
 
-            _ => self.client.get(&url).header(
-                reqwest::header::AUTHORIZATION,
-                format!("Bearer {}", self.token),
-            ),
+            _ => self
+                .client
+                .get(&url)
+                .bearer_auth(self.token.expose_secret()),
         })
         .timeout(Duration::from_secs(30))
         .send()
@@ -133,12 +135,12 @@ impl JiraIntegration {
             "jira-cloud" => self
                 .client
                 .post(&url)
-                .basic_auth(&self.identity, Some(&self.token)),
+                .basic_auth(&self.identity, Some(self.token.expose_secret())),
 
-            _ => self.client.post(&url).header(
-                reqwest::header::AUTHORIZATION,
-                format!("Bearer {}", self.token),
-            ),
+            _ => self
+                .client
+                .post(&url)
+                .bearer_auth(self.token.expose_secret()),
         })
         .json(&body)
         .timeout(Duration::from_secs(30))

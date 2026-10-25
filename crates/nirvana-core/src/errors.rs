@@ -2,6 +2,7 @@ use thiserror::Error;
 
 pub use crate::config::ConfigError;
 pub use crate::integration::IntegrationError;
+pub use crate::secrets::SecretError;
 pub use crate::storage::DbError;
 
 #[derive(Debug, Error)]
@@ -16,6 +17,8 @@ pub enum NirvanaError {
     Tracking(#[from] TrackingError),
     #[error(transparent)]
     Integration(#[from] IntegrationError),
+    #[error(transparent)]
+    Secret(#[from] SecretError),
 }
 
 #[derive(Debug, Error)]

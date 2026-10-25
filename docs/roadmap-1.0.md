@@ -121,17 +121,28 @@ logged from the start.
 
 - [x] Move secret_store from connections to credentials (default plaintext,
       every 0.3 row is plaintext).
-- [ ] Add support for storing connection tokens in keychain (keyring-core),
-      macOS and Windows. The credentials row holds a random 6 character key
+- [x] Add support for storing connection tokens in keychain (keyring-core),
+      macOS, Windows, Linux. The credentials row holds the keyring account
       instead of the token. Show keyring availability in `nirvana info`.
-- [ ] Support Linux through the Secret Service (gnome-keyring, KWallet).
-- [ ] Keep plaintext credentials supported (needed on Linux for now).
-- [ ] Add the `env` secret store for CI and headless use: the token comes
-      from `NIRVANA_TOKEN_<PROFILE>_<KEY>`.
+- [ ] Add the `env` secret store for CLI integration tests: the credentials
+      row holds the name of the environment variable with the token, which
+      must start with `NIRVANA_`. Hidden from `--help` and the interactive
+      picker, available in all builds.
 - [ ] Let users move plaintext tokens into the keyring.
 - [ ] Add keyring tests that are run manually on full machines (macOS,
       Windows, Linux with gnome-keyring and with KWallet).
+- [ ] Add tests with the `keyring_core` mock store for storing, reading and
+      deleting keyring tokens, deleting the keyring entry when adding a
+      connection fails and parsing `SecretStore`. The store must be injectable.
 - [ ] Build and test on Windows and Linux arm64 in CI.
+
+## Profiles and connections CLI
+
+- [ ] Rework the CLI for profiles and connections. The interactive picker
+      offers Keyring only when the keyring is available.
+- [ ] Make `connections.identity` nullable: only Jira Cloud has one (the
+      email). Do not ask for a username for Jira DC and set it to NULL for
+      existing `jira-dc` rows.
 
 ## Tickets
 
@@ -142,7 +153,8 @@ logged from the start.
 - [ ] Check for blocking calls inside async code while refactoring the CLI.
 - [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
       through the public API).
-- [ ] Add e2e tests for nirvana (run the built binary).
+- [ ] Add e2e tests for nirvana: run the built release binary in CI, with
+      tokens from GitHub secrets through the `env` secret store.
 - [ ] Decide how owning connection is resolved when profile has multiple
       connections (proposal in the implementation guide).
 - [ ] Let's update ticket name and description when interacting with it (async).

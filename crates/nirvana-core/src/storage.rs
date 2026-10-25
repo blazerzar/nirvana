@@ -681,7 +681,7 @@ mod tests {
         .unwrap();
         credential::ActiveModel {
             connection_id: Set(connection.id),
-            secret_store: Set("plaintext".to_string()),
+            secret_store: Set(credential::SecretStore::Plaintext),
             credential: Set("token".to_string()),
         }
         .insert(&db)

@@ -33,6 +33,10 @@ pub(crate) async fn run() -> anyhow::Result<()> {
         print_row("Commit date", date)?;
     }
     print_row("SQLite", &info.sqlite_version)?;
+    match &info.keyring {
+        Ok(vendor) => print_row("Keyring", vendor)?,
+        Err(reason) => print_row("Keyring", &format!("unavailable ({reason})"))?,
+    }
     print_row("Config", &info.config_file.display().to_string())?;
     print_row("Database", &info.db_file.display().to_string())?;
     print_row("Log file", &info.log_file.display().to_string())?;

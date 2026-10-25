@@ -9,6 +9,17 @@ rust = { version = "1.99.0", profile = "default" }
 [env]
 RUSTFMT_TOOLCHAIN = "nightly-2026-10-01"
 
+[bootstrap.packages]
+# Debian / Ubuntu
+"apt:gcc" = "latest"
+"apt:pkgconf" = "latest"
+"apt:libssl-dev" = "latest"
+
+# Fedora / RHEL
+"dnf:gcc" = "latest"
+"dnf:pkgconf-pkg-config" = "latest"
+"dnf:openssl-devel" = "latest"
+
 [tasks.setup]
 depends = ["setup-rustfmt"]
 run = ["hk install --mise"]

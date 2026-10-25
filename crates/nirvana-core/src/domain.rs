@@ -1,4 +1,6 @@
+use nirvana_entity::credential::SecretStore;
 use nirvana_entity::{connection, jira_settings};
+use secrecy::SecretString;
 
 use crate::errors::TrackingError;
 
@@ -80,8 +82,8 @@ pub struct ConnectionData {
     pub kind: String,
     pub host: String,
     pub identity: String,
-    pub secret_store: String,
-    pub token: String,
+    pub secret_store: SecretStore,
+    pub token: SecretString,
 }
 
 #[derive(Debug)]

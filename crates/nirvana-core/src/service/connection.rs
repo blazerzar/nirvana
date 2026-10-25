@@ -2,13 +2,15 @@ use nirvana_entity::connection::Entity as ConnectionEntity;
 use nirvana_entity::profile::Entity as Profile;
 use nirvana_entity::{connection, credential, jira_settings, profile, ticket};
 use sea_orm::{
-    ActiveModelTrait, DbErr, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set, SqlErr,
+    ActiveModelTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set, SqlErr,
     TransactionTrait,
 };
+use tracing::info;
 
 use crate::domain::{Connection, ConnectionData};
 use crate::errors::{DbError, NirvanaError, TrackingError};
 use crate::integration;
+use crate::secrets::{SecretStore, delete_from_keychain, read_credential, store_secret};
 use crate::service::Nirvana;
 
 impl Nirvana {
@@ -58,7 +60,13 @@ impl Nirvana {
             return Err(TrackingError::ConnectionHasHistory.into());
         }
 
+        let credential = credential::Entity::find_by_id(id).one(&self.db).await?;
         ConnectionEntity::delete_by_id(id).exec(&self.db).await?;
+        if let Some(credential) = credential
+            && credential.secret_store == SecretStore::Keyring
+        {
+            delete_from_keychain(credential.credential).await;
+        }
 
         if self.config.core.active_connection == Some(id) {
             self.config.core.active_connection = (ConnectionEntity::find()
@@ -76,53 +84,68 @@ impl Nirvana {
         &self,
         connection: ConnectionData,
     ) -> Result<Connection, NirvanaError> {
-        if connection.secret_store != "plaintext" {
-            unimplemented!("only plaintext secret store is currently supported");
-        }
-
         let profile = Profile::find()
             .order_by_asc(profile::COLUMN.id)
             .one(&self.db)
             .await?
             .ok_or(TrackingError::NoActiveProfile)?;
 
-        let txn = self.db.begin().await?;
-        let model = connection::ActiveModel {
-            name: Set(connection.name.clone()),
-            kind: Set(connection.kind),
-            host: Set(normalize_host(&connection.host)),
-            identity: Set(connection.identity),
-            profile_id: Set(profile.id),
-            ..Default::default()
-        }
-        .insert(&txn)
-        .await
-        .map_err(|e| match e.sql_err() {
-            Some(SqlErr::UniqueConstraintViolation(_)) => DbError::DuplicateName(connection.name),
-            _ => e.into(),
-        })?;
-        credential::ActiveModel {
-            connection_id: Set(model.id),
-            secret_store: Set(connection.secret_store),
-            credential: Set(connection.token),
-        }
-        .insert(&txn)
+        info!(secret_store = %connection.secret_store, "adding connection");
+        let secret_store = connection.secret_store;
+        let secret = store_secret(
+            &profile.name,
+            &connection.name,
+            secret_store,
+            connection.token,
+        )
         .await?;
-        let jira_settings = match model.kind.as_str() {
-            "jira-cloud" | "jira-dc" => Some(
-                jira_settings::ActiveModel {
-                    connection_id: Set(model.id),
-                    ..Default::default()
-                }
-                .insert(&txn)
-                .await?,
-            ),
-            _ => None,
-        };
-        let connection = Connection::new(model, jira_settings)?;
-        txn.commit().await?;
 
-        Ok(connection)
+        let added = async {
+            let txn = self.db.begin().await?;
+            let model = connection::ActiveModel {
+                name: Set(connection.name.clone()),
+                kind: Set(connection.kind),
+                host: Set(normalize_host(&connection.host)),
+                identity: Set(connection.identity),
+                profile_id: Set(profile.id),
+                ..Default::default()
+            }
+            .insert(&txn)
+            .await
+            .map_err(|e| match e.sql_err() {
+                Some(SqlErr::UniqueConstraintViolation(_)) => {
+                    DbError::DuplicateName(connection.name)
+                }
+                _ => e.into(),
+            })?;
+            credential::ActiveModel {
+                connection_id: Set(model.id),
+                secret_store: Set(secret_store),
+                credential: Set(secret.clone()),
+            }
+            .insert(&txn)
+            .await?;
+            let jira_settings = match model.kind.as_str() {
+                "jira-cloud" | "jira-dc" => Some(
+                    jira_settings::ActiveModel {
+                        connection_id: Set(model.id),
+                        ..Default::default()
+                    }
+                    .insert(&txn)
+                    .await?,
+                ),
+                _ => None,
+            };
+            let connection = Connection::new(model, jira_settings)?;
+            txn.commit().await?;
+            Ok(connection)
+        }
+        .await;
+        if added.is_err() && secret_store == SecretStore::Keyring {
+            delete_from_keychain(secret).await;
+        }
+
+        added
     }
 
     pub async fn test_connection_data(
@@ -159,20 +182,10 @@ impl Nirvana {
             .ok_or(TrackingError::NoActiveConnection)?;
 
         let connection = self.get_connection(connection_id).await?;
-        let token = self.get_token(connection_id).await?;
+        let token = read_credential(connection_id, &self.db).await?;
         let integ = integration::build_integration(&connection, &token);
         integ.test_connection().await?;
         Ok(())
-    }
-
-    pub(crate) async fn get_token(&self, connection_id: i64) -> Result<String, NirvanaError> {
-        let credential = credential::Entity::find_by_id(connection_id)
-            .one(&self.db)
-            .await?
-            .ok_or(DbErr::RecordNotFound(format!(
-                "credential for connection {connection_id}"
-            )))?;
-        Ok(credential.credential)
     }
 
     pub fn issue_urls<'a>(
@@ -211,8 +224,8 @@ mod tests {
                 kind: "jira-cloud".to_string(),
                 host: "https://other.atlassian.net".to_string(),
                 identity: "tester@example.com".to_string(),
-                secret_store: "plaintext".to_string(),
-                token: "token".to_string(),
+                secret_store: SecretStore::Plaintext,
+                token: "token".into(),
             })
             .await;
 

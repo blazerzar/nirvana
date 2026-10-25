@@ -1,6 +1,7 @@
 pub(crate) mod jira;
 
 use jira::JiraIntegration;
+use secrecy::SecretString;
 use thiserror::Error;
 
 use crate::domain::{Connection, ConnectionKind};
@@ -70,7 +71,7 @@ impl Integration {
     }
 }
 
-pub(crate) fn build_integration(connection: &Connection, token: &str) -> Integration {
+pub(crate) fn build_integration(connection: &Connection, token: &SecretString) -> Integration {
     let kind = match &connection.kind {
         ConnectionKind::JiraCloud(_) | ConnectionKind::JiraDc(_) => {
             IntegrationKind::Jira(JiraIntegration::new(

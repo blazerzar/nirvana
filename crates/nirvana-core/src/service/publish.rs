@@ -8,6 +8,7 @@ use sea_orm::{DbErr, EntityTrait, QueryFilter};
 use crate::domain::{PublishFailure, PublishResult};
 use crate::errors::TrackingError;
 use crate::integration::{self, IntegrationError};
+use crate::secrets::read_credential;
 use crate::service::Nirvana;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -42,7 +43,7 @@ impl Nirvana {
         if !settings.publish {
             return Err(TrackingError::PublishDisabled(connection.model.name).into());
         }
-        let token = self.get_token(connection_id).await?;
+        let token = read_credential(connection_id, &self.db).await?;
         let integ = integration::build_integration(&connection, &token);
 
         let slots = self.get_unpublished_slots(from, to).await?;

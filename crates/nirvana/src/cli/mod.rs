@@ -11,8 +11,10 @@ mod time;
 use std::fmt;
 use std::fmt::Display;
 
+use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use nirvana_core::domain::Change;
+use nirvana_core::secrets::{SecretStore, selectable_stores};
 pub(crate) use time::parse_time;
 use tracing::debug;
 
@@ -136,7 +138,7 @@ struct AddArgs {
     host: Option<String>,
     #[arg(long, requires_all = ["name", "kind", "host", "storage", "token"])]
     identity: Option<String>,
-    #[arg(long, requires_all = ["name", "kind", "host", "identity", "token"])]
+    #[arg(long, value_parser = storage_parser(), requires_all = ["name", "kind", "host", "identity", "token"])]
     storage: Option<SecretStore>,
     #[arg(long, requires_all = ["name", "kind", "host", "identity", "storage"])]
     token: Option<String>,
@@ -158,22 +160,15 @@ impl Display for ConnectionKind {
     }
 }
 
-#[derive(Clone, ValueEnum, Debug)]
-pub(crate) enum SecretStore {
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    Keyring,
-    Plaintext,
-}
-
-impl Display for SecretStore {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let kind = match self {
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
-            Self::Keyring => "keyring",
-            Self::Plaintext => "plaintext",
-        };
-        write!(f, "{}", kind,)
-    }
+fn storage_parser() -> impl TypedValueParser<Value = SecretStore> {
+    let hidden = PossibleValue::new(SecretStore::Env.to_string()).hide(true);
+    PossibleValuesParser::new(
+        selectable_stores()
+            .iter()
+            .map(|store| PossibleValue::new(store.to_string()))
+            .chain([hidden]),
+    )
+    .try_map(|s| s.parse::<SecretStore>())
 }
 
 pub(crate) async fn run() -> anyhow::Result<()> {

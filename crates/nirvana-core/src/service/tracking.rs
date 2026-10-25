@@ -10,6 +10,7 @@ use sea_orm::{
 use crate::domain::{Connection, SlotCreate};
 use crate::errors::{DbError, IntegrationError, TrackingError};
 use crate::integration;
+use crate::secrets::read_credential;
 use crate::service::Nirvana;
 use crate::service::slots::require_ticket;
 
@@ -155,7 +156,7 @@ impl Nirvana {
             return Ok(touch_ticket(t, last_worked_at, &self.db).await?);
         }
 
-        let token = self.get_token(connection_id).await?;
+        let token = read_credential(connection_id, &self.db).await?;
         let integ = integration::build_integration(connection, &token);
         let issue = integ.fetch_issue(ticket_key).await.map_err(|e| match e {
             IntegrationError::TicketNotFound(key) => {

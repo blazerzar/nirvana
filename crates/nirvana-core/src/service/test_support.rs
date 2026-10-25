@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use nirvana_entity::credential::SecretStore;
 use nirvana_entity::profile;
 use sea_orm::{ActiveModelTrait, Set};
 
@@ -87,8 +88,8 @@ pub(super) async fn test_api() -> TestApi {
             kind: "jira-cloud".to_string(),
             host: "https://example.atlassian.net".to_string(),
             identity: "tester@example.com".to_string(),
-            secret_store: "plaintext".to_string(),
-            token: "token".to_string(),
+            secret_store: SecretStore::Plaintext,
+            token: "token".into(),
         })
         .await
         .unwrap();

@@ -6,9 +6,10 @@ use console::{Style, Term};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Input, Password, Select};
 use nirvana_core::domain::{Connection, ConnectionData};
+use nirvana_core::secrets::{self, SecretStore, selectable_stores};
 use nirvana_core::service::Nirvana;
 
-use crate::cli::{AddArgs, ConnectionKind, SecretStore};
+use crate::cli::{AddArgs, ConnectionKind};
 
 enum Column {
     Unlimited(&'static str),
@@ -231,7 +232,7 @@ fn pick_interactive(connections: &[Connection]) -> anyhow::Result<usize> {
 
 pub(crate) async fn add(args: AddArgs) -> anyhow::Result<()> {
     let data = if args.name.is_none() {
-        add_interactive()?
+        add_interactive().await?
     } else {
         add_command(args)?
     };
@@ -267,12 +268,12 @@ fn add_command(args: AddArgs) -> anyhow::Result<ConnectionData> {
         kind: args.kind.unwrap().to_string(),
         host: args.host.unwrap(),
         identity: args.identity.unwrap(),
-        secret_store: args.storage.unwrap().to_string(),
-        token: args.token.unwrap(),
+        secret_store: args.storage.unwrap(),
+        token: args.token.unwrap().into(),
     })
 }
 
-fn add_interactive() -> anyhow::Result<ConnectionData> {
+async fn add_interactive() -> anyhow::Result<ConnectionData> {
     let theme = ColorfulTheme {
         active_item_prefix: Style::new().green().apply_to(String::from("❯")),
         ..ColorfulTheme::default()
@@ -315,28 +316,24 @@ fn add_interactive() -> anyhow::Result<ConnectionData> {
         .interact_text()?;
 
     let dim = Style::new().dim();
-    let storage_items = SecretStore::value_variants();
+    let storage_items = selectable_stores();
     let storage_labels: Vec<String> = storage_items
         .iter()
         .map(|s| match s {
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
             SecretStore::Keyring => format!("Keyring {}", dim.apply_to("(recommended)")),
             SecretStore::Plaintext => format!("Plaintext {}", dim.apply_to("(stored in database)")),
+            SecretStore::Env => format!("Env {}", dim.apply_to("(environment variable)")),
         })
         .collect();
 
+    let preferred_store = if secrets::status().await.is_ok() {
+        SecretStore::Keyring
+    } else {
+        SecretStore::Plaintext
+    };
     let storage_default = storage_items
         .iter()
-        .position(|s| {
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
-            {
-                matches!(s, SecretStore::Keyring)
-            }
-            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-            {
-                matches!(s, SecretStore::Plaintext)
-            }
-        })
+        .position(|s| *s == preferred_store)
         .unwrap_or(0);
 
     let storage_idx = Select::with_theme(&theme)
@@ -346,7 +343,7 @@ fn add_interactive() -> anyhow::Result<ConnectionData> {
         .interact_opt()?;
 
     let storage = match storage_idx {
-        Some(i) => storage_items[i].clone(),
+        Some(i) => storage_items[i],
         None => std::process::exit(0),
     };
 
@@ -364,8 +361,8 @@ fn add_interactive() -> anyhow::Result<ConnectionData> {
         kind: kind.to_string(),
         host,
         identity,
-        secret_store: storage.to_string(),
-        token,
+        secret_store: storage,
+        token: token.into(),
     })
 }
 

@@ -5,7 +5,6 @@ dprint = "0.63.0"
 jactionlint = "2.2.0"
 editorconfig-checker = "4.0.2"
 rust = { version = "1.99.0", profile = "default" }
-"cargo:sea-orm-cli" = "2.0.4"
 
 [env]
 RUSTFMT_TOOLCHAIN = "nightly-2026-10-01"
@@ -34,10 +33,12 @@ run = "cargo check --workspace"
 
 [tasks.migrate]
 description = "Create a new DB migration"
+tools = { "cargo:sea-orm-cli" = "2.0.4" }
 run = "sea-orm-cli migrate generate -d crates/nirvana-migration"
 
 [tasks.db-diagram]
 description = "Generate a Mermaid diagram of the DB"
+tools = { "cargo:sea-orm-cli" = "2.0.4" }
 run = """
 sea-orm-cli generate entity -u "sqlite://$PWD/target/debug/nirvana.db" \
 -o "$TMPDIR/nirvana-entities" --er-diagram >/dev/null && \

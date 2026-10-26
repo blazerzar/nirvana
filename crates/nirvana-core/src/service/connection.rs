@@ -65,7 +65,7 @@ impl Nirvana {
         if let Some(credential) = credential
             && credential.secret_store == SecretStore::Keyring
         {
-            delete_from_keychain(credential.credential).await;
+            delete_from_keychain(&self.keyring, credential.credential).await;
         }
 
         if self.config.core.active_connection == Some(id) {
@@ -93,6 +93,7 @@ impl Nirvana {
         info!(secret_store = %connection.secret_store, "adding connection");
         let secret_store = connection.secret_store;
         let secret = store_secret(
+            &self.keyring,
             &profile.name,
             &connection.name,
             secret_store,
@@ -142,7 +143,7 @@ impl Nirvana {
         }
         .await;
         if added.is_err() && secret_store == SecretStore::Keyring {
-            delete_from_keychain(secret).await;
+            delete_from_keychain(&self.keyring, secret).await;
         }
 
         added
@@ -182,7 +183,7 @@ impl Nirvana {
             .ok_or(TrackingError::NoActiveConnection)?;
 
         let connection = self.get_connection(connection_id).await?;
-        let token = read_credential(connection_id, &self.db).await?;
+        let token = read_credential(&self.keyring, connection_id, &self.db).await?;
         let integ = integration::build_integration(&connection, &token);
         integ.test_connection().await?;
         Ok(())
@@ -211,8 +212,120 @@ fn normalize_host(url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use secrecy::ExposeSecret;
+
     use super::*;
+    use crate::errors::SecretError;
     use crate::service::test_support::test_api;
+
+    fn keyring_data(name: &str) -> ConnectionData {
+        ConnectionData {
+            name: name.to_string(),
+            kind: "jira-cloud".to_string(),
+            host: "https://other.atlassian.net".to_string(),
+            identity: "tester@example.com".to_string(),
+            secret_store: SecretStore::Keyring,
+            token: "keyring-token".into(),
+        }
+    }
+
+    async fn credential_of_connection(api: &Nirvana, connection_id: i64) -> String {
+        credential::Entity::find_by_id(connection_id)
+            .one(&api.db)
+            .await
+            .unwrap()
+            .unwrap()
+            .credential
+    }
+
+    fn keyring_passwords(api: &Nirvana) -> Vec<String> {
+        let store = (api.keyring)().unwrap();
+        let spec = [("service", "nirvana")].into();
+        store
+            .search(&spec)
+            .unwrap()
+            .into_iter()
+            .filter_map(|entry| match entry.get_password() {
+                Ok(password) => Some(password),
+                Err(keyring_core::Error::NoEntry) => None,
+                Err(e) => panic!("keyring read failed: {e}"),
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn keyring_connection_stores_account_and_reads_token() {
+        let api = test_api().await;
+        let connection = api
+            .add_connection(keyring_data("Keyring Jira"))
+            .await
+            .unwrap();
+        let credential = credential_of_connection(&api, connection.model.id).await;
+
+        let key = credential
+            .strip_prefix("nirvana_test_Keyring Jira_")
+            .unwrap();
+        assert_eq!(key.len(), 8);
+        assert!(key.chars().all(|c| c.is_ascii_hexdigit()));
+
+        let token = read_credential(&api.keyring, connection.model.id, &api.db)
+            .await
+            .unwrap();
+        assert_eq!(token.expose_secret(), "keyring-token");
+    }
+
+    #[tokio::test]
+    async fn deleting_keyring_connection_removes_entry() {
+        let mut api = test_api().await;
+        let connection = api
+            .add_connection(keyring_data("Keyring Jira"))
+            .await
+            .unwrap();
+        assert_eq!(keyring_passwords(&api), ["keyring-token"]);
+
+        api.delete_connection(connection.model.id).await.unwrap();
+
+        assert!(keyring_passwords(&api).is_empty());
+    }
+
+    #[tokio::test]
+    async fn rejected_keyring_connection_leaves_no_entry() {
+        let api = test_api().await;
+        api.add_connection(keyring_data("Keyring Jira"))
+            .await
+            .unwrap();
+
+        let result = api
+            .add_connection(ConnectionData {
+                token: "duplicate-token".into(),
+                ..keyring_data("Keyring Jira")
+            })
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(NirvanaError::Db(DbError::DuplicateName(_)))
+        ));
+        assert_eq!(keyring_passwords(&api), ["keyring-token"]);
+    }
+
+    #[tokio::test]
+    async fn reading_missing_keyring_entry_fails() {
+        let api = test_api().await;
+        let connection = api
+            .add_connection(keyring_data("Keyring Jira"))
+            .await
+            .unwrap();
+        let id = connection.model.id;
+        delete_from_keychain(&api.keyring, credential_of_connection(&api, id).await).await;
+
+        let result = read_credential(&api.keyring, id, &api.db).await;
+
+        assert!(matches!(
+            result,
+            Err(NirvanaError::Secret(SecretError::MissingEntry { connection_id })) if connection_id == id
+        ));
+    }
 
     #[tokio::test]
     async fn rejects_duplicate_connection_name() {

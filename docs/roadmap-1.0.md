@@ -126,7 +126,7 @@ logged from the start.
       instead of the token. Show keyring availability in `nirvana info`.
 - [ ] Add keyring tests that are run manually on full machines (macOS,
       Windows, Linux with gnome-keyring and with KWallet).
-- [ ] Add tests with the `keyring_core` mock store for storing, reading and
+- [x] Add tests with the `keyring_core` mock store for storing, reading and
       deleting keyring tokens, deleting the keyring entry when adding a
       connection fails and parsing `SecretStore`. The store must be injectable
       through a store factory (decision 19).

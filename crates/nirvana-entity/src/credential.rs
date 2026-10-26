@@ -43,3 +43,24 @@ impl FromStr for SecretStore {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn secret_store_round_trips() {
+        for store in [
+            SecretStore::Plaintext,
+            SecretStore::Keyring,
+            SecretStore::Env,
+        ] {
+            assert_eq!(store.to_string().parse::<SecretStore>().unwrap(), store);
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_secret_store() {
+        assert!("keychain".parse::<SecretStore>().is_err());
+    }
+}

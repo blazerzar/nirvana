@@ -43,7 +43,7 @@ impl Nirvana {
         if !settings.publish {
             return Err(TrackingError::PublishDisabled(connection.model.name).into());
         }
-        let token = read_credential(connection_id, &self.db).await?;
+        let token = read_credential(&self.keyring, connection_id, &self.db).await?;
         let integ = integration::build_integration(&connection, &token);
 
         let slots = self.get_unpublished_slots(from, to).await?;

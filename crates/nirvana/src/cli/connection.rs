@@ -6,7 +6,7 @@ use console::{Style, Term};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Input, Password, Select};
 use nirvana_core::domain::{Connection, ConnectionData};
-use nirvana_core::secrets::{self, SecretStore, selectable_stores};
+use nirvana_core::secrets::{SecretStore, selectable_stores};
 use nirvana_core::service::Nirvana;
 
 use crate::cli::{AddArgs, ConnectionKind};
@@ -231,13 +231,13 @@ fn pick_interactive(connections: &[Connection]) -> anyhow::Result<usize> {
 }
 
 pub(crate) async fn add(args: AddArgs) -> anyhow::Result<()> {
+    let mut api = Nirvana::new().await?;
     let data = if args.name.is_none() {
-        add_interactive().await?
+        add_interactive(&api).await?
     } else {
         add_command(args)?
     };
 
-    let mut api = Nirvana::new().await?;
     let connection = api.add_connection(data).await?;
 
     let term = Term::stdout();
@@ -273,7 +273,7 @@ fn add_command(args: AddArgs) -> anyhow::Result<ConnectionData> {
     })
 }
 
-async fn add_interactive() -> anyhow::Result<ConnectionData> {
+async fn add_interactive(api: &Nirvana) -> anyhow::Result<ConnectionData> {
     let theme = ColorfulTheme {
         active_item_prefix: Style::new().green().apply_to(String::from("❯")),
         ..ColorfulTheme::default()
@@ -326,7 +326,7 @@ async fn add_interactive() -> anyhow::Result<ConnectionData> {
         })
         .collect();
 
-    let preferred_store = if secrets::status().await.is_ok() {
+    let preferred_store = if api.keyring_status().await.is_ok() {
         SecretStore::Keyring
     } else {
         SecretStore::Plaintext

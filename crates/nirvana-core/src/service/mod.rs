@@ -17,12 +17,14 @@ use crate::config::AppConfig;
 pub use crate::domain::{Change, SlotCreate, SlotEdit, SlotSort};
 use crate::errors::NirvanaError;
 use crate::paths::AppPaths;
+use crate::secrets::{StoreFactory, native_store};
 use crate::storage;
 
 pub struct Nirvana {
     paths: AppPaths,
     config: AppConfig,
     db: DatabaseConnection,
+    keyring: StoreFactory,
 }
 
 pub struct AppInfo {
@@ -40,6 +42,11 @@ impl Nirvana {
         let paths = AppPaths::resolve()?;
         let config = AppConfig::load(&paths.config_file)?;
         let db = storage::open(&paths.db_file).await?;
-        Ok(Self { paths, config, db })
+        Ok(Self {
+            paths,
+            config,
+            db,
+            keyring: native_store(),
+        })
     }
 }

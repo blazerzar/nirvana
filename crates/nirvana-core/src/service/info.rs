@@ -10,9 +10,14 @@ impl Nirvana {
             db_file: self.paths.db_file.clone(),
             log_file: self.paths.log_file.clone(),
             sqlite_version: storage::sqlite_version(&self.db).await?,
-            keyring: secrets::status().await,
+            keyring: self.keyring_status().await,
             is_dev: self.paths.is_dev,
         })
+    }
+
+    /// Returns the keyring backend name, or why the keyring is unavailable.
+    pub async fn keyring_status(&self) -> Result<String, String> {
+        secrets::status(&self.keyring).await
     }
 }
 
@@ -27,5 +32,14 @@ mod tests {
         let info = api.info().await.unwrap();
 
         assert!(info.sqlite_version.starts_with("3."));
+    }
+
+    #[tokio::test]
+    async fn info_reports_keyring_vendor() {
+        let api = test_api().await;
+
+        let info = api.info().await.unwrap();
+
+        assert_eq!(info.keyring, Ok("Mock store".to_string()));
     }
 }

@@ -11,9 +11,12 @@
 //! - `env`: not supported yet.
 //!
 //! Keyring calls are synchronous and can show unlock dialogs, so every call,
-//! including creating and dropping the store, runs in `spawn_blocking`.
+//! including the `StoreFactory` that creates the store and dropping the store,
+//! runs in `spawn_blocking`.
 
-use keyring_core::api::CredentialStoreApi;
+use std::sync::Arc;
+
+use keyring_core::CredentialStore;
 pub use nirvana_entity::credential::{Entity as CredentialEntity, SecretStore};
 use sea_orm::{DatabaseConnection, DbErr, EntityTrait};
 use secrecy::{ExposeSecret, SecretString};
@@ -30,6 +33,19 @@ type Store = windows_native_keyring_store::store::Store;
 type Store = zbus_secret_service_keyring_store::store::Store;
 
 const KEYRING_SERVICE: &str = "nirvana";
+
+pub(crate) type StoreFactory =
+    Arc<dyn Fn() -> keyring_core::Result<Arc<CredentialStore>> + Send + Sync>;
+
+pub(crate) fn native_store() -> StoreFactory {
+    Arc::new(|| Ok(Store::new()?))
+}
+
+#[cfg(test)]
+pub(crate) fn mock_store() -> StoreFactory {
+    let store = keyring_core::mock::Store::new().unwrap();
+    Arc::new(move || Ok(store.clone()))
+}
 
 #[derive(Debug, Error)]
 pub enum SecretError {
@@ -56,9 +72,10 @@ fn unavailable(error: keyring_core::Error) -> SecretError {
 }
 
 /// Returns the keyring backend name, or why the keyring is unavailable.
-pub async fn status() -> Result<String, String> {
-    tokio::task::spawn_blocking(|| {
-        Store::new()
+pub(crate) async fn status(keyring: &StoreFactory) -> Result<String, String> {
+    let keyring = keyring.clone();
+    tokio::task::spawn_blocking(move || {
+        keyring()
             .map(|store| vendor_name(&store.vendor()))
             .map_err(|e| e.to_string())
     })
@@ -74,6 +91,7 @@ fn vendor_name(vendor: &str) -> String {
 /// `keyring` the token is saved in the keyring under
 /// `nirvana_<profile>_<connection>_<key>` and that account is returned.
 pub(crate) async fn store_secret(
+    keyring: &StoreFactory,
     profile: &str,
     connection: &str,
     store: SecretStore,
@@ -81,12 +99,13 @@ pub(crate) async fn store_secret(
 ) -> Result<String, NirvanaError> {
     match store {
         SecretStore::Plaintext => Ok(token.expose_secret().to_string()),
-        SecretStore::Keyring => Ok(store_in_keychain(profile, connection, token).await?),
+        SecretStore::Keyring => Ok(store_in_keychain(keyring, profile, connection, token).await?),
         SecretStore::Env => Err(SecretError::UnsupportedStore(store).into()),
     }
 }
 
 async fn store_in_keychain(
+    keyring: &StoreFactory,
     profile: &str,
     connection: &str,
     token: SecretString,
@@ -95,8 +114,9 @@ async fn store_in_keychain(
         "nirvana_{profile}_{connection}_{:08x}",
         rand::random::<u32>()
     );
+    let keyring = keyring.clone();
     tokio::task::spawn_blocking(move || {
-        Store::new()
+        keyring()
             .map_err(unavailable)?
             .build(KEYRING_SERVICE, &account, None)?
             .set_password(token.expose_secret())?;
@@ -108,6 +128,7 @@ async fn store_in_keychain(
 /// Returns the token of a connection, reading it from the keyring for
 /// `keyring` credentials.
 pub(crate) async fn read_credential(
+    keyring: &StoreFactory,
     connection_id: i64,
     db: &DatabaseConnection,
 ) -> Result<SecretString, NirvanaError> {
@@ -118,18 +139,26 @@ pub(crate) async fn read_credential(
             "credential for connection {connection_id}"
         )))?;
 
-    match credential.secret_store {
-        SecretStore::Plaintext => Ok(credential.credential.into()),
-        SecretStore::Keyring => Ok(read_from_keychain(connection_id, credential.credential)
-            .await?
-            .into()),
-        SecretStore::Env => Err(SecretError::UnsupportedStore(credential.secret_store).into()),
-    }
+    let token = match credential.secret_store {
+        SecretStore::Plaintext => credential.credential,
+        SecretStore::Keyring => {
+            read_from_keychain(keyring, connection_id, credential.credential).await?
+        }
+        SecretStore::Env => {
+            return Err(SecretError::UnsupportedStore(credential.secret_store).into());
+        }
+    };
+    Ok(token.into())
 }
 
-async fn read_from_keychain(connection_id: i64, account: String) -> Result<String, SecretError> {
+async fn read_from_keychain(
+    keyring: &StoreFactory,
+    connection_id: i64,
+    account: String,
+) -> Result<String, SecretError> {
+    let keyring = keyring.clone();
     tokio::task::spawn_blocking(move || {
-        Store::new()
+        keyring()
             .map_err(unavailable)?
             .build(KEYRING_SERVICE, &account, None)?
             .get_password()
@@ -143,9 +172,10 @@ async fn read_from_keychain(connection_id: i64, account: String) -> Result<Strin
 
 /// Deletes the keyring entry of `account`. Failures are logged instead of
 /// returned.
-pub(crate) async fn delete_from_keychain(account: String) {
+pub(crate) async fn delete_from_keychain(keyring: &StoreFactory, account: String) {
+    let keyring = keyring.clone();
     let deleted = tokio::task::spawn_blocking(move || {
-        match Store::new()
+        match keyring()
             .map_err(unavailable)?
             .build(KEYRING_SERVICE, &account, None)?
             .delete_credential()
@@ -158,5 +188,46 @@ pub(crate) async fn delete_from_keychain(account: String) {
     .unwrap_or_else(|e| Err(e.into()));
     if let Err(e) = deleted {
         warn!(error = %e, "failed to delete keyring entry");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn keyring_secret_round_trips() {
+        let keyring = mock_store();
+
+        let account = store_secret(
+            &keyring,
+            "blaz",
+            "jira-dc",
+            SecretStore::Keyring,
+            "very-secret-token".into(),
+        )
+        .await
+        .unwrap();
+
+        assert_ne!(account, "very-secret-token");
+        assert_eq!(
+            read_from_keychain(&keyring, 1, account).await.unwrap(),
+            "very-secret-token"
+        );
+    }
+
+    #[tokio::test]
+    async fn plaintext_secret_is_the_token() {
+        let secret = store_secret(
+            &mock_store(),
+            "blaz",
+            "jira-dc",
+            SecretStore::Plaintext,
+            "not-so-secret-token".into(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(secret, "not-so-secret-token");
     }
 }

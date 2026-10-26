@@ -1,50 +1,39 @@
-use std::ops::Deref;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::ops::{Deref, DerefMut};
 
 use nirvana_entity::credential::SecretStore;
 use nirvana_entity::profile;
 use sea_orm::{ActiveModelTrait, Set};
+use tempfile::TempDir;
 
 use crate::config::{AppConfig, CoreConfig, GuiConfig, IdleConfig};
 use crate::domain::ConnectionData;
 use crate::paths::AppPaths;
+use crate::secrets::mock_store;
 use crate::service::Nirvana;
 use crate::storage;
 
-static TEST_DB_COUNTER: AtomicUsize = AtomicUsize::new(0);
-
 pub(super) struct TestApi {
-    api: Option<Nirvana>,
-    base: PathBuf,
+    api: Nirvana,
+    _dir: TempDir,
 }
 
 impl Deref for TestApi {
     type Target = Nirvana;
 
     fn deref(&self) -> &Self::Target {
-        self.api.as_ref().unwrap()
+        &self.api
     }
 }
 
-impl Drop for TestApi {
-    fn drop(&mut self) {
-        drop(self.api.take());
-        let _ = std::fs::remove_dir_all(&self.base);
+impl DerefMut for TestApi {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.api
     }
 }
 
 pub(super) async fn test_api() -> TestApi {
-    let suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let counter = TEST_DB_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let base = std::env::temp_dir().join(format!(
-        "nirvana-create-slot-test-{}-{suffix}-{counter}",
-        std::process::id(),
-    ));
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().to_path_buf();
     let paths = AppPaths {
         config_dir: base.clone(),
         data_dir: base.clone(),
@@ -74,6 +63,7 @@ pub(super) async fn test_api() -> TestApi {
             },
         },
         db,
+        keyring: mock_store(),
     };
     profile::ActiveModel {
         name: Set("test".to_string()),
@@ -95,8 +85,5 @@ pub(super) async fn test_api() -> TestApi {
         .unwrap();
     api.config.core.active_connection = Some(connection.model.id);
 
-    TestApi {
-        api: Some(api),
-        base,
-    }
+    TestApi { api, _dir: dir }
 }

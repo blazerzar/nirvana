@@ -156,7 +156,7 @@ impl Nirvana {
             return Ok(touch_ticket(t, last_worked_at, &self.db).await?);
         }
 
-        let token = read_credential(connection_id, &self.db).await?;
+        let token = read_credential(&self.keyring, connection_id, &self.db).await?;
         let integ = integration::build_integration(connection, &token);
         let issue = integ.fetch_issue(ticket_key).await.map_err(|e| match e {
             IntegrationError::TicketNotFound(key) => {

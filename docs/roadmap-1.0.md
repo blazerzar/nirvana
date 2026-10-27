@@ -124,7 +124,7 @@ logged from the start.
 - [x] Add support for storing connection tokens in keychain (keyring-core),
       macOS, Windows, Linux. The credentials row holds the keyring account
       instead of the token. Show keyring availability in `nirvana info`.
-- [ ] Add keyring tests that are run manually on full machines (macOS,
+- [x] Add keyring tests that are run manually on full machines (macOS,
       Windows, Linux with gnome-keyring and with KWallet).
 - [x] Add tests with the `keyring_core` mock store for storing, reading and
       deleting keyring tokens, deleting the keyring entry when adding a

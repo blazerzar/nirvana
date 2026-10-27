@@ -173,8 +173,14 @@ async fn read_from_keychain(
 /// Deletes the keyring entry of `account`. Failures are logged instead of
 /// returned.
 pub(crate) async fn delete_from_keychain(keyring: &StoreFactory, account: String) {
+    if let Err(e) = delete_entry(keyring, account).await {
+        warn!(error = %e, "failed to delete keyring entry");
+    }
+}
+
+async fn delete_entry(keyring: &StoreFactory, account: String) -> Result<(), SecretError> {
     let keyring = keyring.clone();
-    let deleted = tokio::task::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         match keyring()
             .map_err(unavailable)?
             .build(KEYRING_SERVICE, &account, None)?
@@ -184,21 +190,27 @@ pub(crate) async fn delete_from_keychain(keyring: &StoreFactory, account: String
             Err(e) => Err(SecretError::from(e)),
         }
     })
-    .await
-    .unwrap_or_else(|e| Err(e.into()));
-    if let Err(e) = deleted {
-        warn!(error = %e, "failed to delete keyring entry");
-    }
+    .await?
 }
 
 #[cfg(test)]
 mod tests {
+    //! The `native_keyring` tests use the OS keyring and are ignored by default.
+    //! Run them with `mise run test-keyring` on macOS, Windows, Ubuntu with
+    //! GNOME and Fedora with Plasma. On Linux every provider reports
+    //! "Secret Service store", so check the provider with
+    //! `busctl --user status org.freedesktop.secrets | grep -E '^(Comm|Exe)='`.
+
     use super::*;
 
-    #[tokio::test]
-    async fn keyring_secret_round_trips() {
-        let keyring = mock_store();
+    #[cfg(target_os = "macos")]
+    const NATIVE_VENDOR: &str = "macOS Keychain Store";
+    #[cfg(target_os = "windows")]
+    const NATIVE_VENDOR: &str = "Windows Credential Manager";
+    #[cfg(target_os = "linux")]
+    const NATIVE_VENDOR: &str = "Secret Service store";
 
+    async fn assert_round_trip(keyring: StoreFactory) {
         let account = store_secret(
             &keyring,
             "blaz",
@@ -209,11 +221,37 @@ mod tests {
         .await
         .unwrap();
 
+        let read = read_from_keychain(&keyring, 1, account.clone()).await;
+        let deleted = delete_entry(&keyring, account.clone()).await;
+        let read_after_delete = read_from_keychain(&keyring, 1, account.clone()).await;
+
         assert_ne!(account, "very-secret-token");
-        assert_eq!(
-            read_from_keychain(&keyring, 1, account).await.unwrap(),
-            "very-secret-token"
+        assert_eq!(read.unwrap(), "very-secret-token");
+        deleted.unwrap();
+        assert!(
+            matches!(
+                read_after_delete,
+                Err(SecretError::MissingEntry { connection_id: 1 })
+            ),
+            "{read_after_delete:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn keyring_secret_round_trips() {
+        assert_round_trip(mock_store()).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "uses the OS keyring, run with `mise run test-keyring`"]
+    async fn native_keyring_round_trips() {
+        assert_round_trip(native_store()).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "uses the OS keyring, run with `mise run test-keyring`"]
+    async fn native_keyring_is_detected() {
+        assert_eq!(status(&native_store()).await, Ok(NATIVE_VENDOR.to_string()));
     }
 
     #[tokio::test]

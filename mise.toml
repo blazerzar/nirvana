@@ -38,6 +38,10 @@ run = "hk fix --all"
 description = "Run all tests"
 run = "cargo test --workspace"
 
+[tasks.test-keyring]
+description = "Run keyring tests against the OS keyring (manual, on full machines)"
+run = "cargo test -p nirvana-core native_keyring -- --ignored --test-threads=1"
+
 [tasks.check]
 description = "Type-check all crates"
 run = "cargo check --workspace"

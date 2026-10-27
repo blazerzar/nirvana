@@ -81,10 +81,36 @@ impl AppConfig {
 
     /// Writes the config to `config.toml` in the current format, creating the
     /// config directory if it does not exist.
+    ///
+    /// A key is written only if its value differs from the default or the key
+    /// is already present in the file. `schema_version` is always written. A
+    /// file that cannot be read is overwritten.
     pub(crate) fn save(&self, paths: &AppPaths) -> Result<(), ConfigError> {
-        let content = toml::to_string_pretty(self)?;
-        std::fs::create_dir_all(&paths.config_dir)?;
-        fs::write(&paths.config_file, content)?;
+        let existing: toml::Table = fs::read_to_string(&paths.config_file)
+            .ok()
+            .and_then(|content| content.parse().ok())
+            .unwrap_or_default();
+        let defaults = toml::Table::try_from(Self::default())?;
+        let mut table = toml::Table::try_from(self)?;
+        table.retain(|key, value| {
+            if key == "schema_version" {
+                return true;
+            }
+            let existing = existing.get(key);
+            let default = defaults.get(key);
+            match value {
+                toml::Value::Table(keys) => {
+                    keys.retain(|key, value| {
+                        existing.and_then(|s| s.get(key)).is_some()
+                            || default.and_then(|s| s.get(key)) != Some(value)
+                    });
+                    !keys.is_empty()
+                }
+                value => existing.is_some() || default != Some(value),
+            }
+        });
+        fs::create_dir_all(&paths.config_dir)?;
+        fs::write(&paths.config_file, toml::to_string_pretty(&table)?)?;
         Ok(())
     }
 }
@@ -221,5 +247,161 @@ threshold_secs = 600
         assert!(config.idle.enabled);
         assert_eq!(config.idle.methods, vec!["lock", "sleep", "input"]);
         assert_eq!(config.idle.threshold_secs, 300);
+    }
+
+    /// Saves `config` in a temporary directory and returns the saved
+    /// `config.toml`.
+    ///
+    /// `file_before_save` is the content of `config.toml` before saving, `None`
+    /// means the file does not exist yet.
+    fn save_and_read(config: &AppConfig, file_before_save: Option<&str>) -> toml::Table {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::in_dir(dir.path());
+        if let Some(content) = file_before_save {
+            fs::write(&paths.config_file, content).unwrap();
+        }
+        config.save(&paths).unwrap();
+        fs::read_to_string(&paths.config_file)
+            .unwrap()
+            .parse()
+            .unwrap()
+    }
+
+    #[test]
+    fn saves_only_schema_version_for_defaults() {
+        let saved = save_and_read(&AppConfig::default(), None);
+
+        assert_eq!(saved, "schema_version = 2".parse().unwrap());
+    }
+
+    #[test]
+    fn saves_non_default_values() {
+        let config = AppConfig {
+            core: CoreConfig { profile: Some(1) },
+            idle: IdleConfig {
+                enabled: default_idle_enabled(),
+                methods: default_idle_methods(),
+                threshold_secs: 450,
+            },
+            ..AppConfig::default()
+        };
+
+        let saved = save_and_read(&config, None);
+
+        assert_eq!(
+            saved,
+            r#"
+schema_version = 2
+
+[core]
+profile = 1
+
+[idle]
+threshold_secs = 450
+"#
+            .parse()
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn keeps_default_values_already_in_file() {
+        let saved = save_and_read(
+            &AppConfig::default(),
+            Some(
+                r#"
+schema_version = 2
+
+[idle]
+enabled = true
+"#,
+            ),
+        );
+
+        assert_eq!(
+            saved,
+            r#"
+schema_version = 2
+
+[idle]
+enabled = true
+"#
+            .parse()
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn writes_default_values_when_key_already_in_file() {
+        let saved = save_and_read(
+            &AppConfig::default(),
+            Some(
+                r#"
+schema_version = 2
+
+[idle]
+enabled = false
+"#,
+            ),
+        );
+
+        assert_eq!(
+            saved,
+            r#"
+schema_version = 2
+
+[idle]
+enabled = true
+"#
+            .parse()
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn saves_030_fixture_without_dropped_keys() {
+        let fixture = include_str!("../../tests/fixtures/v0_3_0/config_030.toml");
+        let config = AppConfig::parse(fixture.parse().unwrap()).unwrap();
+
+        let saved = save_and_read(&config, Some(fixture));
+
+        assert_eq!(
+            saved,
+            r#"
+schema_version = 2
+
+[gui]
+theme = "dark"
+
+[idle]
+enabled = true
+methods = ["lock"]
+threshold_secs = 600
+"#
+            .parse()
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn overwrites_unreadable_file() {
+        let config = AppConfig {
+            core: CoreConfig { profile: Some(1) },
+            ..AppConfig::default()
+        };
+
+        let saved = save_and_read(&config, Some("not = [valid"));
+
+        assert_eq!(
+            saved,
+            r#"
+schema_version = 2
+
+[core]
+profile = 1
+"#
+            .parse()
+            .unwrap()
+        );
     }
 }

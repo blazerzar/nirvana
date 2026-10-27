@@ -33,16 +33,7 @@ impl DerefMut for TestApi {
 
 pub(super) async fn test_api() -> TestApi {
     let dir = tempfile::tempdir().unwrap();
-    let base = dir.path().to_path_buf();
-    let paths = AppPaths {
-        config_dir: base.clone(),
-        data_dir: base.clone(),
-        log_dir: base.clone(),
-        config_file: base.join("config.toml"),
-        db_file: base.join("nirvana.db"),
-        log_file: base.join("nirvana.log"),
-        is_dev: true,
-    };
+    let paths = AppPaths::in_dir(dir.path());
     let db = storage::open(&paths.db_file).await.unwrap();
     let mut api = Nirvana {
         paths,

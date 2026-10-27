@@ -51,6 +51,7 @@ fn map_theme(theme: &str) -> Theme {
 mod tests {
     use super::*;
 
+    /// Parses the content of a fixture file into the current config.
     fn parse_fixture(content: &str) -> AppConfig {
         AppConfig::parse(content.parse().unwrap()).unwrap()
     }

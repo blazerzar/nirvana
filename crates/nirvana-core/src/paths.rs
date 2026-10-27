@@ -142,6 +142,22 @@ fn not_found(message: &str) -> io::Error {
 }
 
 #[cfg(test)]
+impl AppPaths {
+    /// Places every directory and file in `dir`, in dev mode.
+    pub(crate) fn in_dir(dir: &std::path::Path) -> Self {
+        Self {
+            config_dir: dir.to_path_buf(),
+            data_dir: dir.to_path_buf(),
+            log_dir: dir.to_path_buf(),
+            config_file: dir.join("config.toml"),
+            db_file: dir.join("nirvana.db"),
+            log_file: dir.join("nirvana.log"),
+            is_dev: true,
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

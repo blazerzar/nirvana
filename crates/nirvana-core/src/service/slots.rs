@@ -3,7 +3,7 @@ use nirvana_entity::{slot, ticket};
 use sea_orm::{DbErr, ExprTrait, QueryFilter, QueryOrder, QueryTrait};
 
 use crate::domain::SlotSort;
-use crate::errors::{NirvanaError, TrackingError};
+use crate::errors::NirvanaError;
 use crate::service::Nirvana;
 
 impl Nirvana {
@@ -28,11 +28,7 @@ impl Nirvana {
         to: Option<i64>,
         sort: SlotSort,
     ) -> Result<Vec<(slot::Model, ticket::Model)>, NirvanaError> {
-        let connection_id = self
-            .config
-            .core
-            .active_connection
-            .ok_or(TrackingError::NoActiveConnection)?;
+        let connection_id = self.active_connection_id().await?;
 
         let query = Slot::find_with_ticket()
             .filter(ticket::COLUMN.connection_id.eq(connection_id))
@@ -60,11 +56,7 @@ impl Nirvana {
         from: i64,
         to: Option<i64>,
     ) -> Result<Vec<(slot::Model, ticket::Model)>, NirvanaError> {
-        let connection_id = self
-            .config
-            .core
-            .active_connection
-            .ok_or(TrackingError::NoActiveConnection)?;
+        let connection_id = self.active_connection_id().await?;
 
         let records = Slot::find_unpublished(connection_id)
             .find_also_related(ticket::Entity)

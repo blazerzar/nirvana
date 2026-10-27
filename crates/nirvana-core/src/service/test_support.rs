@@ -5,7 +5,7 @@ use nirvana_entity::profile;
 use sea_orm::{ActiveModelTrait, Set};
 use tempfile::TempDir;
 
-use crate::config::{AppConfig, CoreConfig, GuiConfig, IdleConfig};
+use crate::config::AppConfig;
 use crate::domain::ConnectionData;
 use crate::paths::AppPaths;
 use crate::secrets::mock_store;
@@ -46,22 +46,7 @@ pub(super) async fn test_api() -> TestApi {
     let db = storage::open(&paths.db_file).await.unwrap();
     let mut api = Nirvana {
         paths,
-        config: AppConfig {
-            schema_version: Some(1),
-            core: CoreConfig {
-                active_connection: None,
-            },
-            gui: GuiConfig {
-                font_scale: 1.0,
-                theme: "high-contrast-dark".to_string(),
-                show_tray_icon: false,
-            },
-            idle: IdleConfig {
-                enabled: false,
-                methods: vec!["lock".into(), "sleep".into(), "input".into()],
-                threshold_secs: 300,
-            },
-        },
+        config: AppConfig::default(),
         db,
         keyring: mock_store(),
     };
@@ -83,7 +68,8 @@ pub(super) async fn test_api() -> TestApi {
         })
         .await
         .unwrap();
-    api.config.core.active_connection = Some(connection.model.id);
+    api.config.core.profile = Some(connection.model.profile_id);
+    api.config.idle.enabled = false;
 
     TestApi { api, _dir: dir }
 }

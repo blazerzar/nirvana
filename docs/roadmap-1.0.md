@@ -61,8 +61,8 @@ logged from the start.
 
 - [x] Capture 0.3.0-alpha fixtures: build the `v0.3.0-alpha` tag and create a
       DB (connections, plaintext credentials, tickets, closed, running and
-      published slots, notes) and config.toml files (0.1 flat and 0.3
-      sectioned). Check them into the repo, never edit them.
+      published slots, notes) and config.toml files (0.1 flat, 0.2 without
+      `[idle]` and 0.3 sectioned). Check them into the repo, never edit them.
 - [x] Make core async (tokio, async reqwest).
 - [x] Add SeaORM and replace the raw SQL migration files with SeaORM
       migrations (0001 and 0002 rewritten as the baseline).
@@ -102,20 +102,20 @@ logged from the start.
 
 ## Config
 
-- [ ] Move config into a `config/` module with one file per old format (0.1
-      flat, 0.3 sectioned). Each only parses TOML and returns the latest
-      config interface.
-- [ ] Detect an old config.toml (0.1 flat or schema_version 1), back it up to
+- [x] Move config into a `config/` module with one file per old format (0.3
+      sectioned). Each only parses TOML and returns the latest config
+      interface.
+- [ ] Detect an old config.toml (schema_version 1), back it up to
       `data_dir/backup` and migrate. Log every step.
-- [ ] Fail on parse errors instead of falling back to defaults and
+- [x] Fail on parse errors instead of falling back to defaults and
       overwriting the config.
-- [ ] Bump schema_version to 2, one migration step per version.
-- [ ] Replace active_connection with active profile.
+- [x] Bump schema_version to 2, one migration step per version.
+- [x] Replace active_connection with active profile.
 - [x] Remove publish_squashed_worklogs (moved into connections).
 - [ ] Add `[log] level`.
-- [ ] Add config migration tests: 0.1 flat and 0.3.0-alpha sectioned
+- [x] Add config migration tests: 0.1 flat, 0.2 and 0.3.0-alpha sectioned
       config.toml fixtures migrate correctly (active connection dropped,
-      machine settings kept).
+      machine settings kept, missing sections get defaults).
 
 ## Keychain
 

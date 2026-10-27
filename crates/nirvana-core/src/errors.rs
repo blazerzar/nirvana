@@ -27,6 +27,8 @@ pub enum TrackingError {
     NoActiveConnection,
     #[error("no active profile")]
     NoActiveProfile,
+    #[error("profile not found: {0}")]
+    ProfileNotFound(i64),
     #[error("connection not found: {0}")]
     ConnectionNotFound(i64),
     #[error("cannot delete a connection with local history")]

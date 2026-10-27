@@ -130,13 +130,13 @@ publish_entries(slot_id, connection_id, published_at NULL, error NULL)
   of the slot's current ticket and fails if that ticket has none.
   `credentials` and `secret_store` stay (plaintext support).
 - Config migration (Config stage): back up `config.toml` to
-  `data_dir/backup`. `core.active_connection` becomes the active profile (all
-  connections are active), `core.publish_squashed_worklogs` is dropped,
+  `data_dir/backup`. `core.active_connection` and
+  `core.publish_squashed_worklogs` are dropped, missing sections (0.2.x has
+  no `[idle]`) get the 0.3 defaults,
   `[log] level` is added. A parse error fails instead of falling back to
-  defaults. The `config/` module has one file per old format (0.1 flat, 0.3
+  defaults. The `config/` module has one file per old format (0.3
   sectioned). Each only parses TOML and returns the latest config interface.
-  The 0.1 format stays because 0.2 and 0.3 only rewrite `config.toml` when a
-  setting changes, so a 0.3 user can still have a flat file.
+  A file without `schema_version` (0.1 flat) is replaced with the defaults.
 - Desktop settings migration (GUI stage): the 0.3 `gui.*` and `idle.*`
   settings map to the new machine settings where an equivalent exists, unused
   keys (font scale, tray icon) are removed, old theme names map to
@@ -153,9 +153,11 @@ publish_entries(slot_id, connection_id, published_at NULL, error NULL)
     entries created for published slots, backup created. Also cover a fresh
     DB, and check that a fresh DB and a migrated one end with the same
     schema.
-  - Config: fixtures for the 0.1 flat format and the 0.3.0-alpha sectioned
+  - Config: a fixture for the 0.3.0-alpha sectioned
     format (`[core]`, `[gui]`, `[idle]`). Check that `active_connection` is
-    dropped and machine/idle settings are kept.
+    dropped and machine/idle settings are kept. A 0.2.x fixture (no
+    `[idle]`) gets the 0.3 idle defaults, a 0.1 flat fixture gives the
+    defaults.
   - Fixtures are checked into the repo and never edited. Each new migration
     adds tests on top of them.
 

@@ -130,8 +130,8 @@ logged from the start.
       deleting keyring tokens, deleting the keyring entry when adding a
       connection fails and parsing `SecretStore`. The store must be injectable
       through a store factory (decision 19).
-- [ ] Build and test on Windows arm64 and Linux arm64 in CI
-      (`windows-11-arm`, `ubuntu-24.04-arm`).
+- [x] Build and test on Windows arm64 and Linux arm64 in CI
+      (`windows-11-arm`, `ubuntu-26.04-arm`).
 
 ## Profiles and connections CLI
 

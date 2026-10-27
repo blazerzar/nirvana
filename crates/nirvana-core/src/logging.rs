@@ -7,12 +7,12 @@
 //!
 //! - `error`, `warn`
 //! - `info`: user issued commands and state changes
-//! - `debug`: everything else, enabled in release
+//! - `debug`: everything else
 //! - `trace`: dev only, compiled out in release builds
 //!
 //! # Filter
 //!
-//! Defaults to `warn,nirvana=debug,nirvana_core=debug` (`trace` in dev mode).
+//! Defaults to `info` (`trace` in dev mode).
 //! `NIRVANA_LOG` overrides it with a full filter directive.
 
 use std::fs::{File, OpenOptions};
@@ -80,10 +80,10 @@ fn open_log_file(path: &Path) -> io::Result<File> {
 }
 
 fn filter(var: impl Fn(&str) -> Option<String>, is_dev: bool) -> EnvFilter {
-    let level = if is_dev { "trace" } else { "debug" };
+    let level = if is_dev { "trace" } else { "info" };
     let directives = var(LOG_ENV_VAR)
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| format!("warn,nirvana={level},nirvana_core={level}"));
+        .unwrap_or_else(|| level.to_string());
     EnvFilter::new(directives)
 }
 
@@ -148,16 +148,8 @@ mod tests {
 
     #[test]
     fn filter_defaults_follow_dev_mode() {
-        assert!(
-            filter(env(&[]), true)
-                .to_string()
-                .contains("nirvana_core=trace")
-        );
-        assert!(
-            filter(env(&[]), false)
-                .to_string()
-                .contains("nirvana_core=debug")
-        );
+        assert_eq!(filter(env(&[]), true).to_string(), "trace");
+        assert_eq!(filter(env(&[]), false).to_string(), "info");
     }
 
     #[test]

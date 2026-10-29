@@ -30,14 +30,13 @@
 //! Each directory can be overridden with `NIRVANA_CONFIG_DIR`,
 //! `NIRVANA_DATA_DIR` and `NIRVANA_LOG_DIR`.
 
-use std::path::PathBuf;
-use std::{env, io};
+use std::path::{Path, PathBuf};
+use std::{env, fs, io};
 
 use directories::ProjectDirs;
 
 pub struct AppPaths {
     pub config_dir: PathBuf,
-    #[allow(unused)]
     pub data_dir: PathBuf,
     #[allow(unused)]
     pub log_dir: PathBuf,
@@ -135,6 +134,22 @@ impl AppPaths {
             .unwrap_or_else(|| dirs.data_local_dir())
             .to_path_buf())
     }
+}
+
+/// Returns `backup_dir/<file name>.<timestamp>.bak`, creating `backup_dir` if
+/// it does not exist.
+///
+/// For example `nirvana.db` gives `backup/nirvana.db.20261019-203400.bak`.
+pub(crate) fn backup_path(file: &Path, backup_dir: &Path) -> io::Result<PathBuf> {
+    let stamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+    let mut name = file
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no file name"))?
+        .to_os_string();
+    name.push(format!(".{stamp}.bak"));
+
+    fs::create_dir_all(backup_dir)?;
+    Ok(backup_dir.join(name))
 }
 
 fn not_found(message: &str) -> io::Error {

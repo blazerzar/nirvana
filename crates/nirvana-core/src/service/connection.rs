@@ -26,7 +26,7 @@ impl Nirvana {
     }
 
     pub async fn get_active_connection(&self) -> Result<Option<Connection>, NirvanaError> {
-        let Some(profile_id) = self.config.core.profile else {
+        let Some(profile_id) = self.config()?.core.profile else {
             return Ok(None);
         };
 
@@ -50,7 +50,7 @@ impl Nirvana {
 
     pub fn active_profile(&self) -> Result<i64, NirvanaError> {
         Ok(self
-            .config
+            .config()?
             .core
             .profile
             .ok_or(TrackingError::NoActiveProfile)?)
@@ -61,8 +61,9 @@ impl Nirvana {
             return Err(TrackingError::ProfileNotFound(id).into());
         }
 
-        self.config.core.profile = Some(id);
-        self.config.save(&self.paths)?;
+        let config = self.config.as_mut().map_err(|e| e.clone())?;
+        config.core.profile = Some(id);
+        config.save(&self.paths)?;
         Ok(())
     }
 

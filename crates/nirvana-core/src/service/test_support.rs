@@ -37,7 +37,7 @@ pub(super) async fn test_api() -> TestApi {
     let db = storage::open(&paths.db_file).await.unwrap();
     let mut api = Nirvana {
         paths,
-        config: AppConfig::default(),
+        config: Ok(AppConfig::default()),
         db,
         keyring: mock_store(),
     };
@@ -59,8 +59,9 @@ pub(super) async fn test_api() -> TestApi {
         })
         .await
         .unwrap();
-    api.config.core.profile = Some(connection.model.profile_id);
-    api.config.idle.enabled = false;
+    let config = api.config.as_mut().unwrap();
+    config.core.profile = Some(connection.model.profile_id);
+    config.idle.enabled = false;
 
     TestApi { api, _dir: dir }
 }

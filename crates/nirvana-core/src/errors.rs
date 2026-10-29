@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use thiserror::Error;
 
 pub use crate::config::ConfigError;
@@ -9,6 +11,8 @@ pub use crate::storage::DbError;
 pub enum NirvanaError {
     #[error("config error: {0}")]
     Config(#[from] ConfigError),
+    #[error("config unavailable: {0}")]
+    ConfigUnavailable(#[from] Arc<ConfigError>),
     #[error(transparent)]
     Db(#[from] DbError),
     #[error("I/O error: {0}")]

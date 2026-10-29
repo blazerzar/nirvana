@@ -105,7 +105,7 @@ logged from the start.
 - [x] Move config into a `config/` module with one file per old format (0.3
       sectioned). Each only parses TOML and returns the latest config
       interface.
-- [ ] Detect an old config.toml (schema_version 1), back it up to
+- [x] Detect an old config.toml (schema_version 1), back it up to
       `data_dir/backup` and migrate. Log every step.
 - [x] Fail on parse errors instead of falling back to defaults and
       overwriting the config.

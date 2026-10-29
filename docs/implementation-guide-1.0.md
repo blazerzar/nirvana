@@ -136,7 +136,14 @@ publish_entries(slot_id, connection_id, published_at NULL, error NULL)
   `[log] level` is added. A parse error fails instead of falling back to
   defaults. The `config/` module has one file per old format (0.3
   sectioned). Each only parses TOML and returns the latest config interface.
-  A file without `schema_version` (0.1 flat) is replaced with the defaults.
+  A flat file (no sections) without `schema_version` is 0.1 and is replaced
+  with the defaults. An empty file gives the defaults and is not rewritten. A
+  file with sections but no `schema_version` fails.
+  Every file older than the current schema (0.1 included) is backed up and
+  rewritten on load with only non-default values, through a temporary file
+  renamed over `config.toml`. Every migration step is logged at info. A
+  missing file is not written. A failed backup or rewrite returns an error. Saving the config
+  and using a profile fail on it, every other command only warns.
 - Desktop settings migration (GUI stage): the 0.3 `gui.*` and `idle.*`
   settings map to the new machine settings where an equivalent exists, unused
   keys (font scale, tray icon) are removed, old theme names map to

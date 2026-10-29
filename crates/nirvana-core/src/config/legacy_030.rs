@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use tracing::info;
 
 use super::{
     AppConfig, CURRENT_SCHEMA_VERSION, ConfigError, CoreConfig, GuiConfig, IdleConfig, Theme,
@@ -28,7 +27,6 @@ impl Default for Gui {
 
 pub(super) fn parse(table: toml::Table) -> Result<AppConfig, ConfigError> {
     let config: Config = table.try_into()?;
-    info!("migrated config schema version 1 to 2");
     Ok(AppConfig {
         schema_version: CURRENT_SCHEMA_VERSION,
         core: CoreConfig::default(),
@@ -50,7 +48,7 @@ fn map_theme(theme: &str) -> Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::tests::parse;
+    use crate::config::tests::{FIXTURE_020, FIXTURE_030, parse};
 
     /// Parses the content of a fixture file into the current config.
     fn parse_fixture(content: &str) -> AppConfig {
@@ -59,7 +57,7 @@ mod tests {
 
     #[test]
     fn migrates_020_fixture_without_idle_section() {
-        let config = parse_fixture(include_str!("../../tests/fixtures/v0_3_0/config_020.toml"));
+        let config = parse_fixture(FIXTURE_020);
 
         assert_eq!(
             config,
@@ -74,7 +72,7 @@ mod tests {
 
     #[test]
     fn migrates_030_fixture() {
-        let config = parse_fixture(include_str!("../../tests/fixtures/v0_3_0/config_030.toml"));
+        let config = parse_fixture(FIXTURE_030);
 
         assert_eq!(
             config,

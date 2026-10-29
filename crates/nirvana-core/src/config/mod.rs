@@ -4,13 +4,14 @@
 //!
 //! - missing in an empty file: the defaults
 //! - missing in a flat file without sections: 0.1 format, replaced with the
-//!   defaults
+//!   defaults by `legacy_010`
 //! - missing in any other file: [`ConfigError::MissingSchema`]
 //! - `1`: 0.3 sectioned format, parsed by `legacy_030`
 //! - `2`: the current format
 //! - anything else: [`ConfigError::UnsupportedSchema`]
 //!
-//! Each legacy module only parses TOML and returns the current [`AppConfig`].
+//! Each legacy module converts its TOML table to the current [`AppConfig`].
+//! A legacy format without `schema_version` is detected by its module.
 //! A file in an older format is backed up and rewritten on load.
 
 use std::fs;
@@ -21,6 +22,7 @@ use tracing::info;
 
 use crate::paths::{AppPaths, backup_path};
 
+mod legacy_010;
 mod legacy_030;
 
 const CURRENT_SCHEMA_VERSION: i64 = 2;
@@ -51,7 +53,7 @@ impl Schema {
     fn of(table: &toml::Table) -> Result<Self, ConfigError> {
         match table.get("schema_version") {
             None if table.is_empty() => Ok(Self::Empty),
-            None if !table.values().any(toml::Value::is_table) => Ok(Self::Legacy010),
+            None if legacy_010::is_flat(table) => Ok(Self::Legacy010),
             None => Err(ConfigError::MissingSchema),
             Some(toml::Value::Integer(1)) => Ok(Self::Legacy030),
             Some(toml::Value::Integer(CURRENT_SCHEMA_VERSION)) => Ok(Self::Current),
@@ -90,10 +92,7 @@ impl AppConfig {
     fn parse(schema: Schema, table: toml::Table) -> Result<Self, ConfigError> {
         match schema {
             Schema::Empty => Ok(Self::default()),
-            Schema::Legacy010 => {
-                info!("replacing 0.1 config with defaults");
-                Ok(Self::default())
-            }
+            Schema::Legacy010 => legacy_010::parse(table),
             Schema::Legacy030 => legacy_030::parse(table),
             Schema::Current => Ok(table.try_into()?),
         }
@@ -116,7 +115,7 @@ impl AppConfig {
             fs::copy(&paths.config_file, &backup_path)?;
             info!("config backed up to {}", backup_path.display());
             config.write(paths, &toml::Table::new())?;
-            info!("config migrated to schema version {CURRENT_SCHEMA_VERSION}");
+            info!("config migrated from {schema:?} to schema version {CURRENT_SCHEMA_VERSION}");
         }
         Ok(config)
     }
@@ -223,7 +222,10 @@ mod tests {
     use super::*;
 
     const FIXTURE_010: &str = include_str!("../../tests/fixtures/v0_3_0/config_010.toml");
-    const FIXTURE_030: &str = include_str!("../../tests/fixtures/v0_3_0/config_030.toml");
+    pub(super) const FIXTURE_020: &str =
+        include_str!("../../tests/fixtures/v0_3_0/config_020.toml");
+    pub(super) const FIXTURE_030: &str =
+        include_str!("../../tests/fixtures/v0_3_0/config_030.toml");
 
     /// Parses the content of a config file into the current config.
     pub(super) fn parse(content: &str) -> Result<AppConfig, ConfigError> {
@@ -276,13 +278,6 @@ threshold_secs = 600
         let content = toml::to_string_pretty(&config).unwrap();
 
         assert_eq!(parse(&content).unwrap(), config);
-    }
-
-    #[test]
-    fn replaces_010_fixture_with_defaults() {
-        let config = parse(FIXTURE_010).unwrap();
-
-        assert_eq!(config, AppConfig::default());
     }
 
     #[test]
@@ -409,6 +404,7 @@ enabled = true
             .unwrap()
         );
     }
+
     /// Returns the files in `data_dir/backup`, empty if the directory does not
     /// exist.
     fn backups(paths: &AppPaths) -> Vec<std::path::PathBuf> {
@@ -484,10 +480,7 @@ threshold_secs = 600
     #[test]
     fn loading_010_fixture_backs_it_up_and_writes_defaults() {
         let dir = tempfile::tempdir().unwrap();
-        let (paths, result) = load_file(
-            dir.path(),
-            include_str!("../../tests/fixtures/v0_3_0/config_010.toml"),
-        );
+        let (paths, result) = load_file(dir.path(), FIXTURE_010);
 
         assert_eq!(result.unwrap(), AppConfig::default());
         assert_eq!(backups(&paths).len(), 1);

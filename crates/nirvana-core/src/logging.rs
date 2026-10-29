@@ -12,8 +12,9 @@
 //!
 //! # Filter
 //!
-//! Defaults to `info` (`trace` in dev mode).
-//! `NIRVANA_LOG` overrides it with a full filter directive.
+//! Only our crates are logged, at `info` (`trace` in dev mode).
+//! `NIRVANA_LOG` overrides it with a full filter directive, which can also
+//! enable dependencies.
 
 use std::fs::{File, OpenOptions};
 use std::path::Path;
@@ -29,6 +30,12 @@ use tracing_subscriber::{EnvFilter, Layer};
 use crate::paths::AppPaths;
 
 const LOG_ENV_VAR: &str = "NIRVANA_LOG";
+const CRATES: [&str; 4] = [
+    "nirvana",
+    "nirvana_core",
+    "nirvana_migration",
+    "nirvana_entity",
+];
 
 /// Returns a layer that appends events to `nirvana.log`, filtered by the
 /// default filter or `NIRVANA_LOG`.
@@ -83,8 +90,13 @@ fn filter(var: impl Fn(&str) -> Option<String>, is_dev: bool) -> EnvFilter {
     let level = if is_dev { "trace" } else { "info" };
     let directives = var(LOG_ENV_VAR)
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| level.to_string());
+        .unwrap_or_else(|| crate_directives(level));
     EnvFilter::new(directives)
+}
+
+/// Returns a filter directive that enables `level` for our crates only.
+fn crate_directives(level: &str) -> String {
+    CRATES.map(|name| format!("{name}={level}")).join(",")
 }
 
 #[cfg(test)]
@@ -148,8 +160,22 @@ mod tests {
 
     #[test]
     fn filter_defaults_follow_dev_mode() {
-        assert_eq!(filter(env(&[]), true).to_string(), "trace");
-        assert_eq!(filter(env(&[]), false).to_string(), "info");
+        assert_eq!(
+            filter(env(&[]), true).to_string(),
+            EnvFilter::new(crate_directives("trace")).to_string()
+        );
+        assert_eq!(
+            filter(env(&[]), false).to_string(),
+            EnvFilter::new(crate_directives("info")).to_string()
+        );
+    }
+
+    #[test]
+    fn crate_directives_cover_only_our_crates() {
+        assert_eq!(
+            crate_directives("info"),
+            "nirvana=info,nirvana_core=info,nirvana_migration=info,nirvana_entity=info"
+        );
     }
 
     #[test]

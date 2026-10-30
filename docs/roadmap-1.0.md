@@ -113,7 +113,7 @@ logged from the start.
 - [x] Replace active_connection with active profile.
 - [x] Remove publish_squashed_worklogs (moved into connections).
 - [x] Save only non-default values and keys already present in config.toml.
-- [ ] Add `[log] level`.
+- [x] Add `[log] level`.
 - [x] Add config migration tests: 0.1 flat, 0.2 and 0.3.0-alpha sectioned
       config.toml fixtures migrate correctly (active connection dropped,
       machine settings kept, missing sections get defaults).

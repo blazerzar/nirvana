@@ -1,7 +1,8 @@
 use serde::Deserialize;
 
 use super::{
-    AppConfig, CURRENT_SCHEMA_VERSION, ConfigError, CoreConfig, GuiConfig, IdleConfig, Theme,
+    AppConfig, CURRENT_SCHEMA_VERSION, ConfigError, CoreConfig, GuiConfig, IdleConfig, LogConfig,
+    Theme,
 };
 
 #[derive(Debug, Default, Deserialize)]
@@ -34,6 +35,7 @@ pub(super) fn parse(table: toml::Table) -> Result<AppConfig, ConfigError> {
             theme: map_theme(&config.gui.theme),
         },
         idle: config.idle,
+        log: LogConfig::default(),
     })
 }
 

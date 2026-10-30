@@ -75,6 +75,8 @@ pub(crate) struct AppConfig {
     pub(crate) gui: GuiConfig,
     #[serde(default)]
     pub(crate) idle: IdleConfig,
+    #[serde(default)]
+    pub(crate) log: LogConfig,
 }
 
 impl Default for AppConfig {
@@ -84,8 +86,22 @@ impl Default for AppConfig {
             core: CoreConfig::default(),
             gui: GuiConfig::default(),
             idle: IdleConfig::default(),
+            log: LogConfig::default(),
         }
     }
+}
+
+/// Returns `log.level` from `config.toml`, or `None` if the file is missing,
+/// unreadable, not in the current schema or has no valid level.
+///
+/// Used to build the log filter before [`AppConfig::load`] runs, so it does
+/// not migrate the file or report errors. `load` reports them.
+pub(crate) fn log_level(paths: &AppPaths) -> Option<LogLevel> {
+    let table: toml::Table = fs::read_to_string(&paths.config_file).ok()?.parse().ok()?;
+    if table.get("schema_version")?.as_integer()? != CURRENT_SCHEMA_VERSION {
+        return None;
+    }
+    table.get("log")?.get("level")?.clone().try_into().ok()
 }
 
 impl AppConfig {
@@ -185,6 +201,33 @@ pub enum Theme {
     Dark,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+pub(crate) struct LogConfig {
+    pub(crate) level: Option<LogLevel>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum LogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
+impl LogLevel {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Warn => "warn",
+            Self::Info => "info",
+            Self::Debug => "debug",
+            Self::Trace => "trace",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub(crate) struct IdleConfig {
     #[serde(default = "default_idle_enabled")]
@@ -249,6 +292,9 @@ theme = "dark"
 enabled = false
 methods = ["lock", "input"]
 threshold_secs = 600
+
+[log]
+level = "debug"
 "#,
         )
         .unwrap();
@@ -264,8 +310,49 @@ threshold_secs = 600
                     methods: vec!["lock".into(), "input".into()],
                     threshold_secs: 600,
                 },
+                log: LogConfig {
+                    level: Some(LogLevel::Debug),
+                },
             }
         );
+    }
+
+    #[test]
+    fn unknown_log_level_fails() {
+        let result = parse("schema_version = 2\n\n[log]\nlevel = \"verbose\"");
+
+        assert!(matches!(result, Err(ConfigError::Parse(_))));
+    }
+
+    #[test]
+    fn log_level_reads_level_from_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::in_dir(dir.path());
+        fs::write(
+            &paths.config_file,
+            "schema_version = 2\n\n[log]\nlevel = \"warn\"",
+        )
+        .unwrap();
+
+        assert_eq!(log_level(&paths), Some(LogLevel::Warn));
+    }
+
+    #[test]
+    fn log_level_is_none_without_valid_level() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::in_dir(dir.path());
+        assert_eq!(log_level(&paths), None);
+
+        for content in [
+            FIXTURE_030,
+            "not = [valid",
+            "schema_version = 2\n\n[log]\nlevel = \"verbose\"",
+            "schema_version = 1\n\n[log]\nlevel = \"warn\"",
+            "[log]\nlevel = \"warn\"",
+        ] {
+            fs::write(&paths.config_file, content).unwrap();
+            assert_eq!(log_level(&paths), None, "{content}");
+        }
     }
 
     #[test]
@@ -330,6 +417,9 @@ threshold_secs = 600
                 methods: default_idle_methods(),
                 threshold_secs: 450,
             },
+            log: LogConfig {
+                level: Some(LogLevel::Warn),
+            },
             ..AppConfig::default()
         };
 
@@ -345,6 +435,9 @@ profile = 1
 
 [idle]
 threshold_secs = 450
+
+[log]
+level = "warn"
 "#
             .parse()
             .unwrap()

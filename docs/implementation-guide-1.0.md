@@ -49,7 +49,7 @@ worklogs.
 | 10 | Local web: **Leptos CSR (Trunk) + axum REST API**, assets embedded with `rust-embed`. *Recommended, confirm when stage 2 starts.* | Simpler single-binary build than SSR/hydration. The explicit API matches the roadmap's API section. |
 | 11 | **Migration tests are mandatory**: 0.3.0-alpha DB and config fixtures are checked in, never edited, and run in CI (§5). | Guarantees the compatibility promise. |
 | 12 | **Linear history only, no merge commits.** Feature PRs are squash-merged into `dev-1.0`, `main` is only fast-forwarded to `dev-1.0`. Code review is done by agents on the PR (§12). | |
-| 13 | **Logging with `tracing`** to a single `nirvana.log`, **no rotation**. On macOS the log lives in `~/Library/Logs/nirvana/` (other locations in `paths.rs` module docs). Levels: `info` for user issued commands and state changes (start, stop, publish, DB and config migrated, config `X` changed from `a` to `b`), `warn`, `error`, `debug` for everything else (on in release), `trace` for dev only logs (compiled out in release with `release_max_level_debug`). Default filter `warn,nirvana=debug,nirvana_core=debug` (`trace` in dev mode). `[log] level` in `config.toml` (added when the config is migrated) sets the level for nirvana crates, `NIRVANA_LOG` (full filter directive) overrides both. Info events live in `Nirvana` so every frontend logs the same. `nirvana-core` owns the log file, format and filters and exposes them as a `Layer` (`logging::file_layer`). The `nirvana` binary only installs it and sets the max level feature, as `tracing` recommends for libraries. Stdout output for GUI dev comes later. | macOS convention. Level scheme follows `tracing` verbosity order. |
+| 13 | **Logging with `tracing`** to a single `nirvana.log`, **no rotation**. On macOS the log lives in `~/Library/Logs/nirvana/` (other locations in `paths.rs` module docs). Levels: `info` for user issued commands and state changes (start, stop, publish, DB and config migrated, config `X` changed from `a` to `b`), `warn`, `error`, `debug` for everything else, `trace` for dev only logs (compiled out in release with `release_max_level_debug`). Only our crates are logged, at `info` by default (`trace` in dev mode). `[log] level` in `config.toml` (new in schema version 2, written only when set) sets the level for our crates only and overrides the dev mode default. `NIRVANA_LOG` (full filter directive) overrides both and is the only way to log dependencies (sqlx, sea-orm). Info events live in `Nirvana` so every frontend logs the same. `nirvana-core` owns the log file, format and filters and exposes them as a `Layer` (`logging::file_layer`). The `nirvana` binary only installs it and sets the max level feature, as `tracing` recommends for libraries. Stdout output for GUI dev comes later. | macOS convention. Level scheme follows `tracing` verbosity order. |
 | 14 | **One running slot per profile**, enforced by `unique (profile_id) where stopped_at is null`. Getting, starting and stopping the running slot works on the active connection's profile, so stopping needs an active connection. | Easier to show the state to the user than one running slot across profiles. |
 | 15 | **Legacy detection + backup.** Before applying pending migrations to an existing DB, the DB is copied to `data_dir/backup` with `VACUUM INTO`, a consistent single-file snapshot that includes rows still in the `-wal` file. The baseline migrations `m0001` and `m0002` skip their work when `user_version` is 2, which every released 0.x DB has. Every step is logged. The config does the same in the Config stage. | Never lose user data on upgrade. |
 | 16 | **Plaintext credentials stay supported** (probably needed on Linux). The `credentials` table and `connections.secret_store` stay in the Database stage. The keyring comes in the Keychain stage. | |
@@ -130,13 +130,21 @@ publish_entries(slot_id, connection_id, published_at NULL, error NULL)
   of the slot's current ticket and fails if that ticket has none.
   `credentials` and `secret_store` stay (plaintext support).
 - Config migration (Config stage): back up `config.toml` to
-  `data_dir/backup`. `core.active_connection` becomes the active profile (all
-  connections are active), `core.publish_squashed_worklogs` is dropped,
-  `[log] level` is added. A parse error fails instead of falling back to
-  defaults. The `config/` module has one file per old format (0.1 flat, 0.3
-  sectioned). Each only parses TOML and returns the latest config interface.
-  The 0.1 format stays because 0.2 and 0.3 only rewrite `config.toml` when a
-  setting changes, so a 0.3 user can still have a flat file.
+  `data_dir/backup`. `core.active_connection` and
+  `core.publish_squashed_worklogs` are dropped, missing sections (0.2.x has
+  no `[idle]`) get the 0.3 defaults,
+  `[log]` is not written, since its default `level` is unset. A parse error
+  fails instead of falling back to defaults. The `config/` module has one
+  file per old format (0.3 sectioned). Each only parses TOML and returns the
+  latest config interface.
+  A flat file (no sections) without `schema_version` is 0.1 and is replaced
+  with the defaults. An empty file gives the defaults and is not rewritten. A
+  file with sections but no `schema_version` fails.
+  Every file older than the current schema (0.1 included) is backed up and
+  rewritten on load with only non-default values, through a temporary file
+  renamed over `config.toml`. Every migration step is logged at info. A
+  missing file is not written. A failed backup or rewrite returns an error. Saving the config
+  and using a profile fail on it, every other command only warns.
 - Desktop settings migration (GUI stage): the 0.3 `gui.*` and `idle.*`
   settings map to the new machine settings where an equivalent exists, unused
   keys (font scale, tray icon) are removed, old theme names map to
@@ -153,9 +161,11 @@ publish_entries(slot_id, connection_id, published_at NULL, error NULL)
     entries created for published slots, backup created. Also cover a fresh
     DB, and check that a fresh DB and a migrated one end with the same
     schema.
-  - Config: fixtures for the 0.1 flat format and the 0.3.0-alpha sectioned
+  - Config: a fixture for the 0.3.0-alpha sectioned
     format (`[core]`, `[gui]`, `[idle]`). Check that `active_connection` is
-    dropped and machine/idle settings are kept.
+    dropped and machine/idle settings are kept. A 0.2.x fixture (no
+    `[idle]`) gets the 0.3 idle defaults, a 0.1 flat fixture gives the
+    defaults.
   - Fixtures are checked into the repo and never edited. Each new migration
     adds tests on top of them.
 

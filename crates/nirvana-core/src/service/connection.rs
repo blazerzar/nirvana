@@ -26,24 +26,44 @@ impl Nirvana {
     }
 
     pub async fn get_active_connection(&self) -> Result<Option<Connection>, NirvanaError> {
-        let Some(connection_id) = self.config.core.active_connection else {
+        let Some(profile_id) = self.config()?.core.profile else {
             return Ok(None);
         };
 
-        Ok(Some(self.get_connection(connection_id).await?))
+        ConnectionEntity::find()
+            .find_also_related(jira_settings::Entity)
+            .filter(connection::COLUMN.profile_id.eq(profile_id))
+            .order_by_asc(connection::COLUMN.id)
+            .one(&self.db)
+            .await?
+            .map(|(model, jira_settings)| Ok(Connection::new(model, jira_settings)?))
+            .transpose()
     }
 
-    pub fn active_connection(&self) -> Option<i64> {
-        self.config.core.active_connection
+    pub(crate) async fn active_connection_id(&self) -> Result<i64, NirvanaError> {
+        let connection = self
+            .get_active_connection()
+            .await?
+            .ok_or(TrackingError::NoActiveConnection)?;
+        Ok(connection.model.id)
     }
 
-    pub async fn set_active_connection(&mut self, id: i64) -> Result<(), NirvanaError> {
-        if (ConnectionEntity::find_by_id(id).one(&self.db).await?).is_none() {
-            return Err(TrackingError::ConnectionNotFound(id).into());
+    pub fn active_profile(&self) -> Result<i64, NirvanaError> {
+        Ok(self
+            .config()?
+            .core
+            .profile
+            .ok_or(TrackingError::NoActiveProfile)?)
+    }
+
+    pub async fn set_active_profile(&mut self, id: i64) -> Result<(), NirvanaError> {
+        if (Profile::find_by_id(id).one(&self.db).await?).is_none() {
+            return Err(TrackingError::ProfileNotFound(id).into());
         }
 
-        self.config.core.active_connection = Some(id);
-        self.config.save(&self.paths)?;
+        let config = self.config.as_mut().map_err(|e| e.clone())?;
+        config.core.profile = Some(id);
+        config.save(&self.paths)?;
         Ok(())
     }
 
@@ -66,15 +86,6 @@ impl Nirvana {
             && credential.secret_store == SecretStore::Keyring
         {
             delete_from_keychain(&self.keyring, credential.credential).await;
-        }
-
-        if self.config.core.active_connection == Some(id) {
-            self.config.core.active_connection = (ConnectionEntity::find()
-                .order_by_asc(connection::COLUMN.id)
-                .one(&self.db)
-                .await?)
-                .map(|m| m.id);
-            self.config.save(&self.paths)?;
         }
 
         Ok(())
@@ -176,11 +187,7 @@ impl Nirvana {
     }
 
     pub async fn test_connection(&self) -> Result<(), NirvanaError> {
-        let connection_id = self
-            .config
-            .core
-            .active_connection
-            .ok_or(TrackingError::NoActiveConnection)?;
+        let connection_id = self.active_connection_id().await?;
 
         let connection = self.get_connection(connection_id).await?;
         let token = read_credential(&self.keyring, connection_id, &self.db).await?;

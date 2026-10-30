@@ -30,14 +30,13 @@
 //! Each directory can be overridden with `NIRVANA_CONFIG_DIR`,
 //! `NIRVANA_DATA_DIR` and `NIRVANA_LOG_DIR`.
 
-use std::path::PathBuf;
-use std::{env, io};
+use std::path::{Path, PathBuf};
+use std::{env, fs, io};
 
 use directories::ProjectDirs;
 
 pub struct AppPaths {
     pub config_dir: PathBuf,
-    #[allow(unused)]
     pub data_dir: PathBuf,
     #[allow(unused)]
     pub log_dir: PathBuf,
@@ -137,8 +136,40 @@ impl AppPaths {
     }
 }
 
+/// Returns `backup_dir/<file name>.<timestamp>.bak`, creating `backup_dir` if
+/// it does not exist.
+///
+/// For example `nirvana.db` gives `backup/nirvana.db.20261019-203400.bak`.
+pub(crate) fn backup_path(file: &Path, backup_dir: &Path) -> io::Result<PathBuf> {
+    let stamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+    let mut name = file
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no file name"))?
+        .to_os_string();
+    name.push(format!(".{stamp}.bak"));
+
+    fs::create_dir_all(backup_dir)?;
+    Ok(backup_dir.join(name))
+}
+
 fn not_found(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::NotFound, message)
+}
+
+#[cfg(test)]
+impl AppPaths {
+    /// Places every directory and file in `dir`, in dev mode.
+    pub(crate) fn in_dir(dir: &std::path::Path) -> Self {
+        Self {
+            config_dir: dir.to_path_buf(),
+            data_dir: dir.to_path_buf(),
+            log_dir: dir.to_path_buf(),
+            config_file: dir.join("config.toml"),
+            db_file: dir.join("nirvana.db"),
+            log_file: dir.join("nirvana.log"),
+            is_dev: true,
+        }
+    }
 }
 
 #[cfg(test)]

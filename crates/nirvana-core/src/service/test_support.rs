@@ -5,7 +5,7 @@ use nirvana_entity::profile;
 use sea_orm::{ActiveModelTrait, Set};
 use tempfile::TempDir;
 
-use crate::config::{AppConfig, CoreConfig, GuiConfig, IdleConfig};
+use crate::config::AppConfig;
 use crate::domain::ConnectionData;
 use crate::paths::AppPaths;
 use crate::secrets::mock_store;
@@ -33,35 +33,11 @@ impl DerefMut for TestApi {
 
 pub(super) async fn test_api() -> TestApi {
     let dir = tempfile::tempdir().unwrap();
-    let base = dir.path().to_path_buf();
-    let paths = AppPaths {
-        config_dir: base.clone(),
-        data_dir: base.clone(),
-        log_dir: base.clone(),
-        config_file: base.join("config.toml"),
-        db_file: base.join("nirvana.db"),
-        log_file: base.join("nirvana.log"),
-        is_dev: true,
-    };
+    let paths = AppPaths::in_dir(dir.path());
     let db = storage::open(&paths.db_file).await.unwrap();
     let mut api = Nirvana {
         paths,
-        config: AppConfig {
-            schema_version: Some(1),
-            core: CoreConfig {
-                active_connection: None,
-            },
-            gui: GuiConfig {
-                font_scale: 1.0,
-                theme: "high-contrast-dark".to_string(),
-                show_tray_icon: false,
-            },
-            idle: IdleConfig {
-                enabled: false,
-                methods: vec!["lock".into(), "sleep".into(), "input".into()],
-                threshold_secs: 300,
-            },
-        },
+        config: Ok(AppConfig::default()),
         db,
         keyring: mock_store(),
     };
@@ -83,7 +59,9 @@ pub(super) async fn test_api() -> TestApi {
         })
         .await
         .unwrap();
-    api.config.core.active_connection = Some(connection.model.id);
+    let config = api.config.as_mut().unwrap();
+    config.core.profile = Some(connection.model.profile_id);
+    config.idle.enabled = false;
 
     TestApi { api, _dir: dir }
 }

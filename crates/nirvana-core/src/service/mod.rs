@@ -3,17 +3,20 @@ mod delete;
 mod edit;
 mod info;
 mod publish;
-mod settings;
 mod slots;
 #[cfg(test)]
 mod test_support;
 mod tracking;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use sea_orm::DatabaseConnection;
+use nirvana_entity::profile;
+use nirvana_entity::profile::Entity as Profile;
+use sea_orm::{DatabaseConnection, EntityTrait, QueryOrder};
+use tracing::warn;
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, ConfigError};
 pub use crate::domain::{Change, SlotCreate, SlotEdit, SlotSort};
 use crate::errors::NirvanaError;
 use crate::paths::AppPaths;
@@ -22,7 +25,7 @@ use crate::storage;
 
 pub struct Nirvana {
     paths: AppPaths,
-    config: AppConfig,
+    config: Result<AppConfig, Arc<ConfigError>>,
     db: DatabaseConnection,
     keyring: StoreFactory,
 }
@@ -40,8 +43,12 @@ pub struct AppInfo {
 impl Nirvana {
     pub async fn new() -> Result<Self, NirvanaError> {
         let paths = AppPaths::resolve()?;
-        let config = AppConfig::load(&paths.config_file)?;
+        let mut config = AppConfig::load(&paths).map_err(Arc::new);
         let db = storage::open(&paths.db_file).await?;
+        match &mut config {
+            Ok(config) => config.core.profile = resolve_profile(&db, config.core.profile).await?,
+            Err(e) => warn!("config unavailable: {e}"),
+        }
         Ok(Self {
             paths,
             config,
@@ -49,4 +56,24 @@ impl Nirvana {
             keyring: native_store(),
         })
     }
+
+    fn config(&self) -> Result<&AppConfig, NirvanaError> {
+        self.config.as_ref().map_err(|e| e.clone().into())
+    }
+}
+
+async fn resolve_profile(
+    db: &DatabaseConnection,
+    configured: Option<i64>,
+) -> Result<Option<i64>, NirvanaError> {
+    if let Some(id) = configured
+        && Profile::find_by_id(id).one(db).await?.is_some()
+    {
+        return Ok(Some(id));
+    }
+    Ok(Profile::find()
+        .order_by_asc(profile::COLUMN.id)
+        .one(db)
+        .await?
+        .map(|profile| profile.id))
 }

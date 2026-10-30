@@ -20,11 +20,7 @@ impl Nirvana {
         ticket_key: &str,
         at: Option<i64>,
     ) -> Result<(slot::Model, ticket::Model), super::NirvanaError> {
-        let connection_id = self
-            .config
-            .core
-            .active_connection
-            .ok_or(TrackingError::NoActiveConnection)?;
+        let connection_id = self.active_connection_id().await?;
 
         let connection = self.get_connection(connection_id).await?;
         let ticket_key = ticket_key.to_uppercase();
@@ -60,11 +56,7 @@ impl Nirvana {
         &self,
         input: SlotCreate,
     ) -> Result<(slot::Model, ticket::Model), super::NirvanaError> {
-        let connection_id = self
-            .config
-            .core
-            .active_connection
-            .ok_or(TrackingError::NoActiveConnection)?;
+        let connection_id = self.active_connection_id().await?;
 
         if input.stopped_at <= input.started_at {
             return Err(TrackingError::InvalidTimeRange.into());
@@ -187,11 +179,7 @@ impl Nirvana {
     }
 
     pub async fn list_recent_tickets(&self) -> Result<Vec<ticket::Model>, super::NirvanaError> {
-        let connection_id = self
-            .config
-            .core
-            .active_connection
-            .ok_or(TrackingError::NoActiveConnection)?;
+        let connection_id = self.active_connection_id().await?;
         let profile_id = self.get_connection(connection_id).await?.model.profile_id;
         Ok(Ticket::find()
             .filter(ticket::COLUMN.profile_id.eq(profile_id))
@@ -225,7 +213,7 @@ mod tests {
     use crate::service::test_support::test_api;
 
     async fn insert_ticket(api: &Nirvana, key: &str) -> i64 {
-        let connection_id = api.config.core.active_connection.unwrap();
+        let connection_id = api.active_connection_id().await.unwrap();
         ticket::ActiveModel {
             profile_id: Set(api
                 .get_connection(connection_id)
@@ -247,7 +235,7 @@ mod tests {
     }
 
     async fn publish(api: &Nirvana, slot_ids: &[i64], result: Result<(), IntegrationError>) {
-        let connection_id = api.config.core.active_connection.unwrap();
+        let connection_id = api.active_connection_id().await.unwrap();
         api.mark_pending(connection_id, slot_ids.iter().copied())
             .await
             .unwrap();
@@ -671,7 +659,7 @@ mod tests {
             .create_slot(slot_create("DES-1", 100, 160))
             .await
             .unwrap();
-        let connection_id = api.config.core.active_connection.unwrap();
+        let connection_id = api.active_connection_id().await.unwrap();
 
         api.mark_pending(connection_id, [slot.id]).await.unwrap();
 

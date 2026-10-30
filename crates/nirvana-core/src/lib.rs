@@ -1,4 +1,4 @@
-pub mod config;
+mod config;
 pub mod domain;
 pub mod errors;
 mod integration;

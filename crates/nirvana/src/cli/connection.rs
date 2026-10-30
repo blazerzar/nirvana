@@ -121,7 +121,8 @@ pub(crate) async fn list() -> anyhow::Result<()> {
 }
 
 fn is_active(conn: &Connection, api: &Nirvana) -> bool {
-    api.active_connection() == Some(conn.model.id)
+    api.active_profile()
+        .is_ok_and(|id| id == conn.model.profile_id)
 }
 
 fn print_row(
@@ -171,11 +172,11 @@ pub(crate) async fn activate(query: Option<&str>) -> anyhow::Result<()> {
     };
     let chosen = &connections[idx];
 
-    api.set_active_connection(chosen.model.id).await?;
+    api.set_active_profile(chosen.model.profile_id).await?;
     let term = Term::stdout();
     term.write_line(&format!(
-        "Active connection set to '{}' (id {})",
-        chosen.model.name, chosen.model.id
+        "Active profile set to id {}",
+        chosen.model.profile_id
     ))?;
     Ok(())
 }
@@ -252,10 +253,10 @@ pub(crate) async fn add(args: AddArgs) -> anyhow::Result<()> {
         .interact()?;
 
     if use_it {
-        api.set_active_connection(connection.model.id).await?;
+        api.set_active_profile(connection.model.profile_id).await?;
         term.write_line(&format!(
-            "Active connection set to '{}' (id {})",
-            connection.model.name, connection.model.id
+            "Active profile set to id {}",
+            connection.model.profile_id
         ))?;
     }
 

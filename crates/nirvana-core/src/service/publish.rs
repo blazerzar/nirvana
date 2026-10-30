@@ -32,11 +32,7 @@ impl Nirvana {
         from: i64,
         to: Option<i64>,
     ) -> Result<PublishResult, super::NirvanaError> {
-        let connection_id = self
-            .config
-            .core
-            .active_connection
-            .ok_or(TrackingError::NoActiveConnection)?;
+        let connection_id = self.active_connection_id().await?;
 
         let connection = self.get_connection(connection_id).await?;
         let settings = connection.kind.jira_settings();

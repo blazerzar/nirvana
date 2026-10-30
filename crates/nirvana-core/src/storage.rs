@@ -6,6 +6,8 @@ use sea_orm::{ConnectionTrait, DatabaseConnection, DbErr, RuntimeErr, raw_sql};
 use thiserror::Error;
 use tracing::{error, info};
 
+use crate::paths;
+
 #[derive(Debug, Error)]
 pub enum DbError {
     #[error("database error: {0}")]
@@ -58,20 +60,11 @@ pub(crate) async fn open(db_file: &Path) -> Result<DatabaseConnection, DbError> 
 }
 
 async fn backup(db: &DatabaseConnection, db_file: &Path) -> Result<PathBuf, DbError> {
-    // nirvana.db -> backup/nirvana.db.20261019-203400.bak
-    let stamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-    let mut name = db_file
-        .file_name()
-        .ok_or(DbError::InvalidDbPath)?
-        .to_os_string();
-    name.push(format!(".{stamp}.bak"));
-
     let backup_dir = db_file
         .parent()
         .ok_or(DbError::InvalidDbPath)?
         .join("backup");
-    std::fs::create_dir_all(&backup_dir)?;
-    let backup_path = backup_dir.join(name);
+    let backup_path = paths::backup_path(db_file, &backup_dir)?;
 
     let p = backup_path.to_str().ok_or(DbError::InvalidDbPath)?;
     db.execute_raw(raw_sql!(Sqlite, "VACUUM INTO {p}")).await?;

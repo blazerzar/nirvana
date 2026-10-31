@@ -8,7 +8,7 @@ use sea_orm::{
 use tracing::info;
 
 use crate::domain::{Connection, ConnectionData};
-use crate::errors::{DbError, NirvanaError, TrackingError};
+use crate::errors::{DbError, DomainError, NirvanaError};
 use crate::integration;
 use crate::secrets::{SecretStore, delete_from_keychain, read_credential, store_secret};
 use crate::service::Nirvana;
@@ -44,7 +44,7 @@ impl Nirvana {
         let connection = self
             .get_active_connection()
             .await?
-            .ok_or(TrackingError::NoActiveConnection)?;
+            .ok_or(DomainError::NoActiveConnection)?;
         Ok(connection.model.id)
     }
 
@@ -53,12 +53,12 @@ impl Nirvana {
             .config()?
             .core
             .profile
-            .ok_or(TrackingError::NoActiveProfile)?)
+            .ok_or(DomainError::NoActiveProfile)?)
     }
 
     pub async fn set_active_profile(&mut self, id: i64) -> Result<(), NirvanaError> {
         if (Profile::find_by_id(id).one(&self.db).await?).is_none() {
-            return Err(TrackingError::ProfileNotFound(id).into());
+            return Err(DomainError::ProfileNotFound(id).into());
         }
 
         let config = self.config.as_mut().map_err(|e| e.clone())?;
@@ -69,7 +69,7 @@ impl Nirvana {
 
     pub async fn delete_connection(&mut self, id: i64) -> Result<(), NirvanaError> {
         if (ConnectionEntity::find_by_id(id).one(&self.db).await?).is_none() {
-            return Err(TrackingError::ConnectionNotFound(id).into());
+            return Err(DomainError::ConnectionNotFound(id).into());
         }
 
         let tickets = ticket::Entity::find()
@@ -77,7 +77,7 @@ impl Nirvana {
             .count(&self.db)
             .await?;
         if tickets > 0 {
-            return Err(TrackingError::ConnectionHasHistory.into());
+            return Err(DomainError::ConnectionHasHistory.into());
         }
 
         let credential = credential::Entity::find_by_id(id).one(&self.db).await?;
@@ -99,7 +99,7 @@ impl Nirvana {
             .order_by_asc(profile::COLUMN.id)
             .one(&self.db)
             .await?
-            .ok_or(TrackingError::NoActiveProfile)?;
+            .ok_or(DomainError::NoActiveProfile)?;
 
         info!(secret_store = %connection.secret_store, "adding connection");
         let secret_store = connection.secret_store;

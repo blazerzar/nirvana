@@ -8,7 +8,7 @@ use sea_orm::{
 };
 
 use crate::domain::{Connection, SlotCreate};
-use crate::errors::{DbError, IntegrationError, TrackingError};
+use crate::errors::{DbError, DomainError, IntegrationError};
 use crate::integration;
 use crate::secrets::read_credential;
 use crate::service::Nirvana;
@@ -59,12 +59,12 @@ impl Nirvana {
         let connection_id = self.active_connection_id().await?;
 
         if input.stopped_at <= input.started_at {
-            return Err(TrackingError::InvalidTimeRange.into());
+            return Err(DomainError::InvalidTimeRange.into());
         }
 
         let now = chrono::Utc::now().timestamp();
         if input.started_at > now || input.stopped_at > now {
-            return Err(TrackingError::FutureTime.into());
+            return Err(DomainError::FutureTime.into());
         }
 
         let connection = self.get_connection(connection_id).await?;
@@ -76,7 +76,7 @@ impl Nirvana {
         .count(&self.db)
         .await?;
         if overlapping > 0 {
-            return Err(TrackingError::SlotOverlap.into());
+            return Err(DomainError::SlotOverlap.into());
         }
 
         let ticket_key = input.ticket_key.to_uppercase();
@@ -103,7 +103,7 @@ impl Nirvana {
         let connection = self
             .get_active_connection()
             .await?
-            .ok_or(TrackingError::NoActiveConnection)?;
+            .ok_or(DomainError::NoActiveConnection)?;
         let now = at.unwrap_or_else(|| chrono::Utc::now().timestamp());
         let Some(running) = Slot::find_running(connection.model.profile_id)
             .find_also_related(ticket::Entity)
@@ -129,7 +129,7 @@ impl Nirvana {
             .find_also_related(jira_settings::Entity)
             .one(&self.db)
             .await?
-            .ok_or(TrackingError::NoActiveConnection)?;
+            .ok_or(DomainError::NoActiveConnection)?;
         Ok(Connection::new(model, jira_settings)?)
     }
 
@@ -152,7 +152,7 @@ impl Nirvana {
         let integ = integration::build_integration(connection, &token);
         let issue = integ.fetch_issue(ticket_key).await.map_err(|e| match e {
             IntegrationError::TicketNotFound(key) => {
-                super::NirvanaError::Tracking(TrackingError::TicketNotFound(key))
+                super::NirvanaError::Domain(DomainError::TicketNotFound(key))
             }
             other => super::NirvanaError::Integration(other),
         })?;
@@ -335,7 +335,7 @@ mod tests {
 
         assert!(matches!(
             error,
-            NirvanaError::Tracking(TrackingError::InvalidTimeRange)
+            NirvanaError::Domain(DomainError::InvalidTimeRange)
         ));
     }
 
@@ -351,7 +351,7 @@ mod tests {
 
         assert!(matches!(
             error,
-            NirvanaError::Tracking(TrackingError::FutureTime)
+            NirvanaError::Domain(DomainError::FutureTime)
         ));
     }
 
@@ -370,7 +370,7 @@ mod tests {
 
         assert!(matches!(
             error,
-            NirvanaError::Tracking(TrackingError::SlotOverlap)
+            NirvanaError::Domain(DomainError::SlotOverlap)
         ));
     }
 
@@ -512,7 +512,7 @@ mod tests {
 
         assert!(matches!(
             error,
-            NirvanaError::Tracking(TrackingError::SlotAlreadyPublished)
+            NirvanaError::Domain(DomainError::SlotAlreadyPublished)
         ));
     }
 

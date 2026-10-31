@@ -5,7 +5,7 @@ use sea_orm::ActiveValue::{NotSet, Set, Unchanged};
 use sea_orm::{ActiveModelTrait, ActiveValue, PaginatorTrait, QueryFilter, Value};
 
 use crate::domain::{Change, SlotEdit};
-use crate::errors::{NirvanaError, TrackingError};
+use crate::errors::{DomainError, NirvanaError};
 use crate::service::Nirvana;
 use crate::service::slots::require_ticket;
 
@@ -20,7 +20,7 @@ impl Nirvana {
                 .filter(slot::COLUMN.id.eq(slot_id))
                 .one(&self.db)
                 .await?
-                .ok_or(TrackingError::SlotNotFound(slot_id))?,
+                .ok_or(DomainError::SlotNotFound(slot_id))?,
         )?;
 
         let published = PublishEntry::find_published()
@@ -28,7 +28,7 @@ impl Nirvana {
             .count(&self.db)
             .await?;
         if published > 0 {
-            return Err(TrackingError::SlotAlreadyPublished.into());
+            return Err(DomainError::SlotAlreadyPublished.into());
         }
 
         let started_changed = match edit.started_at {
@@ -63,13 +63,13 @@ impl Nirvana {
         if let Some(stopped) = effective_stopped
             && stopped <= effective_started
         {
-            return Err(TrackingError::InvalidTimeRange.into());
+            return Err(DomainError::InvalidTimeRange.into());
         }
 
         let next_ticket = if ticket_changed {
             let connection_id = ticket
                 .connection_id
-                .ok_or_else(|| TrackingError::TicketHasNoConnection(ticket.ticket_key.clone()))?;
+                .ok_or_else(|| DomainError::TicketHasNoConnection(ticket.ticket_key.clone()))?;
             let connection = self.get_connection(connection_id).await?;
             let ticket_key = normalized_ticket_key.as_deref().unwrap_or_default();
             let last_worked_at =

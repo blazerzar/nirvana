@@ -169,9 +169,9 @@ logged from the start.
       cover closed or published slots (only manual create checks today).
 - [ ] Stop the running slot and start the new one in a single transaction.
 - [ ] Reject future times in `start_slot` and `stop_slot` with
-      `TrackingError::FutureTime`, remove the `parse_time` copies in
+      `DomainError::FutureTime`, remove the `parse_time` copies in
       `start.rs` and `stop.rs` and use `cli::parse_time`.
-- [ ] Return `TrackingError::NoActiveConnection` from core when `list` needs
+- [ ] Return `DomainError::NoActiveConnection` from core when `list` needs
       a connection, instead of `.context("No active connection")` in the CLI.
 - [ ] Return from the interactive start picker on Esc instead of
       `std::process::exit(0)`.

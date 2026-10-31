@@ -18,7 +18,7 @@ pub enum NirvanaError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error(transparent)]
-    Tracking(#[from] TrackingError),
+    Domain(#[from] DomainError),
     #[error(transparent)]
     Integration(#[from] IntegrationError),
     #[error(transparent)]
@@ -26,13 +26,16 @@ pub enum NirvanaError {
 }
 
 #[derive(Debug, Error)]
-pub enum TrackingError {
-    #[error("no active connection")]
-    NoActiveConnection,
+pub enum DomainError {
+    // profiles
     #[error("no active profile")]
     NoActiveProfile,
     #[error("profile not found: {0}")]
     ProfileNotFound(i64),
+
+    // connections
+    #[error("no active connection")]
+    NoActiveConnection,
     #[error("connection not found: {0}")]
     ConnectionNotFound(i64),
     #[error("cannot delete a connection with local history")]
@@ -41,12 +44,18 @@ pub enum TrackingError {
     UnsupportedConnectionKind(String),
     #[error("connection {0} has no settings")]
     MissingConnectionSettings(i64),
+
+    // publishing
     #[error("publishing is disabled for connection '{0}'")]
     PublishDisabled(String),
+
+    // tickets
     #[error("ticket not found: {0}")]
     TicketNotFound(String),
     #[error("ticket {0} has no connection")]
     TicketHasNoConnection(String),
+
+    // slots
     #[error("slot not found: {0}")]
     SlotNotFound(i64),
     #[error("cannot edit a published slot")]

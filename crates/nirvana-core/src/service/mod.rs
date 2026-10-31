@@ -2,6 +2,7 @@ mod connection;
 mod delete;
 mod edit;
 mod info;
+mod profile;
 mod publish;
 mod slots;
 #[cfg(test)]
@@ -11,9 +12,7 @@ mod tracking;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use nirvana_entity::profile;
-use nirvana_entity::profile::Entity as Profile;
-use sea_orm::{DatabaseConnection, EntityTrait, QueryOrder};
+use sea_orm::DatabaseConnection;
 use tracing::warn;
 
 use crate::config::{AppConfig, ConfigError};
@@ -46,7 +45,7 @@ impl Nirvana {
         let mut config = AppConfig::load(&paths).map_err(Arc::new);
         let db = storage::open(&paths.db_file).await?;
         match &mut config {
-            Ok(config) => config.core.profile = resolve_profile(&db, config.core.profile).await?,
+            Ok(config) => config.core.profile = profile::resolve(&db, config.core.profile).await?,
             Err(e) => warn!("config unavailable: {e}"),
         }
         Ok(Self {
@@ -60,20 +59,4 @@ impl Nirvana {
     fn config(&self) -> Result<&AppConfig, NirvanaError> {
         self.config.as_ref().map_err(|e| e.clone().into())
     }
-}
-
-async fn resolve_profile(
-    db: &DatabaseConnection,
-    configured: Option<i64>,
-) -> Result<Option<i64>, NirvanaError> {
-    if let Some(id) = configured
-        && Profile::find_by_id(id).one(db).await?.is_some()
-    {
-        return Ok(Some(id));
-    }
-    Ok(Profile::find()
-        .order_by_asc(profile::COLUMN.id)
-        .one(db)
-        .await?
-        .map(|profile| profile.id))
 }

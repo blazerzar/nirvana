@@ -6,7 +6,7 @@ use sea_orm::sea_query::Expr;
 use sea_orm::{DbErr, EntityTrait, QueryFilter};
 
 use crate::domain::{PublishFailure, PublishResult};
-use crate::errors::TrackingError;
+use crate::errors::DomainError;
 use crate::integration::{self, IntegrationError};
 use crate::secrets::read_credential;
 use crate::service::Nirvana;
@@ -37,7 +37,7 @@ impl Nirvana {
         let connection = self.get_connection(connection_id).await?;
         let settings = connection.kind.jira_settings();
         if !settings.publish {
-            return Err(TrackingError::PublishDisabled(connection.model.name).into());
+            return Err(DomainError::PublishDisabled(connection.model.name).into());
         }
         let token = read_credential(&self.keyring, connection_id, &self.db).await?;
         let integ = integration::build_integration(&connection, &token);

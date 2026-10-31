@@ -146,6 +146,9 @@ logged from the start.
       row holds the name of the environment variable with the token, which
       must start with `NIRVANA_`. Hidden from `--help` and the interactive
       picker, available in all builds.
+- [ ] Fix error messages of the errors these commands return (decision 21):
+      no `{0}` in `#[from]` variants (config, I/O, DB, keyring), lowercase
+      CLI messages (`connection '{query}' not found`).
 
 ## Tickets
 
@@ -165,6 +168,13 @@ logged from the start.
 - [ ] Validate overlaps on start with `--at` - a backdated start must not
       cover closed or published slots (only manual create checks today).
 - [ ] Stop the running slot and start the new one in a single transaction.
+- [ ] Reject future times in `start_slot` and `stop_slot` with
+      `TrackingError::FutureTime`, remove the `parse_time` copies in
+      `start.rs` and `stop.rs` and use `cli::parse_time`.
+- [ ] Return `TrackingError::NoActiveConnection` from core when `list` needs
+      a connection, instead of `.context("No active connection")` in the CLI.
+- [ ] Return from the interactive start picker on Esc instead of
+      `std::process::exit(0)`.
 
 ## Linear
 
@@ -190,6 +200,8 @@ logged from the start.
 - [ ] Get publishing ready in CLI (--target).
 - [ ] Make sure we are able to publish from any range (today, all).
 - [ ] Need error checking for each log.
+- [ ] Fix error messages of the errors publishing returns (decision 21):
+      no `{0}` in `IntegrationError::Network`.
 
 ## Nirvana API
 

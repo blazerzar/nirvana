@@ -155,33 +155,53 @@ enum Profile {
 
 #[derive(Subcommand)]
 enum Connection {
-    /// Add a new connection
-    Add(AddArgs),
     /// List all connections
     List,
-    /// Change active connection
-    Use {
-        /// Connection ID or name (omit for interactive selection)
-        query: Option<String>,
+    /// Add a new connection
+    Add {
+        /// Connection name (omit for interactive creation)
+        #[arg(requires_all = ["kind", "host", "credential", "storage"])]
+        name: Option<String>,
+        /// Connection kind
+        #[arg(long, requires = "name")]
+        kind: Option<ConnectionKind>,
+        /// Host URL
+        #[arg(long, requires = "name")]
+        host: Option<String>,
+        /// Token, or "<identity>:<token>" for kinds that need an identity (jira-cloud)
+        #[arg(long, requires = "name")]
+        credential: Option<String>,
+        /// Where to store the token
+        #[arg(long, value_parser = storage_parser(), requires = "name")]
+        storage: Option<SecretStore>,
     },
-    /// Test active connection
-    Test,
-}
-
-#[derive(Args, Debug)]
-struct AddArgs {
-    #[arg(long, requires_all = ["kind", "host", "identity", "storage", "token"])]
-    name: Option<String>,
-    #[arg(long, requires_all = ["name", "host", "identity", "storage", "token"])]
-    kind: Option<ConnectionKind>,
-    #[arg(long, requires_all = ["name", "kind", "identity", "storage", "token"])]
-    host: Option<String>,
-    #[arg(long, requires_all = ["name", "kind", "host", "storage", "token"])]
-    identity: Option<String>,
-    #[arg(long, value_parser = storage_parser(), requires_all = ["name", "kind", "host", "identity", "token"])]
-    storage: Option<SecretStore>,
-    #[arg(long, requires_all = ["name", "kind", "host", "identity", "storage"])]
-    token: Option<String>,
+    /// Rename a connection
+    Rename {
+        /// Current connection name (omit both for interactive selection)
+        #[arg(requires = "new_name")]
+        name: Option<String>,
+        /// New connection name
+        new_name: Option<String>,
+    },
+    /// Delete a connection
+    Delete {
+        /// Connection name (omit for interactive selection)
+        name: Option<String>,
+        /// Also delete the connection's slots
+        #[arg(long)]
+        with_slots: bool,
+        /// Delete without asking
+        #[arg(short, long)]
+        yes: bool,
+    },
+    /// Test a connection
+    Test {
+        /// Connection name (omit for interactive selection)
+        name: Option<String>,
+        /// Test all connections
+        #[arg(short, long, conflicts_with = "name")]
+        all: bool,
+    },
 }
 
 #[derive(Clone, ValueEnum, Debug)]
@@ -236,10 +256,21 @@ pub(crate) async fn run() -> anyhow::Result<()> {
             Profile::Delete { name, yes } => profile::delete(name, yes).await,
         },
         Some(Command::Connection { command }) => match command {
-            Connection::Add(args) => connection::add(args).await,
             Connection::List => connection::list().await,
-            Connection::Use { query } => connection::activate(query.as_deref()).await,
-            Connection::Test => connection::test().await,
+            Connection::Add {
+                name,
+                kind,
+                host,
+                credential,
+                storage,
+            } => connection::add(name, kind, host, credential, storage).await,
+            Connection::Rename { name, new_name } => connection::rename(name, new_name).await,
+            Connection::Delete {
+                name,
+                with_slots,
+                yes,
+            } => connection::delete(name, with_slots, yes).await,
+            Connection::Test { name, all } => connection::test(name, all).await,
         },
         None => Ok(()),
     }

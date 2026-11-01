@@ -1,6 +1,6 @@
 use console::{Alignment, Style, Term, style};
-use dialoguer::Select;
 use dialoguer::theme::ColorfulTheme;
+use dialoguer::{Input, Select};
 use nirvana_core::service::Nirvana;
 
 use crate::cli::table::{self, Column};
@@ -18,7 +18,7 @@ pub(crate) async fn switch(name: Option<String>) -> anyhow::Result<()> {
 
     let name = match name {
         Some(name) => name,
-        None => match switch_interactive(&service).await? {
+        None => match select_profile(&service, "Select a profile").await? {
             Some(name) => name,
             None => return Ok(()),
         },
@@ -36,7 +36,7 @@ pub(crate) async fn switch(name: Option<String>) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn switch_interactive(service: &Nirvana) -> anyhow::Result<Option<String>> {
+async fn select_profile(service: &Nirvana, prompt: &str) -> anyhow::Result<Option<String>> {
     let profiles = service.list_profiles().await?;
 
     if profiles.is_empty() {
@@ -48,19 +48,21 @@ async fn switch_interactive(service: &Nirvana) -> anyhow::Result<Option<String>>
 
     let mut items: Vec<String> = profiles.into_iter().map(|c| c.name).collect();
 
-    let theme = ColorfulTheme {
-        active_item_prefix: Style::new().green().apply_to(String::from("❯")),
-        ..ColorfulTheme::default()
-    };
-
-    let idx = Select::with_theme(&theme)
-        .with_prompt("Select a profile")
+    let idx = Select::with_theme(&theme())
+        .with_prompt(prompt)
         .items(&items)
         .default(0)
         .report(false)
         .interact_opt()?;
 
     Ok(idx.map(|i| items.swap_remove(i)))
+}
+
+fn theme() -> ColorfulTheme {
+    ColorfulTheme {
+        active_item_prefix: Style::new().green().apply_to(String::from("❯")),
+        ..ColorfulTheme::default()
+    }
 }
 
 pub(crate) async fn list() -> anyhow::Result<()> {
@@ -102,4 +104,41 @@ pub(crate) async fn delete(name: Option<String>, _yes: bool) -> anyhow::Result<(
         None => println!("interactive delete"),
     }
     Ok(())
+}
+
+pub(crate) async fn rename(name: Option<String>, new_name: Option<String>) -> anyhow::Result<()> {
+    let mut service = Nirvana::new().await?;
+
+    let (name, new_name) = match name.zip(new_name) {
+        Some(names) => names,
+        None => match rename_interactive(&service).await? {
+            Some(names) => names,
+            None => return Ok(()),
+        },
+    };
+
+    service.rename_profile(&name, new_name.clone()).await?;
+
+    let term = Term::stdout();
+    term.write_line(&format!(
+        "{} profile {} to {}",
+        style("Renamed").green(),
+        style(&name).dim(),
+        style(&new_name).bold(),
+    ))?;
+
+    Ok(())
+}
+
+async fn rename_interactive(service: &Nirvana) -> anyhow::Result<Option<(String, String)>> {
+    let Some(name) = select_profile(service, "Select a profile to rename").await? else {
+        return Ok(None);
+    };
+
+    let new_name = Input::<String>::with_theme(&theme())
+        .with_prompt("New name")
+        .report(false)
+        .interact_text()?;
+
+    Ok(Some((name, new_name)))
 }

@@ -34,6 +34,8 @@ pub enum DomainError {
     ProfileNotFound(String),
     #[error("profile '{0}' already exists")]
     ProfileExists(String),
+    #[error("profile name must not be empty")]
+    EmptyProfileName,
 
     // connections
     #[error("no active connection")]

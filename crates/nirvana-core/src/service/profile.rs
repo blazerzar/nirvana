@@ -153,6 +153,10 @@ impl Nirvana {
         name: &str,
         new_name: String,
     ) -> Result<(), NirvanaError> {
+        if new_name.trim().is_empty() {
+            return Err(DomainError::EmptyProfileName.into());
+        }
+
         let Some(profile) = ProfileEntity::find_by_name(name).one(&self.db).await? else {
             return Err(DomainError::ProfileNotFound(name.to_owned()).into());
         };
@@ -439,12 +443,15 @@ mod tests {
     async fn rename_profile_rejects_empty_name() {
         let mut service = test_service().await;
 
-        assert!(
-            service
-                .rename_profile("test", " ".to_string())
-                .await
-                .is_err()
-        );
+        let err = service
+            .rename_profile("test", " ".to_string())
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::EmptyProfileName)
+        ));
 
         assert_eq!(profile_names(&service).await, ["test"]);
         assert_eq!(

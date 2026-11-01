@@ -1,9 +1,56 @@
+use console::{Style, Term, style};
+use dialoguer::Select;
+use dialoguer::theme::ColorfulTheme;
+use nirvana_core::service::Nirvana;
+
 pub(crate) async fn switch(name: Option<String>) -> anyhow::Result<()> {
-    match name {
-        Some(name) => println!("switching to {name}"),
-        None => println!("interactive switch"),
-    }
+    let mut service = Nirvana::new().await?;
+
+    let name = match name {
+        Some(name) => name,
+        None => match switch_interactive(&service).await? {
+            Some(name) => name,
+            None => return Ok(()),
+        },
+    };
+
+    service.switch_profile(name.clone()).await?;
+
+    let term = Term::stdout();
+    term.write_line(&format!(
+        "{} to profile {}",
+        style("Switched").green(),
+        style(&name).bold(),
+    ))?;
+
     Ok(())
+}
+
+async fn switch_interactive(service: &Nirvana) -> anyhow::Result<Option<String>> {
+    let profiles = service.list_profiles().await?;
+
+    if profiles.is_empty() {
+        let term = Term::stdout();
+        term.write_line("No profiles found.")?;
+        term.write_line("Create one with: nirvana profile create")?;
+        return Ok(None);
+    }
+
+    let mut items: Vec<String> = profiles.into_iter().map(|c| c.name).collect();
+
+    let theme = ColorfulTheme {
+        active_item_prefix: Style::new().green().apply_to(String::from("❯")),
+        ..ColorfulTheme::default()
+    };
+
+    let idx = Select::with_theme(&theme)
+        .with_prompt("Select a profile")
+        .items(&items)
+        .default(0)
+        .report(false)
+        .interact_opt()?;
+
+    Ok(idx.map(|i| items.swap_remove(i)))
 }
 
 pub(crate) async fn list() -> anyhow::Result<()> {

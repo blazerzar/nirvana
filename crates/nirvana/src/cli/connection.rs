@@ -66,6 +66,7 @@ const COLUMNS: &[Column] = &[
 pub(crate) async fn list() -> anyhow::Result<()> {
     let api = Nirvana::new().await?;
     let connections = api.list_connections().await?;
+    let active_profile = api.active_profile().await.ok();
 
     let term = Term::stdout();
     if connections.is_empty() {
@@ -83,7 +84,11 @@ pub(crate) async fn list() -> anyhow::Result<()> {
                 .unwrap()
                 .date_naive()
                 .to_string();
-            let active = if is_active(c, &api) { "*" } else { "" };
+            let active = if active_profile == Some(c.model.profile_id) {
+                "*"
+            } else {
+                ""
+            };
             [
                 c.model.id.to_string(),
                 active.to_string(),
@@ -118,11 +123,6 @@ pub(crate) async fn list() -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-fn is_active(conn: &Connection, api: &Nirvana) -> bool {
-    api.active_profile()
-        .is_ok_and(|id| id == conn.model.profile_id)
 }
 
 fn print_row(
@@ -172,12 +172,9 @@ pub(crate) async fn activate(query: Option<&str>) -> anyhow::Result<()> {
     };
     let chosen = &connections[idx];
 
-    api.set_active_profile(chosen.model.profile_id).await?;
+    let profile = switch_to_profile(&mut api, chosen.model.profile_id).await?;
     let term = Term::stdout();
-    term.write_line(&format!(
-        "Active profile set to id {}",
-        chosen.model.profile_id
-    ))?;
+    term.write_line(&format!("Active profile set to '{profile}'"))?;
     Ok(())
 }
 
@@ -253,11 +250,8 @@ pub(crate) async fn add(args: AddArgs) -> anyhow::Result<()> {
         .interact()?;
 
     if use_it {
-        api.set_active_profile(connection.model.profile_id).await?;
-        term.write_line(&format!(
-            "Active profile set to id {}",
-            connection.model.profile_id
-        ))?;
+        let profile = switch_to_profile(&mut api, connection.model.profile_id).await?;
+        term.write_line(&format!("Active profile set to '{profile}'"))?;
     }
 
     Ok(())
@@ -272,6 +266,17 @@ fn add_command(args: AddArgs) -> anyhow::Result<ConnectionData> {
         secret_store: args.storage.unwrap(),
         token: args.token.unwrap().into(),
     })
+}
+
+async fn switch_to_profile(api: &mut Nirvana, profile_id: i64) -> anyhow::Result<String> {
+    let profile = api
+        .list_profiles()
+        .await?
+        .into_iter()
+        .find(|profile| profile.id == profile_id)
+        .ok_or_else(|| anyhow::anyhow!("profile {profile_id} not found"))?;
+    api.switch_profile(profile.name.clone()).await?;
+    Ok(profile.name)
 }
 
 async fn add_interactive(api: &Nirvana) -> anyhow::Result<ConnectionData> {

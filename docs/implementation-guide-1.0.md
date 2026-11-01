@@ -288,7 +288,7 @@ decisions here (rounding, single active connection, …).
   the key). Connection settings toggles (default: Jira publish on, Linear
   publish off with squash on). Test, then save. The note says "tokens and
   keys are stored in your OS keyring, never in the database".
-- **New profile modal**: name (lowercase, unique) and "start with" (default
+- **New profile modal**: name (any case, unique) and "start with" (default
   settings / copy settings from <active>).
 - **Settings** (per profile). Timesheet: week starts on (Mon/Sun), time format
   (14:30 / 2:30 pm), workday start–end, expected hours per day, show

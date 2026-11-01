@@ -23,22 +23,22 @@ impl Nirvana {
 
 #[cfg(test)]
 mod tests {
-    use crate::service::test_support::test_api;
+    use crate::service::test_support::test_service;
 
     #[tokio::test]
     async fn info_reports_sqlite_version() {
-        let api = test_api().await;
+        let service = test_service().await;
 
-        let info = api.info().await.unwrap();
+        let info = service.info().await.unwrap();
 
         assert!(info.sqlite_version.starts_with("3."));
     }
 
     #[tokio::test]
     async fn info_reports_keyring_vendor() {
-        let api = test_api().await;
+        let service = test_service().await;
 
-        let info = api.info().await.unwrap();
+        let info = service.info().await.unwrap();
 
         assert_eq!(info.keyring, Ok("Mock store".to_string()));
     }

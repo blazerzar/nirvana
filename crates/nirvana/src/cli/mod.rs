@@ -3,6 +3,7 @@ mod delete;
 mod edit;
 mod info;
 mod list;
+mod profile;
 mod publish;
 mod start;
 mod stop;
@@ -23,7 +24,7 @@ use tracing::debug;
     name = "nirvana",
     version,
     arg_required_else_help = true,
-    about = "App to get you to time-tracking nirvana"
+    about = "App that gets you to time tracking nirvana"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -46,6 +47,11 @@ enum Command {
     List(ListArgs),
     /// Publish slots to backend
     Publish(PublishArgs),
+    /// Manage profiles
+    Profile {
+        #[command(subcommand)]
+        command: Profile,
+    },
     /// Manage connections
     Connection {
         #[command(subcommand)]
@@ -111,6 +117,33 @@ struct PublishArgs {
     /// Range stop (e.g. "14:30" or "2026-05-19 14:30"). Unbounded if omitted.
     #[arg(long)]
     stop: Option<String>,
+}
+
+#[derive(Subcommand)]
+enum Profile {
+    /// Switch profile
+    Switch {
+        /// Profile name (omit for interactive selection)
+        name: Option<String>,
+    },
+    /// List all profiles
+    List,
+    /// Create a new profile
+    Create {
+        /// Profile name (omit for interactive creation)
+        name: Option<String>,
+        /// Switch to the new profile
+        #[arg(short, long)]
+        switch: bool,
+    },
+    /// Delete a profile
+    Delete {
+        /// Profile name (omit for interactive selection)
+        name: Option<String>,
+        /// Delete without asking
+        #[arg(short, long)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -207,6 +240,12 @@ pub(crate) async fn run() -> anyhow::Result<()> {
         }
         Some(Command::List(args)) => list::run(args).await,
         Some(Command::Publish(args)) => publish::run(args).await,
+        Some(Command::Profile { command }) => match command {
+            Profile::Switch { name } => profile::switch(name).await,
+            Profile::List => profile::list().await,
+            Profile::Create { name, switch } => profile::create(name, switch).await,
+            Profile::Delete { name, yes } => profile::delete(name, yes).await,
+        },
         Some(Command::Connection { command }) => match command {
             Connection::Add(args) => connection::add(args).await,
             Connection::List => connection::list().await,

@@ -210,7 +210,7 @@ mod tests {
     use crate::domain::{Change, SlotEdit, SlotSort};
     use crate::errors::NirvanaError;
     use crate::integration::IntegrationError;
-    use crate::service::test_support::test_api;
+    use crate::service::test_support::test_service;
 
     async fn insert_ticket(api: &Nirvana, key: &str) -> i64 {
         let connection_id = api.active_connection_id().await.unwrap();
@@ -271,7 +271,7 @@ mod tests {
 
     #[tokio::test]
     async fn creates_completed_unpublished_slot() {
-        let api = test_api().await;
+        let api = test_service().await;
         insert_ticket(&api, "DES-1").await;
 
         let (slot, ticket) = api
@@ -287,7 +287,7 @@ mod tests {
 
     #[tokio::test]
     async fn created_slot_gets_unique_uuid() {
-        let api = test_api().await;
+        let api = test_service().await;
         insert_ticket(&api, "DES-1").await;
 
         let (slot, ticket) = api
@@ -326,7 +326,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_invalid_time_range() {
-        let api = test_api().await;
+        let api = test_service().await;
 
         let error = api
             .create_slot(slot_create("DES-1", 160, 160))
@@ -341,7 +341,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_future_times() {
-        let api = test_api().await;
+        let api = test_service().await;
         let future = chrono::Utc::now().timestamp() + 60;
 
         let error = api
@@ -357,7 +357,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_overlapping_slot() {
-        let api = test_api().await;
+        let api = test_service().await;
         insert_ticket(&api, "DES-1").await;
         api.create_slot(slot_create("DES-1", 100, 160))
             .await
@@ -376,7 +376,7 @@ mod tests {
 
     #[tokio::test]
     async fn does_not_stop_existing_running_slot() {
-        let api = test_api().await;
+        let api = test_service().await;
         let ticket_id = insert_ticket(&api, "DES-1").await;
         let profile_id = api
             .get_active_connection()
@@ -414,7 +414,7 @@ mod tests {
 
     #[tokio::test]
     async fn lists_slots_that_overlap_bounded_range() {
-        let api = test_api().await;
+        let api = test_service().await;
         insert_ticket(&api, "DES-1").await;
         insert_ticket(&api, "DES-2").await;
         insert_ticket(&api, "DES-3").await;
@@ -441,7 +441,7 @@ mod tests {
 
     #[tokio::test]
     async fn lists_open_ended_slots_that_overlap_range_start() {
-        let api = test_api().await;
+        let api = test_service().await;
         insert_ticket(&api, "DES-1").await;
         insert_ticket(&api, "DES-2").await;
         api.create_slot(slot_create("DES-1", 100, 140))
@@ -461,7 +461,7 @@ mod tests {
 
     #[tokio::test]
     async fn edits_slot_ticket_to_existing_ticket() {
-        let api = test_api().await;
+        let api = test_service().await;
         insert_ticket(&api, "DES-1").await;
         insert_ticket(&api, "DES-2").await;
         let (slot, _) = api
@@ -489,7 +489,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_ticket_edit_for_published_slot() {
-        let api = test_api().await;
+        let api = test_service().await;
         insert_ticket(&api, "DES-1").await;
         insert_ticket(&api, "DES-2").await;
         let (slot, _) = api
@@ -518,7 +518,7 @@ mod tests {
 
     #[tokio::test]
     async fn edits_slot_times() {
-        let api = test_api().await;
+        let api = test_service().await;
         insert_ticket(&api, "DES-1").await;
         let (slot, _) = api
             .create_slot(slot_create("DES-1", 100, 160))
@@ -544,7 +544,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_marks_every_squashed_slot() {
-        let api = test_api().await;
+        let api = test_service().await;
         insert_ticket(&api, "DES-1").await;
         let (first, _) = api
             .create_slot(slot_create("DES-1", 100, 160))
@@ -568,7 +568,7 @@ mod tests {
 
     #[tokio::test]
     async fn failed_publish_keeps_slot_unpublished_and_editable() {
-        let api = test_api().await;
+        let api = test_service().await;
         insert_ticket(&api, "DES-1").await;
         let (slot, _) = api
             .create_slot(slot_create("DES-1", 100, 160))
@@ -607,7 +607,7 @@ mod tests {
 
     #[tokio::test]
     async fn retried_publish_clears_error() {
-        let api = test_api().await;
+        let api = test_service().await;
         insert_ticket(&api, "DES-1").await;
         let (slot, _) = api
             .create_slot(slot_create("DES-1", 100, 160))
@@ -630,7 +630,7 @@ mod tests {
 
     #[tokio::test]
     async fn failed_publish_keeps_ok_entry() {
-        let api = test_api().await;
+        let api = test_service().await;
         insert_ticket(&api, "DES-1").await;
         let (slot, _) = api
             .create_slot(slot_create("DES-1", 100, 160))
@@ -653,7 +653,7 @@ mod tests {
 
     #[tokio::test]
     async fn pending_entry_keeps_slot_unpublished() {
-        let api = test_api().await;
+        let api = test_service().await;
         insert_ticket(&api, "DES-1").await;
         let (slot, _) = api
             .create_slot(slot_create("DES-1", 100, 160))
@@ -672,7 +672,7 @@ mod tests {
 
     #[tokio::test]
     async fn deletes_published_slot_with_its_entries() {
-        let api = test_api().await;
+        let api = test_service().await;
         insert_ticket(&api, "DES-1").await;
         let (slot, _) = api
             .create_slot(slot_create("DES-1", 100, 160))

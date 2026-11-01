@@ -1,5 +1,5 @@
 use nirvana_entity::connection::Entity as ConnectionEntity;
-use nirvana_entity::profile::Entity as Profile;
+use nirvana_entity::profile::Entity as ProfileEntity;
 use nirvana_entity::{connection, credential, jira_settings, profile, ticket};
 use sea_orm::{
     ActiveModelTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set, SqlErr,
@@ -26,13 +26,14 @@ impl Nirvana {
     }
 
     pub async fn get_active_connection(&self) -> Result<Option<Connection>, NirvanaError> {
-        let Some(profile_id) = self.config()?.core.profile else {
+        let Some(profile) = &self.config()?.core.profile else {
             return Ok(None);
         };
 
         ConnectionEntity::find()
+            .inner_join(ProfileEntity)
             .find_also_related(jira_settings::Entity)
-            .filter(connection::COLUMN.profile_id.eq(profile_id))
+            .filter(profile::COLUMN.name.eq(profile))
             .order_by_asc(connection::COLUMN.id)
             .one(&self.db)
             .await?
@@ -48,23 +49,18 @@ impl Nirvana {
         Ok(connection.model.id)
     }
 
-    pub fn active_profile(&self) -> Result<i64, NirvanaError> {
-        Ok(self
+    pub async fn active_profile(&self) -> Result<i64, NirvanaError> {
+        let name = self
             .config()?
             .core
             .profile
-            .ok_or(DomainError::NoActiveProfile)?)
-    }
-
-    pub async fn set_active_profile(&mut self, id: i64) -> Result<(), NirvanaError> {
-        if (Profile::find_by_id(id).one(&self.db).await?).is_none() {
-            return Err(DomainError::ProfileNotFound(id).into());
-        }
-
-        let config = self.config.as_mut().map_err(|e| e.clone())?;
-        config.core.profile = Some(id);
-        config.save(&self.paths)?;
-        Ok(())
+            .as_ref()
+            .ok_or(DomainError::NoActiveProfile)?;
+        Ok(ProfileEntity::find_by_name(name)
+            .one(&self.db)
+            .await?
+            .ok_or(DomainError::NoActiveProfile)?
+            .id)
     }
 
     pub async fn delete_connection(&mut self, id: i64) -> Result<(), NirvanaError> {
@@ -95,7 +91,7 @@ impl Nirvana {
         &self,
         connection: ConnectionData,
     ) -> Result<Connection, NirvanaError> {
-        let profile = Profile::find()
+        let profile = ProfileEntity::find()
             .order_by_asc(profile::COLUMN.id)
             .one(&self.db)
             .await?
@@ -223,7 +219,7 @@ mod tests {
 
     use super::*;
     use crate::errors::SecretError;
-    use crate::service::test_support::test_api;
+    use crate::service::test_support::test_service;
 
     fn keyring_data(name: &str) -> ConnectionData {
         ConnectionData {
@@ -262,7 +258,7 @@ mod tests {
 
     #[tokio::test]
     async fn keyring_connection_stores_account_and_reads_token() {
-        let api = test_api().await;
+        let api = test_service().await;
         let connection = api
             .add_connection(keyring_data("Keyring Jira"))
             .await
@@ -283,7 +279,7 @@ mod tests {
 
     #[tokio::test]
     async fn deleting_keyring_connection_removes_entry() {
-        let mut api = test_api().await;
+        let mut api = test_service().await;
         let connection = api
             .add_connection(keyring_data("Keyring Jira"))
             .await
@@ -297,7 +293,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejected_keyring_connection_leaves_no_entry() {
-        let api = test_api().await;
+        let api = test_service().await;
         api.add_connection(keyring_data("Keyring Jira"))
             .await
             .unwrap();
@@ -318,7 +314,7 @@ mod tests {
 
     #[tokio::test]
     async fn reading_missing_keyring_entry_fails() {
-        let api = test_api().await;
+        let api = test_service().await;
         let connection = api
             .add_connection(keyring_data("Keyring Jira"))
             .await
@@ -336,7 +332,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_duplicate_connection_name() {
-        let api = test_api().await;
+        let api = test_service().await;
 
         let result = api
             .add_connection(ConnectionData {

@@ -30,8 +30,10 @@ pub enum DomainError {
     // profiles
     #[error("no active profile")]
     NoActiveProfile,
-    #[error("profile not found: {0}")]
-    ProfileNotFound(i64),
+    #[error("profile '{0}' not found")]
+    ProfileNotFound(String),
+    #[error("profile '{0}' already exists")]
+    ProfileExists(String),
 
     // connections
     #[error("no active connection")]

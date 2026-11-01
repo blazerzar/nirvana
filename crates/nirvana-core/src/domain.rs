@@ -1,4 +1,5 @@
 use nirvana_entity::credential::SecretStore;
+pub use nirvana_entity::profile::Model as Profile;
 use nirvana_entity::{connection, jira_settings};
 use secrecy::SecretString;
 

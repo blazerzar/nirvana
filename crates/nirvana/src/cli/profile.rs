@@ -1,7 +1,17 @@
-use console::{Style, Term, style};
+use console::{Alignment, Style, Term, style};
 use dialoguer::Select;
 use dialoguer::theme::ColorfulTheme;
 use nirvana_core::service::Nirvana;
+
+use crate::cli::table::{self, Column};
+use crate::cli::time::format_timestamp;
+
+const COLUMNS: [Column; 4] = [
+    Column::new("ACTIVE").align(Alignment::Center),
+    Column::new("NAME").max_width(30),
+    Column::new("CREATED"),
+    Column::new("UPDATED"),
+];
 
 pub(crate) async fn switch(name: Option<String>) -> anyhow::Result<()> {
     let mut service = Nirvana::new().await?;
@@ -54,8 +64,28 @@ async fn switch_interactive(service: &Nirvana) -> anyhow::Result<Option<String>>
 }
 
 pub(crate) async fn list() -> anyhow::Result<()> {
-    println!("listing all profiles");
-    Ok(())
+    let service = Nirvana::new().await?;
+    let profiles = service.list_profiles().await?;
+    let active_profile = service.active_profile().await?;
+
+    let rows: Vec<[String; 4]> = profiles
+        .into_iter()
+        .map(|profile| {
+            let active = if profile.id == active_profile.profile.id {
+                "*"
+            } else {
+                ""
+            };
+            [
+                active.to_string(),
+                profile.name,
+                format_timestamp(profile.created_at),
+                format_timestamp(profile.updated_at),
+            ]
+        })
+        .collect();
+
+    table::print(&Term::stdout(), &COLUMNS, &rows)
 }
 
 pub(crate) async fn create(name: Option<String>, _switch: bool) -> anyhow::Result<()> {

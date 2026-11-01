@@ -8,6 +8,7 @@ mod publish;
 mod start;
 mod stop;
 mod table;
+mod time;
 
 use std::fmt;
 use std::fmt::Display;

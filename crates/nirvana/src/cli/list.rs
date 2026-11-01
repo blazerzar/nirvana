@@ -1,60 +1,18 @@
-use std::cmp::max;
-
 use anyhow::Context;
 use chrono::{Local, NaiveTime, TimeZone};
-use console::{Style, Term};
+use console::{Alignment, Term};
 use nirvana_core::service::{Nirvana, SlotSort};
 
+use crate::cli::table::{self, Column};
 use crate::cli::{ListArgs, parse_time};
 
-enum Column {
-    Unlimited(&'static str),
-    Limited(&'static str, usize),
-    Static(&'static str, usize),
-}
-
-impl Column {
-    fn header(&self) -> &'static str {
-        match self {
-            Column::Unlimited(h) | Column::Limited(h, _) | Column::Static(h, _) => h,
-        }
-    }
-
-    fn initial_width(&self) -> usize {
-        match self {
-            Column::Unlimited(h) | Column::Limited(h, _) => h.len(),
-            Column::Static(h, n) => max(h.len(), *n),
-        }
-    }
-
-    fn fit(&self, current: usize, cell: &str) -> usize {
-        match self {
-            Column::Unlimited(_) => max(current, cell.len()),
-            Column::Limited(_, cap) => max(current, cell.len().min(*cap)),
-            Column::Static(_, _) => current,
-        }
-    }
-
-    fn render(&self, cell: &str) -> String {
-        match self {
-            Column::Limited(_, cap) if cell.len() > *cap => {
-                let mut s = cell[..cap.saturating_sub(1)].to_string();
-                s.push('…');
-                s
-            }
-            Column::Static(_, n) if cell.len() > *n => cell[..*n].to_string(),
-            _ => cell.to_string(),
-        }
-    }
-}
-
-const COLUMNS: &[Column] = &[
-    Column::Unlimited("TICKET"),
-    Column::Limited("SUMMARY", 30),
-    Column::Static("STARTED", "HH:MM".len()),
-    Column::Static("STOPPED", "12h 34h".len()),
-    Column::Static("DURATION", "12h 34m".len()),
-    Column::Limited("URL", 50),
+const COLUMNS: [Column; 6] = [
+    Column::new("TICKET").align(Alignment::Right),
+    Column::new("SUMMARY").max_width(30),
+    Column::new("STARTED"),
+    Column::new("STOPPED"),
+    Column::new("DURATION"),
+    Column::new("URL").max_width(50),
 ];
 
 pub(crate) async fn run(args: ListArgs) -> anyhow::Result<()> {
@@ -115,26 +73,7 @@ pub(crate) async fn run(args: ListArgs) -> anyhow::Result<()> {
         })
         .collect::<Vec<_>>();
 
-    let mut widths: Vec<usize> = COLUMNS.iter().map(|c| c.initial_width()).collect();
-    for row in &rows {
-        for (i, cell) in row.iter().enumerate() {
-            widths[i] = COLUMNS[i].fit(widths[i], cell);
-        }
-    }
-
-    let bold = Style::new().bold();
-    let header: Vec<&str> = COLUMNS.iter().map(|c| c.header()).collect();
-    print_row(&term, &header, &widths, Some(&bold))?;
-
-    for row in &rows {
-        let cells: Vec<String> = row
-            .iter()
-            .enumerate()
-            .map(|(i, cell)| COLUMNS[i].render(cell))
-            .collect();
-        let cell_refs: Vec<&str> = cells.iter().map(|s| s.as_str()).collect();
-        print_row(&term, &cell_refs, &widths, None)?;
-    }
+    table::print(&term, &COLUMNS, &rows)?;
 
     Ok(())
 }
@@ -153,33 +92,4 @@ fn format_duration(secs: i64) -> String {
     } else {
         format!("{m}m")
     }
-}
-
-fn print_row(
-    term: &Term,
-    cells: &[&str],
-    widths: &[usize],
-    style: Option<&Style>,
-) -> anyhow::Result<()> {
-    debug_assert_eq!(cells.len(), widths.len());
-    debug_assert_eq!(cells.len(), COLUMNS.len());
-
-    let parts: Vec<String> = cells
-        .iter()
-        .zip(widths)
-        .enumerate()
-        .map(|(i, (cell, w))| {
-            let padded = match i {
-                0 => format!("{:>w$}", cell, w = *w),
-                _ => format!("{:<w$}", cell, w = *w),
-            };
-            match style {
-                Some(s) => s.apply_to(padded).to_string(),
-                None => padded,
-            }
-        })
-        .collect();
-
-    term.write_line(&parts.join("  "))?;
-    Ok(())
 }

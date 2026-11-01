@@ -1,66 +1,23 @@
-use std::cmp::max;
-
 use chrono::{Local, TimeZone};
 use clap::ValueEnum;
-use console::{Style, Term};
+use console::{Alignment, Style, Term};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Input, Password, Select};
 use nirvana_core::domain::{Connection, ConnectionData};
 use nirvana_core::secrets::{SecretStore, selectable_stores};
 use nirvana_core::service::Nirvana;
 
+use crate::cli::table::{self, Column};
 use crate::cli::{AddArgs, ConnectionKind};
 
-enum Column {
-    Unlimited(&'static str),
-    Limited(&'static str, usize),
-    Static(&'static str, usize),
-}
-
-impl Column {
-    fn header(&self) -> &'static str {
-        match self {
-            Column::Unlimited(h) | Column::Limited(h, _) | Column::Static(h, _) => h,
-        }
-    }
-
-    fn initial_width(&self) -> usize {
-        match self {
-            Column::Unlimited(h) => h.len(),
-            Column::Limited(h, _) => h.len(),
-            Column::Static(h, n) => max(h.len(), *n),
-        }
-    }
-
-    fn fit(&self, current: usize, cell: &str) -> usize {
-        match self {
-            Column::Unlimited(_) => max(current, cell.len()),
-            Column::Limited(_, cap) => max(current, cell.len().min(*cap)),
-            Column::Static(_, _) => current,
-        }
-    }
-
-    fn render(&self, cell: &str) -> String {
-        match self {
-            Column::Limited(_, cap) if cell.len() > *cap => {
-                let mut s = cell[..cap.saturating_sub(1)].to_string();
-                s.push('…');
-                s
-            }
-            Column::Static(_, n) if cell.len() > *n => cell[..*n].to_string(),
-            _ => cell.to_string(),
-        }
-    }
-}
-
-const COLUMNS: &[Column] = &[
-    Column::Unlimited("ID"),
-    Column::Static("ACTIVE", "ACTIVE".len()),
-    Column::Limited("NAME", 15),
-    Column::Unlimited("KIND"),
-    Column::Limited("HOST", 30),
-    Column::Limited("IDENTITY", 25),
-    Column::Static("UPDATED", "2026-05-17".len()),
+const COLUMNS: [Column; 7] = [
+    Column::new("ID").align(Alignment::Right),
+    Column::new("ACTIVE").align(Alignment::Center),
+    Column::new("NAME").max_width(15),
+    Column::new("KIND"),
+    Column::new("HOST").max_width(30),
+    Column::new("IDENTITY").max_width(25),
+    Column::new("UPDATED"),
 ];
 
 pub(crate) async fn list() -> anyhow::Result<()> {
@@ -101,57 +58,8 @@ pub(crate) async fn list() -> anyhow::Result<()> {
         })
         .collect();
 
-    let mut widths: Vec<usize> = COLUMNS.iter().map(|c| c.initial_width()).collect();
-    for row in &rows {
-        for (i, cell) in row.iter().enumerate() {
-            widths[i] = COLUMNS[i].fit(widths[i], cell);
-        }
-    }
+    table::print(&term, &COLUMNS, &rows)?;
 
-    let bold = Style::new().bold();
-    let header: Vec<&str> = COLUMNS.iter().map(|c| c.header()).collect();
-    print_row(&term, &header, &widths, Some(&bold))?;
-
-    for row in &rows {
-        let cells: Vec<String> = row
-            .iter()
-            .enumerate()
-            .map(|(i, cell)| COLUMNS[i].render(cell))
-            .collect();
-        let cell_refs: Vec<&str> = cells.iter().map(|s| s.as_str()).collect();
-        print_row(&term, &cell_refs, &widths, None)?;
-    }
-
-    Ok(())
-}
-
-fn print_row(
-    term: &Term,
-    cells: &[&str],
-    widths: &[usize],
-    style: Option<&Style>,
-) -> anyhow::Result<()> {
-    debug_assert_eq!(cells.len(), widths.len());
-    debug_assert_eq!(cells.len(), COLUMNS.len());
-
-    let parts: Vec<String> = cells
-        .iter()
-        .zip(widths)
-        .enumerate()
-        .map(|(i, (cell, w))| {
-            let padded = match i {
-                0 => format!("{:>w$}", cell, w = *w),
-                1 => format!("{:^w$}", cell, w = *w),
-                _ => format!("{:<w$}", cell, w = *w),
-            };
-            match style {
-                Some(s) => s.apply_to(padded).to_string(),
-                None => padded,
-            }
-        })
-        .collect();
-
-    term.write_line(&parts.join("  "))?;
     Ok(())
 }
 

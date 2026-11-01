@@ -120,11 +120,6 @@ struct PublishArgs {
 
 #[derive(Subcommand)]
 enum Profile {
-    /// Switch profile
-    Switch {
-        /// Profile name (omit for interactive selection)
-        name: Option<String>,
-    },
     /// List all profiles
     List,
     /// Create a new profile
@@ -135,21 +130,26 @@ enum Profile {
         #[arg(short, long)]
         switch: bool,
     },
-    /// Delete a profile
+    /// Switch the active profile
+    Switch {
+        /// Profile name (omit for interactive selection)
+        name: Option<String>,
+    },
+    /// Rename a profile
+    Rename {
+        /// Current profile name (omit both for interactive selection)
+        #[arg(requires = "new_name")]
+        name: Option<String>,
+        /// New profile name
+        new_name: Option<String>,
+    },
+    /// Delete a profile with its connections, tickets and slots
     Delete {
         /// Profile name (omit for interactive selection)
         name: Option<String>,
         /// Delete without asking
         #[arg(short, long)]
         yes: bool,
-    },
-    /// Rename a profile
-    Rename {
-        /// Profile name (omit both for interactive rename)
-        #[arg(requires = "new_name")]
-        name: Option<String>,
-        /// New profile name
-        new_name: Option<String>,
     },
 }
 
@@ -229,11 +229,11 @@ pub(crate) async fn run() -> anyhow::Result<()> {
         Some(Command::List(args)) => list::run(args).await,
         Some(Command::Publish(args)) => publish::run(args).await,
         Some(Command::Profile { command }) => match command {
-            Profile::Switch { name } => profile::switch(name).await,
             Profile::List => profile::list().await,
             Profile::Create { name, switch } => profile::create(name, switch).await,
-            Profile::Delete { name, yes } => profile::delete(name, yes).await,
+            Profile::Switch { name } => profile::switch(name).await,
             Profile::Rename { name, new_name } => profile::rename(name, new_name).await,
+            Profile::Delete { name, yes } => profile::delete(name, yes).await,
         },
         Some(Command::Connection { command }) => match command {
             Connection::Add(args) => connection::add(args).await,

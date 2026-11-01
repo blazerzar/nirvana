@@ -154,7 +154,7 @@ logged from the start.
 ## Tickets
 
 - [ ] Make sure start, stop, resume, switch, edit, delete are working and tested.
-- [ ] Add `nirvana profile add` - a fresh DB has no profile, so connections
+- [x] Add `nirvana profile add` - a fresh DB has no profile, so connections
       cannot be added until one is created.
 - [ ] Get these commands working in CLI and start integration testing as well.
 - [ ] Check for blocking calls inside async code while refactoring the CLI.

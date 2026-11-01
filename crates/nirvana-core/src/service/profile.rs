@@ -18,18 +18,20 @@ use crate::secrets::{SecretStore, delete_from_keychain};
 use crate::service::{ActiveProfile, Nirvana, Profile};
 
 impl Nirvana {
-    /// Makes the profile named `name` active and saves the config.
+    /// Makes the profile named `name` active and saves the config. Returns
+    /// `false` if it was already active.
     ///
     /// # Errors
     ///
     /// Returns an error if the profile does not exist, the config is
     /// unavailable or cannot be saved, or the database query fails.
-    pub async fn switch_profile(&mut self, name: &str) -> Result<(), NirvanaError> {
+    pub async fn switch_profile(&mut self, name: &str) -> Result<bool, NirvanaError> {
         match ProfileEntity::find_by_name(name).one(&self.db).await? {
+            Some(_) if self.config()?.core.profile.as_deref() == Some(name) => Ok(false),
             Some(profile) => {
                 self.config_mut()?.core.profile = Some(profile.name);
                 self.config()?.save(&self.paths)?;
-                Ok(())
+                Ok(true)
             }
             None => Err(DomainError::ProfileNotFound(name.to_owned()).into()),
         }
@@ -54,6 +56,10 @@ impl Nirvana {
     /// Returns an error if the name is empty, a profile with that name already
     /// exists or the database insert fails.
     pub async fn create_profile(&self, name: String) -> Result<Profile, NirvanaError> {
+        if name.trim().is_empty() {
+            return Err(DomainError::EmptyProfileName.into());
+        }
+
         profile::ActiveModel {
             name: Set(name.clone()),
             ..Default::default()
@@ -70,14 +76,15 @@ impl Nirvana {
     /// slots, and removes the keyring entries of its connections.
     ///
     /// If it was the active profile, the oldest remaining profile becomes
-    /// active, or none if no profile is left. A keyring entry that cannot be
+    /// active and is returned, or none if no profile is left. Returns `None`
+    /// if it was not the active profile. A keyring entry that cannot be
     /// removed is only logged.
     ///
     /// # Errors
     ///
     /// Returns an error if the profile does not exist, the config is
     /// unavailable or cannot be saved, or a database query fails.
-    pub async fn delete_profile(&mut self, name: &str) -> Result<(), NirvanaError> {
+    pub async fn delete_profile(&mut self, name: &str) -> Result<Option<String>, NirvanaError> {
         let Some(profile) = ProfileEntity::find_by_name(name).one(&self.db).await? else {
             return Err(DomainError::ProfileNotFound(name.to_owned()).into());
         };
@@ -97,11 +104,13 @@ impl Nirvana {
             delete_from_keychain(&self.keyring, account).await;
         }
 
-        if deletes_active {
-            self.config_mut()?.core.profile = resolve(&self.db, None).await?;
-            self.config()?.save(&self.paths)?;
+        if !deletes_active {
+            return Ok(None);
         }
-        Ok(())
+        let active = resolve(&self.db, None).await?;
+        self.config_mut()?.core.profile.clone_from(&active);
+        self.config()?.save(&self.paths)?;
+        Ok(active)
     }
 
     /// Returns the active profile with its connections, oldest first.
@@ -227,6 +236,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn create_profile_rejects_empty_name() {
+        let service = test_service().await;
+
+        let err = service.create_profile(" ".to_string()).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::EmptyProfileName)
+        ));
+        assert_eq!(profile_names(&service).await, ["test"]);
+    }
+
+    #[tokio::test]
     async fn delete_profile_removes_keyring_entries_and_switches_active() {
         let mut service = test_service().await;
         service.create_profile("work".to_string()).await.unwrap();
@@ -242,8 +264,9 @@ mod tests {
             .await
             .unwrap();
 
-        service.delete_profile("test").await.unwrap();
+        let active = service.delete_profile("test").await.unwrap();
 
+        assert_eq!(active.as_deref(), Some("work"));
         assert_eq!(profile_names(&service).await, ["work"]);
         assert!(
             service
@@ -299,7 +322,7 @@ mod tests {
         let mut service = test_service().await;
         service.create_profile("work".to_string()).await.unwrap();
 
-        service.switch_profile("work").await.unwrap();
+        assert!(service.switch_profile("work").await.unwrap());
 
         assert_eq!(
             service.config().unwrap().core.profile.as_deref(),
@@ -307,6 +330,18 @@ mod tests {
         );
         let saved = AppConfig::load(&service.paths).unwrap();
         assert_eq!(saved.core.profile.as_deref(), Some("work"));
+    }
+
+    #[tokio::test]
+    async fn switch_to_active_profile_changes_nothing() {
+        let mut service = test_service().await;
+
+        assert!(!service.switch_profile("test").await.unwrap());
+
+        assert_eq!(
+            service.config().unwrap().core.profile.as_deref(),
+            Some("test")
+        );
     }
 
     #[tokio::test]
@@ -330,8 +365,9 @@ mod tests {
         let mut service = test_service().await;
         service.create_profile("work".to_string()).await.unwrap();
 
-        service.delete_profile("work").await.unwrap();
+        let active = service.delete_profile("work").await.unwrap();
 
+        assert_eq!(active, None);
         assert_eq!(profile_names(&service).await, ["test"]);
         assert_eq!(service.active_profile().await.unwrap().connections.len(), 1);
         assert_eq!(
@@ -364,8 +400,9 @@ mod tests {
     async fn delete_last_profile_clears_active_profile() {
         let mut service = test_service().await;
 
-        service.delete_profile("test").await.unwrap();
+        let active = service.delete_profile("test").await.unwrap();
 
+        assert_eq!(active, None);
         assert!(profile_names(&service).await.is_empty());
         assert_eq!(service.config().unwrap().core.profile, None);
         let saved = AppConfig::load(&service.paths).unwrap();

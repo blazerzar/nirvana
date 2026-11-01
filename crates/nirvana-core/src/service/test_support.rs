@@ -48,6 +48,9 @@ pub(super) async fn test_service() -> TestService {
     .insert(&service.db)
     .await
     .unwrap();
+    let config = service.config.as_mut().unwrap();
+    config.core.profile = Some("test".to_string());
+    config.idle.enabled = false;
     service
         .add_connection(ConnectionData {
             name: "Test Jira".to_string(),
@@ -59,9 +62,6 @@ pub(super) async fn test_service() -> TestService {
         })
         .await
         .unwrap();
-    let config = service.config.as_mut().unwrap();
-    config.core.profile = Some("test".to_string());
-    config.idle.enabled = false;
 
     TestService { service, _dir: dir }
 }

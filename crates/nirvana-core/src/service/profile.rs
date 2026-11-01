@@ -4,16 +4,18 @@
 //! to a profile. The active profile is machine state, stored by name as
 //! `[core] profile` in `config.toml`.
 
+use nirvana_entity::connection::Entity as ConnectionEntity;
 use nirvana_entity::profile::Entity as ProfileEntity;
-use nirvana_entity::{connection, credential, profile};
+use nirvana_entity::{connection, credential, jira_settings, profile};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ActiveModelTrait, DatabaseConnection, EntityTrait, ModelTrait, QueryFilter, QueryOrder, SqlErr,
 };
 
+use crate::domain::Connection;
 use crate::errors::{DomainError, NirvanaError};
 use crate::secrets::{SecretStore, delete_from_keychain};
-use crate::service::{Nirvana, Profile};
+use crate::service::{ActiveProfile, Nirvana, Profile};
 
 impl Nirvana {
     /// Makes the profile named `name` active and saves the config.
@@ -101,6 +103,42 @@ impl Nirvana {
         }
         Ok(())
     }
+
+    /// Returns the active profile with its connections, oldest first.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no profile is active, the config is unavailable,
+    /// a connection has invalid settings or the database query fails.
+    pub async fn active_profile(&self) -> Result<ActiveProfile, NirvanaError> {
+        let profile = self.find_active_profile().await?;
+        let connections = ConnectionEntity::find()
+            .find_also_related(jira_settings::Entity)
+            .filter(connection::COLUMN.profile_id.eq(profile.id))
+            .order_by_asc(connection::COLUMN.id)
+            .all(&self.db)
+            .await?
+            .into_iter()
+            .map(|(model, jira_settings)| Connection::new(model, jira_settings))
+            .collect::<Result<_, _>>()?;
+        Ok(ActiveProfile {
+            profile,
+            connections,
+        })
+    }
+
+    pub(super) async fn find_active_profile(&self) -> Result<Profile, NirvanaError> {
+        let name = self
+            .config()?
+            .core
+            .profile
+            .as_ref()
+            .ok_or(DomainError::NoActiveProfile)?;
+        Ok(ProfileEntity::find_by_name(name)
+            .one(&self.db)
+            .await?
+            .ok_or(DomainError::NoActiveProfile)?)
+    }
 }
 
 /// Returns `configured` if a profile with that name exists, otherwise the
@@ -167,7 +205,14 @@ mod tests {
         service.delete_profile("test".to_string()).await.unwrap();
 
         assert_eq!(profile_names(&service).await, ["work"]);
-        assert!(service.list_connections().await.unwrap().is_empty());
+        assert!(
+            service
+                .active_profile()
+                .await
+                .unwrap()
+                .connections
+                .is_empty()
+        );
         let store = (service.keyring)().unwrap();
         assert!(
             store
@@ -254,10 +299,30 @@ mod tests {
         service.delete_profile("work".to_string()).await.unwrap();
 
         assert_eq!(profile_names(&service).await, ["test"]);
-        assert_eq!(service.list_connections().await.unwrap().len(), 1);
+        assert_eq!(service.active_profile().await.unwrap().connections.len(), 1);
         assert_eq!(
             service.config().unwrap().core.profile.as_deref(),
             Some("test")
+        );
+    }
+
+    #[tokio::test]
+    async fn active_profile_loads_its_connections() {
+        let mut service = test_service().await;
+        service.create_profile("work".to_string()).await.unwrap();
+
+        let profile = service.active_profile().await.unwrap();
+        assert_eq!(profile.connections.len(), 1);
+        assert_eq!(profile.connections[0].model.name, "Test Jira");
+
+        service.switch_profile("work".to_string()).await.unwrap();
+        assert!(
+            service
+                .active_profile()
+                .await
+                .unwrap()
+                .connections
+                .is_empty()
         );
     }
 

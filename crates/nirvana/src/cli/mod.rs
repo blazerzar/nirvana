@@ -8,16 +8,13 @@ mod publish;
 mod start;
 mod stop;
 mod table;
-mod time;
 
 use std::fmt;
 use std::fmt::Display;
 
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use nirvana_core::domain::Change;
 use nirvana_core::secrets::{SecretStore, selectable_stores};
-pub(crate) use time::parse_time;
 use tracing::debug;
 
 #[derive(Parser)]
@@ -218,27 +215,8 @@ pub(crate) async fn run() -> anyhow::Result<()> {
         Some(Command::Info) => info::run().await,
         Some(Command::Start(args)) => start::run(args).await,
         Some(Command::Stop(args)) => stop::run(args).await,
-        Some(Command::Edit(args)) => {
-            let started_at = args.start.as_deref().map(parse_time).transpose()?;
-            let stopped_at = match &args.stop {
-                None => Change::Skip,
-                Some(s) if s.is_empty() => Change::Clear,
-                Some(s) => Change::Set(parse_time(s)?),
-            };
-            edit::run(edit::EditArgs {
-                slot_id: args.slot_id,
-                ticket_key: args.ticket,
-                started_at,
-                stopped_at,
-            })
-            .await
-        }
-        Some(Command::Delete(args)) => {
-            delete::run(delete::DeleteArgs {
-                slot_id: args.slot_id,
-            })
-            .await
-        }
+        Some(Command::Edit(args)) => edit::run(args).await,
+        Some(Command::Delete(args)) => delete::run(args).await,
         Some(Command::List(args)) => list::run(args).await,
         Some(Command::Publish(args)) => publish::run(args).await,
         Some(Command::Profile { command }) => match command {

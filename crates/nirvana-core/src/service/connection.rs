@@ -1,101 +1,35 @@
-use nirvana_entity::connection::Entity as ConnectionEntity;
-use nirvana_entity::profile::Entity as ProfileEntity;
-use nirvana_entity::{connection, credential, jira_settings, profile, ticket};
-use sea_orm::{
-    ActiveModelTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set, SqlErr,
-    TransactionTrait,
-};
+//! Connections.
+//!
+//! A connection belongs to a profile and points to a backend such as Jira.
+//! Its token is stored in the `credentials` table, either as plaintext or as
+//! the account of a keyring entry. Hosts are stored normalized, without
+//! scheme or trailing slash.
+
+use nirvana_entity::{connection, credential, jira_settings};
+use sea_orm::{ActiveModelTrait, Set, SqlErr, TransactionTrait};
 use tracing::info;
 
 use crate::domain::{Connection, ConnectionData};
-use crate::errors::{DbError, DomainError, NirvanaError};
-use crate::integration;
-use crate::secrets::{SecretStore, delete_from_keychain, read_credential, store_secret};
+use crate::errors::{DbError, NirvanaError};
+use crate::secrets::{SecretStore, delete_from_keychain, store_secret};
 use crate::service::Nirvana;
 
 impl Nirvana {
-    pub async fn list_connections(&self) -> Result<Vec<Connection>, NirvanaError> {
-        ConnectionEntity::find()
-            .find_also_related(jira_settings::Entity)
-            .order_by_asc(connection::COLUMN.id)
-            .all(&self.db)
-            .await?
-            .into_iter()
-            .map(|(model, jira_settings)| Ok(Connection::new(model, jira_settings)?))
-            .collect()
-    }
-
-    pub async fn get_active_connection(&self) -> Result<Option<Connection>, NirvanaError> {
-        let Some(profile) = &self.config()?.core.profile else {
-            return Ok(None);
-        };
-
-        ConnectionEntity::find()
-            .inner_join(ProfileEntity)
-            .find_also_related(jira_settings::Entity)
-            .filter(profile::COLUMN.name.eq(profile))
-            .order_by_asc(connection::COLUMN.id)
-            .one(&self.db)
-            .await?
-            .map(|(model, jira_settings)| Ok(Connection::new(model, jira_settings)?))
-            .transpose()
-    }
-
-    pub(crate) async fn active_connection_id(&self) -> Result<i64, NirvanaError> {
-        let connection = self
-            .get_active_connection()
-            .await?
-            .ok_or(DomainError::NoActiveConnection)?;
-        Ok(connection.model.id)
-    }
-
-    pub async fn active_profile(&self) -> Result<i64, NirvanaError> {
-        let name = self
-            .config()?
-            .core
-            .profile
-            .as_ref()
-            .ok_or(DomainError::NoActiveProfile)?;
-        Ok(ProfileEntity::find_by_name(name)
-            .one(&self.db)
-            .await?
-            .ok_or(DomainError::NoActiveProfile)?
-            .id)
-    }
-
-    pub async fn delete_connection(&mut self, id: i64) -> Result<(), NirvanaError> {
-        if (ConnectionEntity::find_by_id(id).one(&self.db).await?).is_none() {
-            return Err(DomainError::ConnectionNotFound(id).into());
-        }
-
-        let tickets = ticket::Entity::find()
-            .filter(ticket::COLUMN.connection_id.eq(id))
-            .count(&self.db)
-            .await?;
-        if tickets > 0 {
-            return Err(DomainError::ConnectionHasHistory.into());
-        }
-
-        let credential = credential::Entity::find_by_id(id).one(&self.db).await?;
-        ConnectionEntity::delete_by_id(id).exec(&self.db).await?;
-        if let Some(credential) = credential
-            && credential.secret_store == SecretStore::Keyring
-        {
-            delete_from_keychain(&self.keyring, credential.credential).await;
-        }
-
-        Ok(())
-    }
-
+    /// Adds a connection to the active profile and stores its token in the
+    /// chosen secret store.
+    ///
+    /// A keyring entry is removed again if the connection cannot be saved.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no profile is active, the config is unavailable,
+    /// the profile already has a connection with that name, the token cannot
+    /// be stored, the kind is unsupported or the database insert fails.
     pub async fn add_connection(
         &self,
         connection: ConnectionData,
     ) -> Result<Connection, NirvanaError> {
-        let profile = ProfileEntity::find()
-            .order_by_asc(profile::COLUMN.id)
-            .one(&self.db)
-            .await?
-            .ok_or(DomainError::NoActiveProfile)?;
+        let profile = self.find_active_profile().await?;
 
         info!(secret_store = %connection.secret_store, "adding connection");
         let secret_store = connection.secret_store;
@@ -155,54 +89,6 @@ impl Nirvana {
 
         added
     }
-
-    pub async fn test_connection_data(
-        &self,
-        mut connection: ConnectionData,
-    ) -> Result<(), NirvanaError> {
-        connection.host = normalize_host(&connection.host);
-        let candidate = connection::Model {
-            id: 0,
-            name: connection.name,
-            kind: connection.kind,
-            host: connection.host,
-            identity: connection.identity,
-            created_at: 0,
-            updated_at: 0,
-            profile_id: 0,
-        };
-        let settings = jira_settings::Model {
-            connection_id: 0,
-            publish: false,
-            squash: false,
-        };
-        let candidate = Connection::new(candidate, Some(settings))?;
-        let integ = integration::build_integration(&candidate, &connection.token);
-        integ.test_connection().await?;
-        Ok(())
-    }
-
-    pub async fn test_connection(&self) -> Result<(), NirvanaError> {
-        let connection_id = self.active_connection_id().await?;
-
-        let connection = self.get_connection(connection_id).await?;
-        let token = read_credential(&self.keyring, connection_id, &self.db).await?;
-        let integ = integration::build_integration(&connection, &token);
-        integ.test_connection().await?;
-        Ok(())
-    }
-
-    pub fn issue_urls<'a>(
-        &self,
-        connection: &Connection,
-        tickets: impl IntoIterator<Item = &'a ticket::Model>,
-    ) -> Result<Vec<String>, NirvanaError> {
-        let integ = integration::Integration::build_for_url(connection);
-        Ok(tickets
-            .into_iter()
-            .map(|ticket| integ.get_issue_link(&ticket.ticket_key))
-            .collect())
-    }
 }
 
 fn normalize_host(url: &str) -> String {
@@ -215,30 +101,22 @@ fn normalize_host(url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use sea_orm::EntityTrait;
     use secrecy::ExposeSecret;
 
     use super::*;
-    use crate::errors::SecretError;
+    use crate::secrets::read_credential;
     use crate::service::test_support::test_service;
 
     fn keyring_data(name: &str) -> ConnectionData {
         ConnectionData {
             name: name.to_string(),
             kind: "jira-cloud".to_string(),
-            host: "https://other.atlassian.net".to_string(),
+            host: "https://other.atlassian.net/".to_string(),
             identity: "tester@example.com".to_string(),
             secret_store: SecretStore::Keyring,
             token: "keyring-token".into(),
         }
-    }
-
-    async fn credential_of_connection(api: &Nirvana, connection_id: i64) -> String {
-        credential::Entity::find_by_id(connection_id)
-            .one(&api.db)
-            .await
-            .unwrap()
-            .unwrap()
-            .credential
     }
 
     fn keyring_passwords(api: &Nirvana) -> Vec<String> {
@@ -257,13 +135,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn add_connection_adds_to_active_profile() {
+        let mut api = test_service().await;
+        let work = api.create_profile("work".to_string()).await.unwrap();
+        api.switch_profile("work".to_string()).await.unwrap();
+
+        let added = api.add_connection(keyring_data("Work Jira")).await.unwrap();
+
+        assert_eq!(added.model.profile_id, work.id);
+        assert_eq!(added.model.host, "other.atlassian.net");
+        assert_eq!(added.kind.as_str(), "jira-cloud");
+        assert_eq!(api.active_profile().await.unwrap().connections.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn add_connection_allows_same_name_in_another_profile() {
+        let mut api = test_service().await;
+        api.create_profile("work".to_string()).await.unwrap();
+        api.switch_profile("work".to_string()).await.unwrap();
+
+        let added = api
+            .add_connection(ConnectionData {
+                secret_store: SecretStore::Plaintext,
+                ..keyring_data("Test Jira")
+            })
+            .await;
+
+        assert!(added.is_ok());
+    }
+
+    #[tokio::test]
     async fn keyring_connection_stores_account_and_reads_token() {
         let api = test_service().await;
         let connection = api
             .add_connection(keyring_data("Keyring Jira"))
             .await
             .unwrap();
-        let credential = credential_of_connection(&api, connection.model.id).await;
+        let credential = credential::Entity::find_by_id(connection.model.id)
+            .one(&api.db)
+            .await
+            .unwrap()
+            .unwrap()
+            .credential;
 
         let key = credential
             .strip_prefix("nirvana_test_Keyring Jira_")
@@ -275,20 +188,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(token.expose_secret(), "keyring-token");
-    }
-
-    #[tokio::test]
-    async fn deleting_keyring_connection_removes_entry() {
-        let mut api = test_service().await;
-        let connection = api
-            .add_connection(keyring_data("Keyring Jira"))
-            .await
-            .unwrap();
-        assert_eq!(keyring_passwords(&api), ["keyring-token"]);
-
-        api.delete_connection(connection.model.id).await.unwrap();
-
-        assert!(keyring_passwords(&api).is_empty());
     }
 
     #[tokio::test]
@@ -313,35 +212,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reading_missing_keyring_entry_fails() {
-        let api = test_service().await;
-        let connection = api
-            .add_connection(keyring_data("Keyring Jira"))
-            .await
-            .unwrap();
-        let id = connection.model.id;
-        delete_from_keychain(&api.keyring, credential_of_connection(&api, id).await).await;
-
-        let result = read_credential(&api.keyring, id, &api.db).await;
-
-        assert!(matches!(
-            result,
-            Err(NirvanaError::Secret(SecretError::MissingEntry { connection_id })) if connection_id == id
-        ));
-    }
-
-    #[tokio::test]
     async fn rejects_duplicate_connection_name() {
         let api = test_service().await;
 
         let result = api
             .add_connection(ConnectionData {
-                name: "Test Jira".to_string(),
-                kind: "jira-cloud".to_string(),
-                host: "https://other.atlassian.net".to_string(),
-                identity: "tester@example.com".to_string(),
                 secret_store: SecretStore::Plaintext,
-                token: "token".into(),
+                ..keyring_data("Test Jira")
             })
             .await;
 
@@ -349,6 +226,6 @@ mod tests {
             result,
             Err(NirvanaError::Db(DbError::DuplicateName(name))) if name == "Test Jira"
         ));
-        assert_eq!(api.list_connections().await.unwrap().len(), 1);
+        assert_eq!(api.active_profile().await.unwrap().connections.len(), 1);
     }
 }

@@ -1,13 +1,8 @@
 mod connection;
-mod delete;
-mod edit;
 mod info;
 mod profile;
-mod publish;
-mod slots;
 #[cfg(test)]
 mod test_support;
-mod tracking;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -16,7 +11,7 @@ use sea_orm::DatabaseConnection;
 use tracing::warn;
 
 use crate::config::{AppConfig, ConfigError};
-pub use crate::domain::{Change, Profile, SlotCreate, SlotEdit, SlotSort};
+pub use crate::domain::{ActiveProfile, Change, Profile, SlotCreate, SlotEdit, SlotSort};
 use crate::errors::NirvanaError;
 use crate::paths::AppPaths;
 use crate::secrets::{StoreFactory, native_store};

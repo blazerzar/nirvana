@@ -19,6 +19,12 @@ pub enum Change<T> {
 }
 
 #[derive(Debug)]
+pub struct ActiveProfile {
+    pub profile: Profile,
+    pub connections: Vec<Connection>,
+}
+
+#[derive(Debug)]
 pub struct Connection {
     pub model: connection::Model,
     pub kind: ConnectionKind,

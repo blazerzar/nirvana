@@ -1,3 +1,5 @@
+#![expect(dead_code)]
+
 use console::{Alignment, Style, Term, measure_text_width, pad_str};
 
 pub(crate) struct Column {

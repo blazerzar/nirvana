@@ -24,7 +24,7 @@ pub(crate) async fn switch(name: Option<String>) -> anyhow::Result<()> {
         },
     };
 
-    service.switch_profile(name.clone()).await?;
+    service.switch_profile(&name).await?;
 
     let term = Term::stdout();
     term.write_line(&format!(

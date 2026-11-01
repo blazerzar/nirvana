@@ -138,7 +138,7 @@ mod tests {
     async fn add_connection_adds_to_active_profile() {
         let mut api = test_service().await;
         let work = api.create_profile("work".to_string()).await.unwrap();
-        api.switch_profile("work".to_string()).await.unwrap();
+        api.switch_profile("work").await.unwrap();
 
         let added = api.add_connection(keyring_data("Work Jira")).await.unwrap();
 
@@ -152,7 +152,7 @@ mod tests {
     async fn add_connection_allows_same_name_in_another_profile() {
         let mut api = test_service().await;
         api.create_profile("work".to_string()).await.unwrap();
-        api.switch_profile("work".to_string()).await.unwrap();
+        api.switch_profile("work").await.unwrap();
 
         let added = api
             .add_connection(ConnectionData {

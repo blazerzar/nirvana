@@ -24,14 +24,14 @@ impl Nirvana {
     ///
     /// Returns an error if the profile does not exist, the config is
     /// unavailable or cannot be saved, or the database query fails.
-    pub async fn switch_profile(&mut self, name: String) -> Result<(), NirvanaError> {
-        match ProfileEntity::find_by_name(&name).one(&self.db).await? {
+    pub async fn switch_profile(&mut self, name: &str) -> Result<(), NirvanaError> {
+        match ProfileEntity::find_by_name(name).one(&self.db).await? {
             Some(profile) => {
                 self.config_mut()?.core.profile = Some(profile.name);
                 self.config()?.save(&self.paths)?;
                 Ok(())
             }
-            None => Err(DomainError::ProfileNotFound(name).into()),
+            None => Err(DomainError::ProfileNotFound(name.to_owned()).into()),
         }
     }
 
@@ -77,11 +77,11 @@ impl Nirvana {
     ///
     /// Returns an error if the profile does not exist, the config is
     /// unavailable or cannot be saved, or a database query fails.
-    pub async fn delete_profile(&mut self, name: String) -> Result<(), NirvanaError> {
-        let Some(profile) = ProfileEntity::find_by_name(&name).one(&self.db).await? else {
-            return Err(DomainError::ProfileNotFound(name).into());
+    pub async fn delete_profile(&mut self, name: &str) -> Result<(), NirvanaError> {
+        let Some(profile) = ProfileEntity::find_by_name(name).one(&self.db).await? else {
+            return Err(DomainError::ProfileNotFound(name.to_owned()).into());
         };
-        let deletes_active = self.config()?.core.profile.as_ref() == Some(&name);
+        let deletes_active = self.config()?.core.profile.as_deref() == Some(name);
 
         let keyring_accounts: Vec<String> = credential::Entity::find()
             .inner_join(connection::Entity)
@@ -138,6 +138,42 @@ impl Nirvana {
             .one(&self.db)
             .await?
             .ok_or(DomainError::NoActiveProfile)?)
+    }
+
+    /// Renames the profile named `name` to `new_name`. If it is the active
+    /// profile, the config is updated to the new name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the profile does not exist, the new name is empty,
+    /// a profile with the new name already exists, the config is unavailable
+    /// or cannot be saved, or a database query fails.
+    pub async fn rename_profile(
+        &mut self,
+        name: &str,
+        new_name: String,
+    ) -> Result<(), NirvanaError> {
+        let Some(profile) = ProfileEntity::find_by_name(name).one(&self.db).await? else {
+            return Err(DomainError::ProfileNotFound(name.to_owned()).into());
+        };
+
+        let mut profile: profile::ActiveModel = profile.into();
+        profile.name = Set(new_name.clone());
+        let renamed = profile
+            .update(&self.db)
+            .await
+            .map_err(|e| match e.sql_err() {
+                Some(SqlErr::UniqueConstraintViolation(_)) => {
+                    NirvanaError::from(DomainError::ProfileExists(new_name))
+                }
+                _ => e.into(),
+            })?;
+
+        if self.config()?.core.profile.as_deref() == Some(name) {
+            self.config_mut()?.core.profile = Some(renamed.name);
+            self.config()?.save(&self.paths)?;
+        }
+        Ok(())
     }
 }
 
@@ -202,7 +238,7 @@ mod tests {
             .await
             .unwrap();
 
-        service.delete_profile("test".to_string()).await.unwrap();
+        service.delete_profile("test").await.unwrap();
 
         assert_eq!(profile_names(&service).await, ["work"]);
         assert!(
@@ -231,10 +267,7 @@ mod tests {
     async fn delete_profile_rejects_missing_profile() {
         let mut service = test_service().await;
 
-        let err = service
-            .delete_profile("missing".to_string())
-            .await
-            .unwrap_err();
+        let err = service.delete_profile("missing").await.unwrap_err();
 
         assert!(matches!(
             err,
@@ -262,7 +295,7 @@ mod tests {
         let mut service = test_service().await;
         service.create_profile("work".to_string()).await.unwrap();
 
-        service.switch_profile("work".to_string()).await.unwrap();
+        service.switch_profile("work").await.unwrap();
 
         assert_eq!(
             service.config().unwrap().core.profile.as_deref(),
@@ -276,10 +309,7 @@ mod tests {
     async fn switch_profile_rejects_missing_profile() {
         let mut service = test_service().await;
 
-        let err = service
-            .switch_profile("missing".to_string())
-            .await
-            .unwrap_err();
+        let err = service.switch_profile("missing").await.unwrap_err();
 
         assert!(matches!(
             err,
@@ -296,7 +326,7 @@ mod tests {
         let mut service = test_service().await;
         service.create_profile("work".to_string()).await.unwrap();
 
-        service.delete_profile("work".to_string()).await.unwrap();
+        service.delete_profile("work").await.unwrap();
 
         assert_eq!(profile_names(&service).await, ["test"]);
         assert_eq!(service.active_profile().await.unwrap().connections.len(), 1);
@@ -315,7 +345,7 @@ mod tests {
         assert_eq!(profile.connections.len(), 1);
         assert_eq!(profile.connections[0].model.name, "Test Jira");
 
-        service.switch_profile("work".to_string()).await.unwrap();
+        service.switch_profile("work").await.unwrap();
         assert!(
             service
                 .active_profile()
@@ -330,12 +360,97 @@ mod tests {
     async fn delete_last_profile_clears_active_profile() {
         let mut service = test_service().await;
 
-        service.delete_profile("test".to_string()).await.unwrap();
+        service.delete_profile("test").await.unwrap();
 
         assert!(profile_names(&service).await.is_empty());
         assert_eq!(service.config().unwrap().core.profile, None);
         let saved = AppConfig::load(&service.paths).unwrap();
         assert_eq!(saved.core.profile, None);
+    }
+
+    #[tokio::test]
+    async fn rename_active_profile_updates_config() {
+        let mut service = test_service().await;
+
+        service
+            .rename_profile("test", "personal".to_string())
+            .await
+            .unwrap();
+
+        assert_eq!(profile_names(&service).await, ["personal"]);
+        assert_eq!(
+            service.config().unwrap().core.profile.as_deref(),
+            Some("personal")
+        );
+        let saved = AppConfig::load(&service.paths).unwrap();
+        assert_eq!(saved.core.profile.as_deref(), Some("personal"));
+    }
+
+    #[tokio::test]
+    async fn rename_profile_keeps_active_profile_when_renaming_another() {
+        let mut service = test_service().await;
+        service.create_profile("work".to_string()).await.unwrap();
+
+        service
+            .rename_profile("work", "office".to_string())
+            .await
+            .unwrap();
+
+        assert_eq!(profile_names(&service).await, ["test", "office"]);
+        assert_eq!(
+            service.config().unwrap().core.profile.as_deref(),
+            Some("test")
+        );
+    }
+
+    #[tokio::test]
+    async fn rename_profile_rejects_duplicate_name() {
+        let mut service = test_service().await;
+        service.create_profile("work".to_string()).await.unwrap();
+
+        let err = service
+            .rename_profile("work", "test".to_string())
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::ProfileExists(name)) if name == "test"
+        ));
+        assert_eq!(profile_names(&service).await, ["test", "work"]);
+    }
+
+    #[tokio::test]
+    async fn rename_profile_rejects_missing_profile() {
+        let mut service = test_service().await;
+
+        let err = service
+            .rename_profile("missing", "work".to_string())
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::ProfileNotFound(name)) if name == "missing"
+        ));
+    }
+
+    #[tokio::test]
+    async fn rename_profile_rejects_empty_name() {
+        let mut service = test_service().await;
+
+        assert!(
+            service
+                .rename_profile("test", " ".to_string())
+                .await
+                .is_err()
+        );
+
+        assert_eq!(profile_names(&service).await, ["test"]);
+        assert_eq!(
+            service.config().unwrap().core.profile.as_deref(),
+            Some("test")
+        );
     }
 
     #[tokio::test]
@@ -367,7 +482,7 @@ mod tests {
     #[tokio::test]
     async fn resolve_without_profiles_is_none() {
         let mut service = test_service().await;
-        service.delete_profile("test".to_string()).await.unwrap();
+        service.delete_profile("test").await.unwrap();
 
         let resolved = resolve(&service.db, Some("test".to_string()))
             .await

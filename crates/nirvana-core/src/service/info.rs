@@ -1,8 +1,21 @@
+//! App info.
+//!
+//! Diagnostics about the running app: version, file locations, SQLite
+//! version, keyring status and dev mode.
+
 use crate::errors::NirvanaError;
 use crate::service::{AppInfo, Nirvana};
 use crate::{secrets, storage};
 
 impl Nirvana {
+    /// Returns the app version, config, database and log file paths, SQLite
+    /// version, keyring status and whether dev mode is on.
+    ///
+    /// An unavailable keyring is reported in `keyring`, not as an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQLite version query fails.
     pub async fn info(&self) -> Result<AppInfo, NirvanaError> {
         Ok(AppInfo {
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -23,22 +36,22 @@ impl Nirvana {
 
 #[cfg(test)]
 mod tests {
-    use crate::service::test_support::test_api;
+    use crate::service::test_support::test_service;
 
     #[tokio::test]
     async fn info_reports_sqlite_version() {
-        let api = test_api().await;
+        let service = test_service().await;
 
-        let info = api.info().await.unwrap();
+        let info = service.info().await.unwrap();
 
         assert!(info.sqlite_version.starts_with("3."));
     }
 
     #[tokio::test]
     async fn info_reports_keyring_vendor() {
-        let api = test_api().await;
+        let service = test_service().await;
 
-        let info = api.info().await.unwrap();
+        let info = service.info().await.unwrap();
 
         assert_eq!(info.keyring, Ok("Mock store".to_string()));
     }

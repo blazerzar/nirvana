@@ -127,6 +127,7 @@ async fn store_in_keychain(
 
 /// Returns the token of a connection, reading it from the keyring for
 /// `keyring` credentials.
+#[cfg_attr(not(test), expect(dead_code))]
 pub(crate) async fn read_credential(
     keyring: &StoreFactory,
     connection_id: i64,

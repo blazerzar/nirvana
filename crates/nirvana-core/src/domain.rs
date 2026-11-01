@@ -1,8 +1,9 @@
 use nirvana_entity::credential::SecretStore;
+pub use nirvana_entity::profile::Model as Profile;
 use nirvana_entity::{connection, jira_settings};
 use secrecy::SecretString;
 
-use crate::errors::TrackingError;
+use crate::errors::DomainError;
 
 pub enum SlotSort {
     StartedAt,
@@ -18,6 +19,12 @@ pub enum Change<T> {
 }
 
 #[derive(Debug)]
+pub struct ActiveProfile {
+    pub profile: Profile,
+    pub connections: Vec<Connection>,
+}
+
+#[derive(Debug)]
 pub struct Connection {
     pub model: connection::Model,
     pub kind: ConnectionKind,
@@ -27,14 +34,14 @@ impl Connection {
     pub(crate) fn new(
         model: connection::Model,
         jira_settings: Option<jira_settings::Model>,
-    ) -> Result<Self, TrackingError> {
+    ) -> Result<Self, DomainError> {
         let kind = match (model.kind.as_str(), jira_settings.map(JiraSettings::from)) {
             ("jira-cloud", Some(settings)) => ConnectionKind::JiraCloud(settings),
             ("jira-dc", Some(settings)) => ConnectionKind::JiraDc(settings),
             ("jira-cloud" | "jira-dc", None) => {
-                return Err(TrackingError::MissingConnectionSettings(model.id));
+                return Err(DomainError::MissingConnectionSettings(model.id));
             }
-            (kind, _) => return Err(TrackingError::UnsupportedConnectionKind(kind.to_string())),
+            (kind, _) => return Err(DomainError::UnsupportedConnectionKind(kind.to_string())),
         };
         Ok(Self { model, kind })
     }

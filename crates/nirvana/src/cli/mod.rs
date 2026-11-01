@@ -3,9 +3,11 @@ mod delete;
 mod edit;
 mod info;
 mod list;
+mod profile;
 mod publish;
 mod start;
 mod stop;
+mod table;
 mod time;
 
 use std::fmt;
@@ -13,9 +15,7 @@ use std::fmt::Display;
 
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use nirvana_core::domain::Change;
 use nirvana_core::secrets::{SecretStore, selectable_stores};
-pub(crate) use time::parse_time;
 use tracing::debug;
 
 #[derive(Parser)]
@@ -23,7 +23,7 @@ use tracing::debug;
     name = "nirvana",
     version,
     arg_required_else_help = true,
-    about = "App to get you to time-tracking nirvana"
+    about = "App that gets you to time tracking nirvana"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -46,6 +46,11 @@ enum Command {
     List(ListArgs),
     /// Publish slots to backend
     Publish(PublishArgs),
+    /// Manage profiles
+    Profile {
+        #[command(subcommand)]
+        command: Profile,
+    },
     /// Manage connections
     Connection {
         #[command(subcommand)]
@@ -111,6 +116,41 @@ struct PublishArgs {
     /// Range stop (e.g. "14:30" or "2026-05-19 14:30"). Unbounded if omitted.
     #[arg(long)]
     stop: Option<String>,
+}
+
+#[derive(Subcommand)]
+enum Profile {
+    /// List all profiles
+    List,
+    /// Create a new profile
+    Create {
+        /// Profile name (omit for interactive creation)
+        name: Option<String>,
+        /// Switch to the new profile
+        #[arg(short, long)]
+        switch: bool,
+    },
+    /// Switch the active profile
+    Switch {
+        /// Profile name (omit for interactive selection)
+        name: Option<String>,
+    },
+    /// Rename a profile
+    Rename {
+        /// Current profile name (omit both for interactive selection)
+        #[arg(requires = "new_name")]
+        name: Option<String>,
+        /// New profile name
+        new_name: Option<String>,
+    },
+    /// Delete a profile with its connections, tickets and slots
+    Delete {
+        /// Profile name (omit for interactive selection)
+        name: Option<String>,
+        /// Delete without asking
+        #[arg(short, long)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -184,29 +224,17 @@ pub(crate) async fn run() -> anyhow::Result<()> {
         Some(Command::Info) => info::run().await,
         Some(Command::Start(args)) => start::run(args).await,
         Some(Command::Stop(args)) => stop::run(args).await,
-        Some(Command::Edit(args)) => {
-            let started_at = args.start.as_deref().map(parse_time).transpose()?;
-            let stopped_at = match &args.stop {
-                None => Change::Skip,
-                Some(s) if s.is_empty() => Change::Clear,
-                Some(s) => Change::Set(parse_time(s)?),
-            };
-            edit::run(edit::EditArgs {
-                slot_id: args.slot_id,
-                ticket_key: args.ticket,
-                started_at,
-                stopped_at,
-            })
-            .await
-        }
-        Some(Command::Delete(args)) => {
-            delete::run(delete::DeleteArgs {
-                slot_id: args.slot_id,
-            })
-            .await
-        }
+        Some(Command::Edit(args)) => edit::run(args).await,
+        Some(Command::Delete(args)) => delete::run(args).await,
         Some(Command::List(args)) => list::run(args).await,
         Some(Command::Publish(args)) => publish::run(args).await,
+        Some(Command::Profile { command }) => match command {
+            Profile::List => profile::list().await,
+            Profile::Create { name, switch } => profile::create(name, switch).await,
+            Profile::Switch { name } => profile::switch(name).await,
+            Profile::Rename { name, new_name } => profile::rename(name, new_name).await,
+            Profile::Delete { name, yes } => profile::delete(name, yes).await,
+        },
         Some(Command::Connection { command }) => match command {
             Connection::Add(args) => connection::add(args).await,
             Connection::List => connection::list().await,

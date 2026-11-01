@@ -1,3 +1,5 @@
+#![expect(dead_code)]
+
 pub(crate) mod jira;
 
 use jira::JiraIntegration;

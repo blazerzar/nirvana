@@ -15,6 +15,8 @@ use std::fmt::Display;
 
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use console::Style;
+use dialoguer::theme::ColorfulTheme;
 use nirvana_core::secrets::{SecretStore, selectable_stores};
 use tracing::debug;
 
@@ -229,6 +231,13 @@ fn storage_parser() -> impl TypedValueParser<Value = SecretStore> {
             .chain([hidden]),
     )
     .try_map(|s| s.parse::<SecretStore>())
+}
+
+pub(crate) fn theme() -> ColorfulTheme {
+    ColorfulTheme {
+        active_item_prefix: Style::new().green().apply_to(String::from("❯")),
+        ..ColorfulTheme::default()
+    }
 }
 
 pub(crate) async fn run() -> anyhow::Result<()> {

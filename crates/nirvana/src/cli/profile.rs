@@ -1,9 +1,9 @@
-use console::{Alignment, Style, Term, style};
-use dialoguer::theme::ColorfulTheme;
+use console::{Alignment, Term, style};
 use dialoguer::{Confirm, Input, Select};
 use nirvana_core::service::Nirvana;
 
 use crate::cli::table::{self, Column};
+use crate::cli::theme;
 use crate::cli::time::format_timestamp;
 
 const COLUMNS: [Column; 4] = [
@@ -84,13 +84,6 @@ async fn select_profile(
         term.write_line(&format!("{}", style("No profile selected").yellow()))?;
     }
     Ok(idx.map(|i| items.swap_remove(i)))
-}
-
-fn theme() -> ColorfulTheme {
-    ColorfulTheme {
-        active_item_prefix: Style::new().green().apply_to(String::from("❯")),
-        ..ColorfulTheme::default()
-    }
 }
 
 pub(crate) async fn list() -> anyhow::Result<()> {

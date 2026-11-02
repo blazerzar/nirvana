@@ -2,30 +2,10 @@ use std::fmt;
 use std::str::FromStr;
 
 use nirvana_entity::credential::SecretStore;
-pub use nirvana_entity::profile::Model as Profile;
 use nirvana_entity::{connection, jira_settings};
 use secrecy::SecretString;
 
 use crate::errors::DomainError;
-
-pub enum SlotSort {
-    StartedAt,
-    TicketId,
-}
-
-#[derive(Debug, Default)]
-pub enum Change<T> {
-    #[default]
-    Skip,
-    Clear,
-    Set(T),
-}
-
-#[derive(Debug)]
-pub struct ActiveProfile {
-    pub profile: Profile,
-    pub connections: Vec<Connection>,
-}
 
 #[derive(Debug)]
 pub struct Connection {
@@ -116,33 +96,6 @@ pub struct ConnectionData {
     pub identity: Option<String>,
     pub secret_store: SecretStore,
     pub token: SecretString,
-}
-
-#[derive(Debug)]
-pub struct SlotCreate {
-    pub ticket_key: String,
-    pub started_at: i64,
-    pub stopped_at: i64,
-}
-
-#[derive(Debug)]
-pub struct PublishResult {
-    pub published_count: usize,
-    pub failed: Vec<PublishFailure>,
-    pub timestamp: i64,
-}
-
-#[derive(Debug)]
-pub struct PublishFailure {
-    pub ticket_key: String,
-    pub error: String,
-}
-
-#[derive(Debug, Default)]
-pub struct SlotEdit {
-    pub ticket_key: Option<String>,
-    pub started_at: Option<i64>,
-    pub stopped_at: Change<i64>,
 }
 
 #[cfg(test)]

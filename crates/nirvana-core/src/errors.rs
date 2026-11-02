@@ -51,12 +51,12 @@ pub enum DomainError {
     UnexpectedIdentity(Kind),
     #[error("connection '{0}' not found")]
     ConnectionNotFound(String),
-    #[error("cannot delete a connection with local history")]
-    ConnectionHasHistory,
     #[error("unsupported connection kind: {0}")]
     UnsupportedConnectionKind(String),
     #[error("connection {0} has no settings")]
     MissingConnectionSettings(i64),
+    #[error("connection {0} has no credential")]
+    MissingCredential(i64),
 
     // publishing
     #[error("publishing is disabled for connection '{0}'")]

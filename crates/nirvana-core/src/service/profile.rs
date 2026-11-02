@@ -4,15 +4,13 @@
 //! to a profile. The active profile is machine state, stored by name as
 //! `[core] profile` in `config.toml`.
 
-use nirvana_entity::connection::Entity as ConnectionEntity;
 use nirvana_entity::profile::Entity as ProfileEntity;
-use nirvana_entity::{connection, credential, jira_settings, profile};
+use nirvana_entity::{connection, credential, profile};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ActiveModelTrait, DatabaseConnection, EntityTrait, ModelTrait, QueryFilter, QueryOrder, SqlErr,
 };
 
-use crate::domain::Connection;
 use crate::errors::{DomainError, NirvanaError};
 use crate::secrets::{SecretStore, delete_from_keychain};
 use crate::service::{ActiveProfile, Nirvana, Profile};
@@ -121,15 +119,7 @@ impl Nirvana {
     /// a connection has invalid settings or the database query fails.
     pub async fn active_profile(&self) -> Result<ActiveProfile, NirvanaError> {
         let profile = self.find_active_profile().await?;
-        let connections = ConnectionEntity::find()
-            .find_also_related(jira_settings::Entity)
-            .filter(connection::COLUMN.profile_id.eq(profile.id))
-            .order_by_asc(connection::COLUMN.id)
-            .all(&self.db)
-            .await?
-            .into_iter()
-            .map(|(model, jira_settings)| Connection::new(model, jira_settings))
-            .collect::<Result<_, _>>()?;
+        let connections = self.find_connections(profile.id).await?;
         Ok(ActiveProfile {
             profile,
             connections,

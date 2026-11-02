@@ -12,26 +12,35 @@ pub struct Connection {
     pub model: connection::Model,
     pub kind: Kind,
     pub settings: Settings,
+    pub secret_store: SecretStore,
 }
 
 impl Connection {
-    pub(crate) fn new(
-        model: connection::Model,
-        jira_settings: Option<jira_settings::Model>,
-    ) -> Result<Self, DomainError> {
+    /// Builds a connection from a row loaded with its credential and the
+    /// settings of its kind.
+    pub(crate) fn new(mut model: connection::ModelEx) -> Result<Self, DomainError> {
+        let secret_store = model
+            .credential
+            .take()
+            .ok_or(DomainError::MissingCredential(model.id))?
+            .secret_store;
         let kind = model.kind.parse()?;
         let settings = match kind {
             Kind::JiraCloud | Kind::JiraDc => Settings::Jira(
-                jira_settings
+                model
+                    .jira_settings
+                    .take()
+                    .map(jira_settings::Model::from)
                     .ok_or(DomainError::MissingConnectionSettings(model.id))?
                     .into(),
             ),
             Kind::Linear => Settings::Linear,
         };
         Ok(Self {
-            model,
+            model: model.into(),
             kind,
             settings,
+            secret_store,
         })
     }
 }

@@ -26,6 +26,7 @@ impl Connection {
                     .ok_or(DomainError::MissingConnectionSettings(model.id))?
                     .into(),
             ),
+            Kind::Linear => Settings::Linear,
         };
         Ok(Self {
             model,
@@ -39,6 +40,7 @@ impl Connection {
 pub enum Kind {
     JiraCloud,
     JiraDc,
+    Linear,
 }
 
 impl Kind {
@@ -46,6 +48,7 @@ impl Kind {
         match self {
             Self::JiraCloud => "jira-cloud",
             Self::JiraDc => "jira-dc",
+            Self::Linear => "linear",
         }
     }
 }
@@ -63,6 +66,7 @@ impl FromStr for Kind {
         match s {
             "jira-cloud" => Ok(Self::JiraCloud),
             "jira-dc" => Ok(Self::JiraDc),
+            "linear" => Ok(Self::Linear),
             kind => Err(DomainError::UnsupportedConnectionKind(kind.to_string())),
         }
     }
@@ -71,6 +75,7 @@ impl FromStr for Kind {
 #[derive(Debug)]
 pub enum Settings {
     Jira(JiraSettings),
+    Linear,
 }
 
 #[derive(Debug)]
@@ -98,13 +103,28 @@ pub struct ConnectionData {
     pub token: SecretString,
 }
 
+impl ConnectionData {
+    pub(crate) fn validate(&self) -> Result<(), DomainError> {
+        if self.name.trim().is_empty() {
+            return Err(DomainError::EmptyConnectionName);
+        }
+        match (self.kind, self.identity.as_deref().map(str::trim)) {
+            (Kind::JiraCloud, None | Some("")) => Err(DomainError::MissingIdentity(self.kind)),
+            (Kind::JiraDc | Kind::Linear, Some(_)) => {
+                Err(DomainError::UnexpectedIdentity(self.kind))
+            }
+            (Kind::JiraCloud, Some(_)) | (Kind::JiraDc | Kind::Linear, None) => Ok(()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn kind_round_trips() {
-        for kind in [Kind::JiraCloud, Kind::JiraDc] {
+        for kind in [Kind::JiraCloud, Kind::JiraDc, Kind::Linear] {
             assert_eq!(kind.as_str().parse::<Kind>().unwrap(), kind);
         }
     }
@@ -112,8 +132,8 @@ mod tests {
     #[test]
     fn rejects_unknown_kind() {
         assert!(matches!(
-            "linear".parse::<Kind>(),
-            Err(DomainError::UnsupportedConnectionKind(kind)) if kind == "linear"
+            "unsupported".parse::<Kind>(),
+            Err(DomainError::UnsupportedConnectionKind(kind)) if kind == "unsupported"
         ));
     }
 }

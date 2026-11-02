@@ -210,6 +210,7 @@ enum Connection {
 pub(crate) enum ConnectionKind {
     JiraCloud,
     JiraDc,
+    Linear,
 }
 
 impl Display for ConnectionKind {
@@ -217,6 +218,7 @@ impl Display for ConnectionKind {
         let kind = match self {
             Self::JiraCloud => "jira-cloud",
             Self::JiraDc => "jira-dc",
+            Self::Linear => "linear",
         };
         write!(f, "{}", kind,)
     }

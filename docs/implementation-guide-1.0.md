@@ -102,6 +102,7 @@ credentials(connection_id, secret_store {plaintext, keyring, env},
 jira_settings(connection_id, publish bool default true,
               squash bool default false)
             -- one settings table per connection kind
+            -- linear has no settings table yet
 tickets(id, profile_id, connection_id NULL, ticket_key, title,
         last_worked_at, synced_at)   -- NULL = owner not resolved yet
             -- no unique key besides id

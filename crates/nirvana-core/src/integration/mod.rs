@@ -31,7 +31,7 @@ pub(crate) struct Integration {
 }
 
 impl Integration {
-    pub fn build_for_url(connection: &Connection) -> Integration {
+    pub fn build_for_url(connection: &Connection) -> Option<Integration> {
         let kind = match connection.kind {
             Kind::JiraCloud | Kind::JiraDc => {
                 IntegrationKind::Jira(JiraIntegration::new_unauthenticated(
@@ -39,8 +39,9 @@ impl Integration {
                     connection.kind.as_str(),
                 ))
             }
+            Kind::Linear => return None,
         };
-        Integration { kind }
+        Some(Integration { kind })
     }
 
     pub fn get_issue_link(&self, ticket_key: &str) -> String {
@@ -73,7 +74,10 @@ impl Integration {
     }
 }
 
-pub(crate) fn build_integration(connection: &Connection, token: &SecretString) -> Integration {
+pub(crate) fn build_integration(
+    connection: &Connection,
+    token: &SecretString,
+) -> Option<Integration> {
     let kind = match connection.kind {
         Kind::JiraCloud | Kind::JiraDc => IntegrationKind::Jira(JiraIntegration::new(
             &connection.model.host,
@@ -81,6 +85,7 @@ pub(crate) fn build_integration(connection: &Connection, token: &SecretString) -
             token,
             connection.kind.as_str(),
         )),
+        Kind::Linear => return None,
     };
-    Integration { kind }
+    Some(Integration { kind })
 }

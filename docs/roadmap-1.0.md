@@ -141,6 +141,8 @@ logged from the start.
 - [x] Make `connections.identity` nullable: only Jira Cloud has one (the
       email). Do not ask for a username for Jira DC and set it to NULL for
       existing `jira-dc` rows.
+- [x] Add the `linear` connection kind: host and token, no identity, no
+      settings yet.
 - [ ] Let users move plaintext tokens into the keyring.
 - [ ] Add the `env` secret store for CLI integration tests: the credentials
       row holds the name of the environment variable with the token, which

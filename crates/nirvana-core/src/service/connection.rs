@@ -7,10 +7,10 @@
 
 use nirvana_entity::connection::Entity as ConnectionEntity;
 use nirvana_entity::{connection, credential, jira_settings};
-use sea_orm::{ActiveModelTrait, Set, SqlErr, TransactionTrait};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, DbErr, Set, SqlErr, TransactionTrait};
 use tracing::info;
 
-use crate::domain::{Connection, ConnectionData, Kind};
+use crate::domain::{Connection, ConnectionData, Kind, Settings};
 use crate::errors::{DomainError, NirvanaError};
 use crate::secrets::{SecretStore, delete_from_keychain, store_secret};
 use crate::service::Nirvana;
@@ -24,82 +24,48 @@ impl Nirvana {
     /// # Errors
     ///
     /// Returns an error if the name is empty, a Jira Cloud connection has no
-    /// identity, a Jira DC connection has one, no profile is active, the
-    /// config is unavailable, the profile already has a connection with that
-    /// name, the token cannot be stored or the database insert fails.
+    /// identity, a Jira DC or Linear connection has one, no profile is
+    /// active, the config is unavailable, the profile already has a connection
+    /// with that name, the token cannot be stored or the database insert fails.
     pub async fn add_connection(
         &self,
         connection: ConnectionData,
     ) -> Result<Connection, NirvanaError> {
-        if connection.name.trim().is_empty() {
-            return Err(DomainError::EmptyConnectionName.into());
-        }
-        match (
-            connection.kind,
-            connection.identity.as_deref().map(str::trim),
-        ) {
-            (Kind::JiraCloud, None | Some("")) => {
-                return Err(DomainError::MissingIdentity(connection.kind).into());
-            }
-            (Kind::JiraDc, Some(_)) => {
-                return Err(DomainError::UnexpectedIdentity(connection.kind).into());
-            }
-            (Kind::JiraCloud, Some(_)) | (Kind::JiraDc, None) => {}
-        }
-
+        connection.validate()?;
+        let ConnectionData {
+            name,
+            kind,
+            host,
+            identity,
+            secret_store,
+            token,
+        } = connection;
         let profile = self.find_active_profile().await?;
 
-        info!(secret_store = %connection.secret_store, "adding connection");
-        let secret_store = connection.secret_store;
-        let secret = store_secret(
-            &self.keyring,
-            &profile.name,
-            &connection.name,
-            secret_store,
-            connection.token,
-        )
-        .await?;
+        info!(%secret_store, "adding connection");
+        let secret = store_secret(&self.keyring, &profile.name, &name, secret_store, token).await?;
 
-        let added = async {
-            let txn = self.db.begin().await?;
-            let model = connection::ActiveModel {
-                name: Set(connection.name.clone()),
-                kind: Set(connection.kind.as_str().to_string()),
-                host: Set(normalize_host(&connection.host)),
-                identity: Set(connection.identity),
-                profile_id: Set(profile.id),
-                ..Default::default()
-            }
-            .insert(&txn)
+        let model = connection::ActiveModel {
+            name: Set(name.clone()),
+            kind: Set(kind.as_str().to_string()),
+            host: Set(normalize_host(&host)),
+            identity: Set(identity),
+            profile_id: Set(profile.id),
+            ..Default::default()
+        };
+        let credential = credential::ActiveModel {
+            secret_store: Set(secret_store),
+            credential: Set(secret.clone()),
+            ..Default::default()
+        };
+        let added = insert_connection(&self.db, model, credential, kind)
             .await
             .map_err(|e| match e.sql_err() {
                 Some(SqlErr::UniqueConstraintViolation(_)) => {
-                    NirvanaError::from(DomainError::ConnectionExists(connection.name))
+                    NirvanaError::from(DomainError::ConnectionExists(name))
                 }
                 _ => e.into(),
-            })?;
-            credential::ActiveModel {
-                connection_id: Set(model.id),
-                secret_store: Set(secret_store),
-                credential: Set(secret.clone()),
-            }
-            .insert(&txn)
-            .await?;
-            let jira_settings = match connection.kind {
-                Kind::JiraCloud | Kind::JiraDc => Some(
-                    jira_settings::ActiveModel {
-                        connection_id: Set(model.id),
-                        ..Default::default()
-                    }
-                    .insert(&txn)
-                    .await?,
-                ),
-            };
-            let connection = Connection::new(model, jira_settings)?;
-            txn.commit().await?;
-            Ok(connection)
-        }
-        .await;
+            });
         if added.is_err() && secret_store == SecretStore::Keyring {
             delete_from_keychain(&self.keyring, secret).await;
         }
@@ -147,6 +113,38 @@ impl Nirvana {
             })?;
         Ok(())
     }
+}
+
+/// Inserts the connection with its credential and the default settings of
+/// its kind in one transaction.
+async fn insert_connection(
+    db: &DatabaseConnection,
+    model: connection::ActiveModel,
+    mut credential: credential::ActiveModel,
+    kind: Kind,
+) -> Result<Connection, DbErr> {
+    let txn = db.begin().await?;
+    let model = model.insert(&txn).await?;
+    credential.connection_id = Set(model.id);
+    credential.insert(&txn).await?;
+    let settings = match kind {
+        Kind::JiraCloud | Kind::JiraDc => Settings::Jira(
+            jira_settings::ActiveModel {
+                connection_id: Set(model.id),
+                ..Default::default()
+            }
+            .insert(&txn)
+            .await?
+            .into(),
+        ),
+        Kind::Linear => Settings::Linear,
+    };
+    txn.commit().await?;
+    Ok(Connection {
+        model,
+        kind,
+        settings,
+    })
 }
 
 fn normalize_host(url: &str) -> String {
@@ -364,6 +362,54 @@ mod tests {
 
         assert_eq!(added.kind, Kind::JiraDc);
         assert_eq!(added.model.identity, None);
+    }
+
+    #[tokio::test]
+    async fn add_connection_rejects_linear_with_identity() {
+        let service = test_service().await;
+
+        let result = service
+            .add_connection(ConnectionData {
+                kind: Kind::Linear,
+                ..keyring_data("Linear")
+            })
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(NirvanaError::Domain(DomainError::UnexpectedIdentity(
+                Kind::Linear
+            )))
+        ));
+        assert!(keyring_passwords(&service).is_empty());
+        assert_eq!(service.active_profile().await.unwrap().connections.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn add_connection_adds_linear_without_settings() {
+        let service = test_service().await;
+
+        let added = service
+            .add_connection(ConnectionData {
+                kind: Kind::Linear,
+                identity: None,
+                ..keyring_data("Linear")
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(added.kind, Kind::Linear);
+        assert_eq!(added.model.identity, None);
+        assert!(matches!(added.settings, Settings::Linear));
+        assert!(
+            jira_settings::Entity::find_by_id(added.model.id)
+                .one(&service.db)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let loaded = service.active_profile().await.unwrap().connections;
+        assert!(matches!(loaded[1].settings, Settings::Linear));
     }
 
     async fn connection_names(service: &Nirvana) -> Vec<String> {

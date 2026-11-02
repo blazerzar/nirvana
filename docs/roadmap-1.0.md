@@ -151,6 +151,13 @@ logged from the start.
       CLI messages (`connection '{query}' not found`).
 - [ ] Check there is correct and sufficient logging.
 
+## Settings, logs and config CLI
+
+- [ ] Add commands for reading and setting profile settings.
+- [ ] Add commands for reading and setting connection settings.
+- [ ] Add commands for reading and clearing logs.
+- [ ] Add commands for reading and setting config.
+
 ## Tickets
 
 - [ ] Make sure start, stop, resume, switch, edit, delete are working and tested.

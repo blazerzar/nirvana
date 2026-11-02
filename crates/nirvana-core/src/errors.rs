@@ -3,6 +3,7 @@ use std::sync::Arc;
 use thiserror::Error;
 
 pub use crate::config::ConfigError;
+use crate::domain::Kind;
 pub use crate::integration::IntegrationError;
 pub use crate::secrets::SecretError;
 pub use crate::storage::DbError;
@@ -40,6 +41,14 @@ pub enum DomainError {
     // connections
     #[error("no active connection")]
     NoActiveConnection,
+    #[error("connection '{0}' already exists")]
+    ConnectionExists(String),
+    #[error("connection name must not be empty")]
+    EmptyConnectionName,
+    #[error("{0} connection requires an identity")]
+    MissingIdentity(Kind),
+    #[error("{0} connection does not use an identity")]
+    UnexpectedIdentity(Kind),
     #[error("connection not found: {0}")]
     ConnectionNotFound(i64),
     #[error("cannot delete a connection with local history")]

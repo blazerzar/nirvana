@@ -6,7 +6,7 @@ use sea_orm::{ActiveModelTrait, Set};
 use tempfile::TempDir;
 
 use crate::config::AppConfig;
-use crate::domain::ConnectionData;
+use crate::domain::{ConnectionData, Kind};
 use crate::paths::AppPaths;
 use crate::secrets::mock_store;
 use crate::service::Nirvana;
@@ -54,7 +54,7 @@ pub(super) async fn test_service() -> TestService {
     service
         .add_connection(ConnectionData {
             name: "Test Jira".to_string(),
-            kind: "jira-cloud".to_string(),
+            kind: Kind::JiraCloud,
             host: "https://example.atlassian.net".to_string(),
             identity: Some("tester@example.com".to_string()),
             secret_store: SecretStore::Plaintext,

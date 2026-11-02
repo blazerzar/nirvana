@@ -1,3 +1,6 @@
+use std::fmt;
+use std::str::FromStr;
+
 use nirvana_entity::credential::SecretStore;
 pub use nirvana_entity::profile::Model as Profile;
 use nirvana_entity::{connection, jira_settings};
@@ -27,7 +30,8 @@ pub struct ActiveProfile {
 #[derive(Debug)]
 pub struct Connection {
     pub model: connection::Model,
-    pub kind: ConnectionKind,
+    pub kind: Kind,
+    pub settings: Settings,
 }
 
 impl Connection {
@@ -35,37 +39,58 @@ impl Connection {
         model: connection::Model,
         jira_settings: Option<jira_settings::Model>,
     ) -> Result<Self, DomainError> {
-        let kind = match (model.kind.as_str(), jira_settings.map(JiraSettings::from)) {
-            ("jira-cloud", Some(settings)) => ConnectionKind::JiraCloud(settings),
-            ("jira-dc", Some(settings)) => ConnectionKind::JiraDc(settings),
-            ("jira-cloud" | "jira-dc", None) => {
-                return Err(DomainError::MissingConnectionSettings(model.id));
-            }
-            (kind, _) => return Err(DomainError::UnsupportedConnectionKind(kind.to_string())),
+        let kind = model.kind.parse()?;
+        let settings = match kind {
+            Kind::JiraCloud | Kind::JiraDc => Settings::Jira(
+                jira_settings
+                    .ok_or(DomainError::MissingConnectionSettings(model.id))?
+                    .into(),
+            ),
         };
-        Ok(Self { model, kind })
+        Ok(Self {
+            model,
+            kind,
+            settings,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    JiraCloud,
+    JiraDc,
+}
+
+impl Kind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::JiraCloud => "jira-cloud",
+            Self::JiraDc => "jira-dc",
+        }
+    }
+}
+
+impl fmt::Display for Kind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for Kind {
+    type Err = DomainError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "jira-cloud" => Ok(Self::JiraCloud),
+            "jira-dc" => Ok(Self::JiraDc),
+            kind => Err(DomainError::UnsupportedConnectionKind(kind.to_string())),
+        }
     }
 }
 
 #[derive(Debug)]
-pub enum ConnectionKind {
-    JiraCloud(JiraSettings),
-    JiraDc(JiraSettings),
-}
-
-impl ConnectionKind {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::JiraCloud(_) => "jira-cloud",
-            Self::JiraDc(_) => "jira-dc",
-        }
-    }
-
-    pub fn jira_settings(&self) -> &JiraSettings {
-        match self {
-            Self::JiraCloud(settings) | Self::JiraDc(settings) => settings,
-        }
-    }
+pub enum Settings {
+    Jira(JiraSettings),
 }
 
 #[derive(Debug)]
@@ -86,7 +111,7 @@ impl From<jira_settings::Model> for JiraSettings {
 #[derive(Debug)]
 pub struct ConnectionData {
     pub name: String,
-    pub kind: String,
+    pub kind: Kind,
     pub host: String,
     pub identity: Option<String>,
     pub secret_store: SecretStore,
@@ -118,4 +143,24 @@ pub struct SlotEdit {
     pub ticket_key: Option<String>,
     pub started_at: Option<i64>,
     pub stopped_at: Change<i64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kind_round_trips() {
+        for kind in [Kind::JiraCloud, Kind::JiraDc] {
+            assert_eq!(kind.as_str().parse::<Kind>().unwrap(), kind);
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_kind() {
+        assert!(matches!(
+            "linear".parse::<Kind>(),
+            Err(DomainError::UnsupportedConnectionKind(kind)) if kind == "linear"
+        ));
+    }
 }

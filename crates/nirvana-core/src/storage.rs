@@ -14,8 +14,6 @@ pub enum DbError {
     Db(#[from] sea_orm::DbErr),
     #[error("db I/O error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("duplicate connection name: '{0}'")]
-    DuplicateName(String),
     #[error("stop time must be after the slot start time")]
     StopBeforeStart,
     #[error("invalid db path")]

@@ -6,7 +6,7 @@ use jira::JiraIntegration;
 use secrecy::SecretString;
 use thiserror::Error;
 
-use crate::domain::{Connection, ConnectionKind};
+use crate::domain::{Connection, Kind};
 
 #[derive(Debug, Error)]
 pub enum IntegrationError {
@@ -32,8 +32,8 @@ pub(crate) struct Integration {
 
 impl Integration {
     pub fn build_for_url(connection: &Connection) -> Integration {
-        let kind = match &connection.kind {
-            ConnectionKind::JiraCloud(_) | ConnectionKind::JiraDc(_) => {
+        let kind = match connection.kind {
+            Kind::JiraCloud | Kind::JiraDc => {
                 IntegrationKind::Jira(JiraIntegration::new_unauthenticated(
                     &connection.model.host,
                     connection.kind.as_str(),
@@ -74,15 +74,13 @@ impl Integration {
 }
 
 pub(crate) fn build_integration(connection: &Connection, token: &SecretString) -> Integration {
-    let kind = match &connection.kind {
-        ConnectionKind::JiraCloud(_) | ConnectionKind::JiraDc(_) => {
-            IntegrationKind::Jira(JiraIntegration::new(
-                &connection.model.host,
-                connection.model.identity.as_deref().unwrap_or_default(),
-                token,
-                connection.kind.as_str(),
-            ))
-        }
+    let kind = match connection.kind {
+        Kind::JiraCloud | Kind::JiraDc => IntegrationKind::Jira(JiraIntegration::new(
+            &connection.model.host,
+            connection.model.identity.as_deref().unwrap_or_default(),
+            token,
+            connection.kind.as_str(),
+        )),
     };
     Integration { kind }
 }

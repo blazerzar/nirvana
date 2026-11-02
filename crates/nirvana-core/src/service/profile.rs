@@ -212,7 +212,7 @@ pub(crate) async fn resolve(
 mod tests {
     use super::*;
     use crate::config::AppConfig;
-    use crate::domain::ConnectionData;
+    use crate::domain::{ConnectionData, Kind};
     use crate::service::test_support::test_service;
 
     async fn profile_names(service: &Nirvana) -> Vec<String> {
@@ -255,7 +255,7 @@ mod tests {
         service
             .add_connection(ConnectionData {
                 name: "Keyring Jira".to_string(),
-                kind: "jira-cloud".to_string(),
+                kind: Kind::JiraCloud,
                 host: "https://other.atlassian.net".to_string(),
                 identity: Some("tester@example.com".to_string()),
                 secret_store: SecretStore::Keyring,

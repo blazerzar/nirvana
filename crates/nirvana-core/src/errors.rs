@@ -49,8 +49,8 @@ pub enum DomainError {
     MissingIdentity(Kind),
     #[error("{0} connection does not use an identity")]
     UnexpectedIdentity(Kind),
-    #[error("connection not found: {0}")]
-    ConnectionNotFound(i64),
+    #[error("connection '{0}' not found")]
+    ConnectionNotFound(String),
     #[error("cannot delete a connection with local history")]
     ConnectionHasHistory,
     #[error("unsupported connection kind: {0}")]

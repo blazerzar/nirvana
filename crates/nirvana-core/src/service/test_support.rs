@@ -56,7 +56,7 @@ pub(super) async fn test_service() -> TestService {
             name: "Test Jira".to_string(),
             kind: "jira-cloud".to_string(),
             host: "https://example.atlassian.net".to_string(),
-            identity: "tester@example.com".to_string(),
+            identity: Some("tester@example.com".to_string()),
             secret_store: SecretStore::Plaintext,
             token: "token".into(),
         })

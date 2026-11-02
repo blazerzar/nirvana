@@ -78,7 +78,7 @@ pub(crate) fn build_integration(connection: &Connection, token: &SecretString) -
         ConnectionKind::JiraCloud(_) | ConnectionKind::JiraDc(_) => {
             IntegrationKind::Jira(JiraIntegration::new(
                 &connection.model.host,
-                &connection.model.identity,
+                connection.model.identity.as_deref().unwrap_or_default(),
                 token,
                 connection.kind.as_str(),
             ))

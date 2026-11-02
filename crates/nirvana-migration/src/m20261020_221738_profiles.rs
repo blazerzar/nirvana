@@ -50,7 +50,7 @@ async fn add_profiles(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
         .col(text("name"))
         .col(text("kind"))
         .col(text("host"))
-        .col(text("identity"))
+        .col(text_null("identity"))
         .col(text("secret_store").default("keyring"))
         .col(integer("created_at"))
         .col(integer("updated_at"))
@@ -132,6 +132,14 @@ async fn add_profiles(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
             .to_owned();
         let assigned = db.execute(&stmt).await?.rows_affected();
         debug!("assigned {assigned} connections to profile {name}");
+
+        let stmt = Query::update()
+            .table("connections_new")
+            .value("identity", Option::<String>::None)
+            .and_where(Expr::col("kind").eq("jira-dc"))
+            .to_owned();
+        let cleared = db.execute(&stmt).await?.rows_affected();
+        debug!("cleared identity of {cleared} jira-dc connections");
 
         let select = Query::select()
             .columns([

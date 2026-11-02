@@ -88,7 +88,7 @@ pub struct ConnectionData {
     pub name: String,
     pub kind: String,
     pub host: String,
-    pub identity: String,
+    pub identity: Option<String>,
     pub secret_store: SecretStore,
     pub token: SecretString,
 }

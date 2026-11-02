@@ -257,7 +257,7 @@ mod tests {
                 name: "Keyring Jira".to_string(),
                 kind: "jira-cloud".to_string(),
                 host: "https://other.atlassian.net".to_string(),
-                identity: "tester@example.com".to_string(),
+                identity: Some("tester@example.com".to_string()),
                 secret_store: SecretStore::Keyring,
                 token: "keyring-token".into(),
             })

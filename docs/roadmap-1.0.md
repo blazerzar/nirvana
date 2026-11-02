@@ -138,7 +138,7 @@ logged from the start.
 
 - [ ] Rework the CLI for profiles and connections. The interactive picker
       offers Keyring only when the keyring is available.
-- [ ] Make `connections.identity` nullable: only Jira Cloud has one (the
+- [x] Make `connections.identity` nullable: only Jira Cloud has one (the
       email). Do not ask for a username for Jira DC and set it to NULL for
       existing `jira-dc` rows.
 - [ ] Let users move plaintext tokens into the keyring.

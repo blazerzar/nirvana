@@ -82,7 +82,8 @@ worklogs.
   published_at)` with a unique index enforcing one running slot.
 - Publishing: squash per ticket per local day (global flag), Jira worklog POST,
   no stored worklog id, a single `published_at`.
-- `scripts/jira/*.sh`: manual Jira API exploration scripts.
+- `scripts/`: manual API exploration scripts, run as mise tasks with secrets
+  from Infisical (`scripts/README.md`).
 
 ## 5. Target data model (sketch, refine in the Database stage)
 

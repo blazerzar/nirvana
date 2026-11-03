@@ -9,6 +9,9 @@ rust = { version = "1.99.0", profile = "default" }
 [env]
 RUSTFMT_TOOLCHAIN = "nightly-2026-10-01"
 
+[task_config]
+includes = ["scripts"]
+
 [bootstrap.packages]
 # Debian / Ubuntu
 "apt:gcc" = "latest"
@@ -21,6 +24,7 @@ RUSTFMT_TOOLCHAIN = "nightly-2026-10-01"
 "dnf:openssl-devel" = "latest"
 
 [tasks.setup]
+description = "Install git hooks and nightly rustfmt"
 depends = ["setup-rustfmt"]
 run = ["hk install --mise"]
 
@@ -29,9 +33,11 @@ description = "Install nightly rustfmt for unstable formatting options"
 run = "rustup toolchain install $RUSTFMT_TOOLCHAIN --profile minimal --component rustfmt"
 
 [tasks.lint]
+description = "Run all checks"
 run = "hk check --all"
 
 [tasks.fix]
+description = "Fix formatting"
 run = "hk fix --all"
 
 [tasks.test]

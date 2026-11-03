@@ -1,7 +1,8 @@
 use anyhow::bail;
 use console::{Term, style};
-use dialoguer::{Input, Password, Select};
+use dialoguer::{Confirm, Input, Password, Select};
 use nirvana_core::domain::{ConnectionData, Kind};
+use nirvana_core::errors::DomainError;
 use nirvana_core::secrets::{SecretStore, selectable_stores};
 use nirvana_core::service::Nirvana;
 use secrecy::SecretString;
@@ -213,14 +214,66 @@ async fn rename_interactive(service: &Nirvana) -> anyhow::Result<Option<(String,
 
 pub(crate) async fn delete(
     name: Option<String>,
-    with_slots: bool,
+    with_tickets: bool,
     yes: bool,
 ) -> anyhow::Result<()> {
-    match name {
-        Some(name) => println!("deleting {name} (with slots: {with_slots}, yes: {yes})"),
-        None => println!("interactive delete"),
+    let service = Nirvana::new().await?;
+
+    let (name, with_tickets) = match name {
+        Some(name) => {
+            let connections = service.active_profile().await?.connections;
+            if !connections.iter().any(|c| c.model.name == name) {
+                bail!(DomainError::ConnectionNotFound(name));
+            }
+            (name, with_tickets)
+        }
+        None => match delete_interactive(&service, with_tickets).await? {
+            Some(choice) => choice,
+            None => return Ok(()),
+        },
+    };
+
+    let term = Term::stdout();
+    let prompt = if with_tickets {
+        format!("Are you sure you want to delete connection {name} with its tickets and slots?")
+    } else {
+        format!("Are you sure you want to delete connection {name}? Its tickets are kept.")
+    };
+    if yes
+        || Confirm::with_theme(&theme())
+            .with_prompt(prompt)
+            .default(false)
+            .interact()?
+    {
+        service.delete_connection(&name, with_tickets).await?;
+        term.write_line(&format!(
+            "{} connection {}",
+            style("Deleted").green(),
+            style(&name).bold(),
+        ))?;
+    } else {
+        term.write_line(&format!(
+            "{}",
+            style(format!("Connection {name} was not deleted")).yellow()
+        ))?;
     }
+
     Ok(())
+}
+
+async fn delete_interactive(
+    service: &Nirvana,
+    with_tickets: bool,
+) -> anyhow::Result<Option<(String, bool)>> {
+    let Some(name) = select_connection(service, "Select a connection to delete").await? else {
+        return Ok(None);
+    };
+    let with_tickets = with_tickets
+        || Confirm::with_theme(&theme())
+            .with_prompt("Also delete its tickets and slots?")
+            .default(false)
+            .interact()?;
+    Ok(Some((name, with_tickets)))
 }
 
 pub(crate) async fn test(name: Option<String>, all: bool) -> anyhow::Result<()> {

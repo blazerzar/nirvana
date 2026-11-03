@@ -187,9 +187,9 @@ enum Connection {
     Delete {
         /// Connection name (omit for interactive selection)
         name: Option<String>,
-        /// Also delete the connection's slots
+        /// Also delete the connection's tickets and their slots
         #[arg(long)]
-        with_slots: bool,
+        with_tickets: bool,
         /// Delete without asking
         #[arg(short, long)]
         yes: bool,
@@ -263,9 +263,9 @@ pub(crate) async fn run() -> anyhow::Result<()> {
             Connection::Rename { name, new_name } => connection::rename(name, new_name).await,
             Connection::Delete {
                 name,
-                with_slots,
+                with_tickets,
                 yes,
-            } => connection::delete(name, with_slots, yes).await,
+            } => connection::delete(name, with_tickets, yes).await,
             Connection::Test { name, all } => connection::test(name, all).await,
         },
         None => Ok(()),

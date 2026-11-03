@@ -1,5 +1,7 @@
+use anyhow::bail;
 use console::{Alignment, Term, style};
 use dialoguer::{Confirm, Input, Select};
+use nirvana_core::errors::DomainError;
 use nirvana_core::service::Nirvana;
 
 use crate::cli::table::{self, Column};
@@ -155,7 +157,13 @@ pub(crate) async fn delete(name: Option<String>, yes: bool) -> anyhow::Result<()
     let mut service = Nirvana::new().await?;
 
     let name = match name {
-        Some(name) => name,
+        Some(name) => {
+            let profiles = service.list_profiles().await?;
+            if !profiles.iter().any(|p| p.name == name) {
+                bail!(DomainError::ProfileNotFound(name));
+            }
+            name
+        }
         None => match delete_interactive(&service).await? {
             Some(name) => name,
             None => return Ok(()),

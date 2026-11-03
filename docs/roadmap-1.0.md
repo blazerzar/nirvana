@@ -144,6 +144,8 @@ logged from the start.
 - [x] Add the `linear` connection kind: host and token, no identity, no
       settings yet.
 - [ ] Let users move plaintext tokens into the keyring.
+- [ ] Add the `credential` command: `credential list`, `credential update`
+      and `credential move`.
 - [ ] Add the `env` secret store for CLI integration tests: the credentials
       row holds the name of the environment variable with the token, which
       must start with `NIRVANA_`. Hidden from `--help` and the interactive

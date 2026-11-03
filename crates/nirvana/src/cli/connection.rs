@@ -1,29 +1,148 @@
+use anyhow::bail;
 use console::{Term, style};
-use dialoguer::{Input, Select};
-use nirvana_core::secrets::SecretStore;
+use dialoguer::{Input, Password, Select};
+use nirvana_core::domain::{ConnectionData, Kind};
+use nirvana_core::secrets::{SecretStore, selectable_stores};
 use nirvana_core::service::Nirvana;
+use secrecy::SecretString;
 
-use crate::cli::{ConnectionKind, theme};
+use crate::cli::table::{self, Column};
+use crate::cli::theme;
+use crate::cli::time::format_timestamp;
+
+const COLUMNS: [Column; 7] = [
+    Column::new("NAME").max_width(30),
+    Column::new("KIND"),
+    Column::new("HOST").max_width(40),
+    Column::new("IDENTITY").max_width(30),
+    Column::new("STORAGE"),
+    Column::new("CREATED"),
+    Column::new("UPDATED"),
+];
 
 pub(crate) async fn add(
     name: Option<String>,
-    kind: Option<ConnectionKind>,
+    kind: Option<Kind>,
     host: Option<String>,
     credential: Option<String>,
     storage: Option<SecretStore>,
 ) -> anyhow::Result<()> {
-    match (name, kind, host, credential, storage) {
-        (Some(name), Some(kind), Some(host), Some(_), Some(storage)) => {
-            println!("adding {name} ({kind}, {host}, {storage})")
+    let service = Nirvana::new().await?;
+
+    let connection = match (name, kind, host, credential, storage) {
+        (Some(name), Some(kind), Some(host), Some(credential), Some(secret_store)) => {
+            let (identity, token) = split_credential(kind, credential)?;
+            ConnectionData {
+                name,
+                kind,
+                host,
+                identity,
+                secret_store,
+                token: SecretString::from(token),
+            }
         }
-        _ => println!("interactive add"),
-    }
+        _ => add_interactive(&service).await?,
+    };
+
+    let added = service.add_connection(connection).await?;
+
+    let term = Term::stdout();
+    term.write_line(&format!(
+        "{} connection {}",
+        style("Added").green(),
+        style(&added.model.name).bold(),
+    ))?;
+
     Ok(())
 }
 
+fn split_credential(kind: Kind, credential: String) -> anyhow::Result<(Option<String>, String)> {
+    match kind {
+        Kind::JiraCloud => match credential.split_once(':') {
+            Some((email, token)) => Ok((Some(email.to_owned()), token.to_owned())),
+            None => bail!("{kind} credential must be \"<email>:<token>\""),
+        },
+        Kind::JiraDc | Kind::Linear => Ok((None, credential)),
+    }
+}
+
+async fn add_interactive(service: &Nirvana) -> anyhow::Result<ConnectionData> {
+    service.active_profile().await?;
+
+    let name = Input::<String>::with_theme(&theme())
+        .with_prompt("Connection name")
+        .interact_text()?;
+
+    let kind = Kind::ALL[Select::with_theme(&theme())
+        .with_prompt("Connection kind")
+        .items(Kind::ALL)
+        .default(0)
+        .interact()?];
+
+    let host = Input::<String>::with_theme(&theme())
+        .with_prompt("Host URL")
+        .interact_text()?;
+
+    let identity = match kind {
+        Kind::JiraCloud => Some(
+            Input::<String>::with_theme(&theme())
+                .with_prompt("Email")
+                .interact_text()?,
+        ),
+        Kind::JiraDc | Kind::Linear => None,
+    };
+
+    let token = Password::with_theme(&theme())
+        .with_prompt("Token")
+        .interact()?;
+
+    let keyring_available = service.keyring_status().await.is_ok();
+    let stores: Vec<SecretStore> = selectable_stores()
+        .iter()
+        .copied()
+        .filter(|store| keyring_available || *store != SecretStore::Keyring)
+        .collect();
+    let secret_store = stores[Select::with_theme(&theme())
+        .with_prompt("Where to store the token")
+        .items(&stores)
+        .default(0)
+        .interact()?];
+
+    Ok(ConnectionData {
+        name,
+        kind,
+        host,
+        identity,
+        secret_store,
+        token: SecretString::from(token),
+    })
+}
+
 pub(crate) async fn list() -> anyhow::Result<()> {
-    println!("listing all connections");
-    Ok(())
+    let service = Nirvana::new().await?;
+    let connections = service.list_connections().await?;
+    let term = Term::stdout();
+    if connections.is_empty() {
+        print_no_connections(&term)?;
+        return Ok(());
+    }
+
+    let rows: Vec<[String; 7]> = connections
+        .into_iter()
+        .map(|connection| {
+            [
+                connection.model.name,
+                connection.kind.to_string(),
+                connection.model.host,
+                connection.model.identity.unwrap_or_default(),
+                connection.secret_store.to_string(),
+                format_timestamp(connection.model.created_at),
+                format_timestamp(connection.model.updated_at),
+            ]
+        })
+        .collect();
+
+    table::print(&term, &COLUMNS, &rows)
 }
 
 fn print_no_connections(term: &Term) -> std::io::Result<()> {
@@ -111,4 +230,38 @@ pub(crate) async fn test(name: Option<String>, all: bool) -> anyhow::Result<()> 
         (None, false) => println!("interactive test"),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn jira_cloud_credential_splits_into_email_and_token() {
+        let (identity, token) =
+            split_credential(Kind::JiraCloud, "me@example.com:to:ken".into()).unwrap();
+
+        assert_eq!(identity.as_deref(), Some("me@example.com"));
+        assert_eq!(token, "to:ken");
+    }
+
+    #[test]
+    fn jira_cloud_credential_without_email_is_rejected() {
+        let error = split_credential(Kind::JiraCloud, "token".into()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "jira-cloud credential must be \"<email>:<token>\""
+        );
+    }
+
+    #[test]
+    fn credential_without_identity_is_the_token() {
+        for kind in [Kind::JiraDc, Kind::Linear] {
+            let (identity, token) = split_credential(kind, "to:ken".into()).unwrap();
+
+            assert_eq!(identity, None);
+            assert_eq!(token, "to:ken");
+        }
+    }
 }

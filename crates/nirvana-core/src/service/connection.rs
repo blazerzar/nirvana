@@ -12,12 +12,11 @@ use sea_orm::{
     ActiveModelTrait, DatabaseConnection, DbErr, EntityTrait, ModelTrait, QueryFilter, QueryOrder,
     QuerySelect, QueryTrait, Set, SqlErr, TransactionTrait,
 };
-use secrecy::SecretString;
 use tracing::info;
 
 use crate::domain::{Connection, ConnectionData, Kind, Settings};
 use crate::errors::{DomainError, NirvanaError};
-use crate::secrets::{SecretStore, delete_from_keychain, read_credential, store_secret};
+use crate::secrets::{SecretStore, delete_from_keychain, store_secret};
 use crate::service::Nirvana;
 
 impl Nirvana {
@@ -147,18 +146,6 @@ impl Nirvana {
             .collect::<Result<_, _>>()?)
     }
 
-    /// Returns the token of the connection with id `connection_id`, reading it
-    /// from the keyring for `keyring` credentials.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the credential is missing, its store is
-    /// unsupported, the keyring is unavailable or has no entry for it, or the
-    /// database query fails.
-    pub async fn reveal_token(&self, connection_id: i64) -> Result<SecretString, NirvanaError> {
-        read_credential(&self.keyring, connection_id, &self.db).await
-    }
-
     /// Deletes the connection named `name` from the active profile with its
     /// credential, settings and publish entries, and removes its keyring
     /// entry.
@@ -270,6 +257,7 @@ mod tests {
     use secrecy::ExposeSecret;
 
     use super::*;
+    use crate::secrets::read_credential;
     use crate::service::test_support::test_service;
 
     fn keyring_data(name: &str) -> ConnectionData {
@@ -681,23 +669,6 @@ mod tests {
             err,
             NirvanaError::Domain(DomainError::MissingConnectionSettings(missing)) if missing == id
         ));
-    }
-
-    #[tokio::test]
-    async fn reveal_token_reads_plaintext_and_keyring_tokens() {
-        let service = test_service().await;
-        service
-            .add_connection(keyring_data("Keyring Jira"))
-            .await
-            .unwrap();
-
-        let mut tokens = Vec::new();
-        for connection in service.list_connections().await.unwrap() {
-            let token = service.reveal_token(connection.model.id).await.unwrap();
-            tokens.push(token.expose_secret().to_string());
-        }
-
-        assert_eq!(tokens, ["token", "keyring-token"]);
     }
 
     struct History {

@@ -10,13 +10,11 @@ mod stop;
 mod table;
 mod time;
 
-use std::fmt;
-use std::fmt::Display;
-
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand};
 use console::Style;
 use dialoguer::theme::ColorfulTheme;
+use nirvana_core::domain::Kind;
 use nirvana_core::secrets::{SecretStore, selectable_stores};
 use tracing::debug;
 
@@ -165,12 +163,12 @@ enum Connection {
         #[arg(requires_all = ["kind", "host", "credential", "storage"])]
         name: Option<String>,
         /// Connection kind
-        #[arg(long, requires = "name")]
-        kind: Option<ConnectionKind>,
+        #[arg(long, value_parser = kind_parser(), requires = "name")]
+        kind: Option<Kind>,
         /// Host URL
         #[arg(long, requires = "name")]
         host: Option<String>,
-        /// Token, or "<identity>:<token>" for kinds that need an identity (jira-cloud)
+        /// Token, or "<email>:<token>" for jira-cloud
         #[arg(long, requires = "name")]
         credential: Option<String>,
         /// Where to store the token
@@ -206,22 +204,9 @@ enum Connection {
     },
 }
 
-#[derive(Clone, ValueEnum, Debug)]
-pub(crate) enum ConnectionKind {
-    JiraCloud,
-    JiraDc,
-    Linear,
-}
-
-impl Display for ConnectionKind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let kind = match self {
-            Self::JiraCloud => "jira-cloud",
-            Self::JiraDc => "jira-dc",
-            Self::Linear => "linear",
-        };
-        write!(f, "{}", kind,)
-    }
+fn kind_parser() -> impl TypedValueParser<Value = Kind> {
+    PossibleValuesParser::new(Kind::ALL.map(|kind| PossibleValue::new(kind.as_str())))
+        .try_map(|s| s.parse::<Kind>())
 }
 
 fn storage_parser() -> impl TypedValueParser<Value = SecretStore> {

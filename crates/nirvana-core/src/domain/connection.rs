@@ -53,6 +53,8 @@ pub enum Kind {
 }
 
 impl Kind {
+    pub const ALL: [Self; 3] = [Self::JiraCloud, Self::JiraDc, Self::Linear];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::JiraCloud => "jira-cloud",

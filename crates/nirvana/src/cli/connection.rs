@@ -33,9 +33,12 @@ pub(crate) async fn add(
 ) -> anyhow::Result<()> {
     let service = Nirvana::new().await?;
 
-    let connection = match (name, kind, host, credential, storage) {
-        (Some(name), Some(kind), Some(host), Some(credential), Some(secret_store)) => {
-            let (identity, token) = split_credential(kind, credential)?;
+    let connection = match (name, kind, host, storage) {
+        (Some(name), Some(kind), Some(host), Some(secret_store)) => {
+            let (identity, token) = match credential {
+                Some(credential) => split_credential(kind, credential)?,
+                None => prompt_credential(kind)?,
+            };
             ConnectionData {
                 name,
                 kind,
@@ -70,6 +73,23 @@ fn split_credential(kind: Kind, credential: String) -> anyhow::Result<(Option<St
     }
 }
 
+fn prompt_credential(kind: Kind) -> anyhow::Result<(Option<String>, String)> {
+    let identity = match kind {
+        Kind::JiraCloud => Some(
+            Input::<String>::with_theme(&theme())
+                .with_prompt("Email")
+                .interact_text()?,
+        ),
+        Kind::JiraDc | Kind::Linear => None,
+    };
+
+    let token = Password::with_theme(&theme())
+        .with_prompt("Token")
+        .interact()?;
+
+    Ok((identity, token))
+}
+
 async fn add_interactive(service: &Nirvana) -> anyhow::Result<ConnectionData> {
     service.active_profile().await?;
 
@@ -87,18 +107,7 @@ async fn add_interactive(service: &Nirvana) -> anyhow::Result<ConnectionData> {
         .with_prompt("Host URL")
         .interact_text()?;
 
-    let identity = match kind {
-        Kind::JiraCloud => Some(
-            Input::<String>::with_theme(&theme())
-                .with_prompt("Email")
-                .interact_text()?,
-        ),
-        Kind::JiraDc | Kind::Linear => None,
-    };
-
-    let token = Password::with_theme(&theme())
-        .with_prompt("Token")
-        .interact()?;
+    let (identity, token) = prompt_credential(kind)?;
 
     let keyring_available = service.keyring_status().await.is_ok();
     let stores: Vec<SecretStore> = selectable_stores()

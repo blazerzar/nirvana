@@ -166,7 +166,7 @@ enum Connection {
     /// Add a new connection
     Add {
         /// Connection name (omit for interactive creation)
-        #[arg(requires_all = ["kind", "host", "credential", "storage"])]
+        #[arg(requires_all = ["kind", "host", "storage"])]
         name: Option<String>,
         /// Connection kind
         #[arg(long, value_parser = kind_parser(), requires = "name")]
@@ -174,7 +174,7 @@ enum Connection {
         /// Host URL
         #[arg(long, requires = "name")]
         host: Option<String>,
-        /// Token, or "<email>:<token>" for jira-cloud
+        /// Token, or "<email>:<token>" for jira-cloud (omit to enter it interactively)
         #[arg(long, requires = "name")]
         credential: Option<String>,
         /// Where to store the token

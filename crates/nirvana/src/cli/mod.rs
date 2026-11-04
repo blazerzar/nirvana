@@ -1,4 +1,5 @@
 mod connection;
+mod credential;
 mod delete;
 mod edit;
 mod info;
@@ -55,6 +56,11 @@ enum Command {
     Connection {
         #[command(subcommand)]
         command: Connection,
+    },
+    /// Manage credentials
+    Credential {
+        #[command(subcommand)]
+        command: Credential,
     },
 }
 
@@ -204,6 +210,29 @@ enum Connection {
     },
 }
 
+#[derive(Subcommand)]
+enum Credential {
+    /// List credentials for all connections
+    List,
+    /// Update credential secret
+    Update {
+        /// Connection name (omit for interactive selection)
+        name: Option<String>,
+        /// Token (omit to enter it interactively)
+        #[arg(long, requires = "name")]
+        token: Option<String>,
+    },
+    /// Move credential secret to a different store
+    Move {
+        /// Connection name (omit both for interactive selection)
+        #[arg(requires = "to")]
+        name: Option<String>,
+        /// Secret store to move the token to
+        #[arg(long, value_parser = storage_parser(), requires = "name")]
+        to: Option<SecretStore>,
+    },
+}
+
 fn kind_parser() -> impl TypedValueParser<Value = Kind> {
     PossibleValuesParser::new(Kind::ALL.map(|kind| PossibleValue::new(kind.as_str())))
         .try_map(|s| s.parse::<Kind>())
@@ -267,6 +296,11 @@ pub(crate) async fn run() -> anyhow::Result<()> {
                 yes,
             } => connection::delete(name, with_tickets, yes).await,
             Connection::Test { name, all } => connection::test(name, all).await,
+        },
+        Some(Command::Credential { command }) => match command {
+            Credential::List => credential::list().await,
+            Credential::Update { name, token } => credential::update(name, token).await,
+            Credential::Move { name, to } => credential::move_to(name, to).await,
         },
         None => Ok(()),
     }

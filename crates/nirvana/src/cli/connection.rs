@@ -1,8 +1,11 @@
+use std::time::{Duration, Instant};
+
 use anyhow::bail;
 use console::{Term, style};
 use dialoguer::{Confirm, Input, Password, Select};
+use indicatif::ProgressBar;
 use nirvana_core::domain::{ConnectionData, Kind};
-use nirvana_core::errors::DomainError;
+use nirvana_core::errors::{DomainError, NirvanaError};
 use nirvana_core::secrets::{SecretStore, selectable_stores};
 use nirvana_core::service::Nirvana;
 use secrecy::SecretString;
@@ -277,11 +280,60 @@ async fn delete_interactive(
 }
 
 pub(crate) async fn test(name: Option<String>, all: bool) -> anyhow::Result<()> {
-    match (name, all) {
-        (_, true) => println!("testing all connections"),
-        (Some(name), false) => println!("testing {name}"),
-        (None, false) => println!("interactive test"),
+    let service = Nirvana::new().await?;
+    let term = Term::stdout();
+
+    if !all {
+        let name = match name {
+            Some(name) => name,
+            None => match select_connection(&service, "Select a connection to test").await? {
+                Some(name) => name,
+                None => return Ok(()),
+            },
+        };
+        return Ok(test_one(&service, &term, &name).await?);
     }
+
+    let connections = service.list_connections().await?;
+    if connections.is_empty() {
+        print_no_connections(&term)?;
+        return Ok(());
+    }
+
+    let mut failed = 0;
+    for connection in &connections {
+        let name = &connection.model.name;
+        if let Err(e) = test_one(&service, &term, name).await {
+            failed += 1;
+            term.write_line(&format!(
+                "{} {} {:#}",
+                style("✗").red(),
+                style(name).bold(),
+                anyhow::Error::from(e),
+            ))?;
+        }
+    }
+
+    if failed > 0 {
+        bail!("{failed} of {} connection tests failed", connections.len());
+    }
+    Ok(())
+}
+
+async fn test_one(service: &Nirvana, term: &Term, name: &str) -> Result<(), NirvanaError> {
+    let spinner = ProgressBar::new_spinner().with_message(format!("Testing {name}"));
+    spinner.enable_steady_tick(Duration::from_millis(50));
+    let started = Instant::now();
+    let result = service.test_connection(name).await;
+    spinner.finish_and_clear();
+    result?;
+
+    term.write_line(&format!(
+        "{} {} {}",
+        style("✓").green(),
+        style(name).bold(),
+        style(format!("{} ms", started.elapsed().as_millis())).dim(),
+    ))?;
     Ok(())
 }
 

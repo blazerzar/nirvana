@@ -16,7 +16,8 @@ use tracing::info;
 
 use crate::domain::{Connection, ConnectionData, Kind, Settings};
 use crate::errors::{DomainError, NirvanaError};
-use crate::secrets::{SecretStore, delete_from_keychain, store_secret};
+use crate::integration::Integration;
+use crate::secrets::{SecretStore, delete_from_keychain, read_credential, store_secret};
 use crate::service::Nirvana;
 
 impl Nirvana {
@@ -207,6 +208,32 @@ impl Nirvana {
         {
             delete_from_keychain(&self.keyring, credential.credential).await;
         }
+        Ok(())
+    }
+
+    /// Tests the connection named `name` in the active profile by reading its
+    /// token and signing in to its backend.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no profile is active, the config is unavailable,
+    /// the connection does not exist, a Jira Cloud connection has no
+    /// identity, the token cannot be read, the backend cannot be reached or
+    /// rejects the token, or a database query fails.
+    pub async fn test_connection(&self, name: &str) -> Result<(), NirvanaError> {
+        let profile = self.find_active_profile().await?;
+        let connection = self
+            .find_connections(profile.id)
+            .await?
+            .into_iter()
+            .find(|connection| connection.model.name == name)
+            .ok_or_else(|| DomainError::ConnectionNotFound(name.to_owned()))?;
+
+        info!(kind = %connection.kind, "testing connection");
+        let token = read_credential(&self.keyring, connection.model.id, &self.db).await?;
+        Integration::new(&connection, token)?
+            .test_connection()
+            .await?;
         Ok(())
     }
 }
@@ -836,6 +863,18 @@ mod tests {
             NirvanaError::Domain(DomainError::ConnectionNotFound(name)) if name == "missing"
         ));
         assert_eq!(connection_names(&service).await, ["Test Jira"]);
+    }
+
+    #[tokio::test]
+    async fn test_connection_rejects_missing_connection() {
+        let service = test_service().await;
+
+        let err = service.test_connection("missing").await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::ConnectionNotFound(name)) if name == "missing"
+        ));
     }
 
     #[test]

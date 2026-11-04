@@ -43,6 +43,14 @@ impl Connection {
             secret_store,
         })
     }
+
+    pub fn issue_url(&self, ticket_key: &str) -> String {
+        let host = &self.model.host;
+        match self.kind {
+            Kind::JiraCloud | Kind::JiraDc => format!("https://{host}/browse/{ticket_key}"),
+            Kind::Linear => format!("https://{host}/issue/{ticket_key}"),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -137,6 +145,44 @@ mod tests {
     fn kind_round_trips() {
         for kind in [Kind::JiraCloud, Kind::JiraDc, Kind::Linear] {
             assert_eq!(kind.as_str().parse::<Kind>().unwrap(), kind);
+        }
+    }
+
+    #[test]
+    fn builds_issue_url_per_kind() {
+        for (kind, host, url) in [
+            (
+                Kind::JiraCloud,
+                "nirvana.atlassian.net",
+                "https://nirvana.atlassian.net/browse/ENG-1",
+            ),
+            (
+                Kind::JiraDc,
+                "jira.nirvana.com",
+                "https://jira.nirvana.com/browse/ENG-1",
+            ),
+            (
+                Kind::Linear,
+                "linear.app/nirvana",
+                "https://linear.app/nirvana/issue/ENG-1",
+            ),
+        ] {
+            let connection = Connection {
+                model: connection::Model {
+                    id: 1,
+                    name: "nirvana".to_string(),
+                    kind: kind.to_string(),
+                    host: host.to_string(),
+                    identity: None,
+                    created_at: 0,
+                    updated_at: 0,
+                    profile_id: 1,
+                },
+                kind,
+                settings: Settings::Linear,
+                secret_store: SecretStore::Plaintext,
+            };
+            assert_eq!(connection.issue_url("ENG-1"), url);
         }
     }
 

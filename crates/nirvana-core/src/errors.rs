@@ -10,13 +10,13 @@ pub use crate::storage::DbError;
 
 #[derive(Debug, Error)]
 pub enum NirvanaError {
-    #[error("config error: {0}")]
+    #[error("config error")]
     Config(#[from] ConfigError),
-    #[error("config unavailable: {0}")]
+    #[error("config unavailable")]
     ConfigUnavailable(#[from] Arc<ConfigError>),
     #[error(transparent)]
     Db(#[from] DbError),
-    #[error("I/O error: {0}")]
+    #[error("I/O error")]
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Domain(#[from] DomainError),

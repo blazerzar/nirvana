@@ -29,11 +29,11 @@ const CURRENT_SCHEMA_VERSION: i64 = 2;
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
-    #[error("config I/O error: {0}")]
+    #[error("config I/O error")]
     Io(#[from] std::io::Error),
-    #[error("config parse error: {0}")]
+    #[error("config parse error")]
     Parse(#[from] toml::de::Error),
-    #[error("config save error: {0}")]
+    #[error("config save error")]
     Save(#[from] toml::ser::Error),
     #[error("unsupported config schema_version: {0}")]
     UnsupportedSchema(toml::Value),

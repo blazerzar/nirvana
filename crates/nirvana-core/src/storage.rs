@@ -10,9 +10,9 @@ use crate::paths;
 
 #[derive(Debug, Error)]
 pub enum DbError {
-    #[error("database error: {0}")]
+    #[error("database error")]
     Db(#[from] sea_orm::DbErr),
-    #[error("db I/O error: {0}")]
+    #[error("db I/O error")]
     Io(#[from] std::io::Error),
     #[error("stop time must be after the slot start time")]
     StopBeforeStart,
@@ -416,7 +416,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db_file = changed_fixture(dir.path(), sql).await;
 
-        open(&db_file).await.unwrap_err().to_string()
+        let error = open(&db_file).await.unwrap_err();
+        std::error::Error::source(&error).unwrap().to_string()
     }
 
     #[tokio::test]

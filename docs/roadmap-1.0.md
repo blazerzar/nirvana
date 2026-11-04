@@ -146,6 +146,7 @@ logged from the start.
 - [ ] Let users move plaintext tokens into the keyring.
 - [ ] Add the `credential` command: `credential list`, `credential update`
       and `credential move`.
+- [ ] Add `connection edit` to change identity or host.
 - [ ] Add the `env` secret store for CLI integration tests: the credentials
       row holds the name of the environment variable with the token, which
       must start with `NIRVANA_`. Hidden from `--help` and the interactive
@@ -154,6 +155,8 @@ logged from the start.
       no `{0}` in `#[from]` variants (config, I/O, DB, keyring), lowercase
       CLI messages (`connection '{query}' not found`).
 - [ ] Check there is correct and sufficient logging.
+- [ ] Add scripts for seting up DB with dev data (profile, connections with
+      credentials from infisical).
 
 ## Settings, logs and config CLI
 
@@ -190,11 +193,11 @@ logged from the start.
 
 ## Linear
 
-- [ ] Add scripts for obtaining Linear ticket information.
-- [ ] Rewrite scripts for JIRA and Linear and clean them up.
-- [ ] Add Linear integration - GraphQL, ticket name + description, workspace
-      and user detected from key.
-- [ ] Publish time to Linear as issue comment.
+- [x] Add scripts for obtaining Linear ticket information.
+- [x] Rewrite scripts for JIRA and Linear and clean them up.
+- [x] Add Linear integration - GraphQL, ticket title only. The connection
+      host is the workspace URL (`linear.app/<workspace>`), used for issue
+      URLs, and the API endpoint is constant.
 - [ ] Build HTTP clients with `reqwest::Client::builder()` (timeout set on the
       client instead of per request).
 

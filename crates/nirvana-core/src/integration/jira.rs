@@ -1,70 +1,48 @@
-use std::time::Duration;
+//! Jira Cloud and Jira Data Center through REST API v2.
+//!
+//! Jira Cloud authenticates with the email and API token (basic auth), Jira
+//! Data Center with a personal access token (bearer auth). Time is published
+//! as worklogs.
 
+use reqwest::{Method, RequestBuilder, Response, StatusCode};
 use secrecy::{ExposeSecret, SecretString};
+use serde::Deserialize;
 
-use crate::integration::{IntegrationError, IssueInfo};
+use crate::integration::{IntegrationError, IssueInfo, TIMEOUT};
+
+pub(crate) enum JiraAuth {
+    Basic { email: String, token: SecretString },
+    Bearer(SecretString),
+}
 
 pub(crate) struct JiraIntegration {
     host: String,
-    identity: String,
-    token: SecretString,
+    auth: JiraAuth,
     client: reqwest::Client,
-    kind: String,
+}
+
+#[derive(Deserialize)]
+struct Issue {
+    fields: IssueFields,
+}
+
+#[derive(Deserialize)]
+struct IssueFields {
+    summary: String,
 }
 
 impl JiraIntegration {
-    pub(crate) fn new(host: &str, identity: &str, token: &SecretString, kind: &str) -> Self {
+    pub(crate) fn new(host: &str, auth: JiraAuth) -> Self {
         Self {
             host: host.to_string(),
-            identity: identity.to_string(),
-            token: token.clone(),
+            auth,
             client: reqwest::Client::new(),
-            kind: kind.to_string(),
         }
-    }
-
-    pub(crate) fn new_unauthenticated(host: &str, kind: &str) -> Self {
-        Self {
-            host: host.to_string(),
-            identity: String::new(),
-            token: SecretString::default(),
-            client: reqwest::Client::new(),
-            kind: kind.to_string(),
-        }
-    }
-}
-
-impl JiraIntegration {
-    pub(crate) fn get_issue_link(&self, ticket_key: &str) -> String {
-        format!("https://{}/browse/{}", self.host, ticket_key)
     }
 
     pub(crate) async fn test_connection(&self) -> Result<(), IntegrationError> {
-        let url = format!("https://{}/rest/api/2/myself", self.host);
-        let response = (match self.kind.as_str() {
-            "jira-cloud" => self
-                .client
-                .get(&url)
-                .basic_auth(&self.identity, Some(self.token.expose_secret())),
-
-            _ => self
-                .client
-                .get(&url)
-                .bearer_auth(self.token.expose_secret()),
-        })
-        .timeout(Duration::from_secs(30))
-        .send()
-        .await?;
-
-        let status = response.status();
-        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-            return Err(IntegrationError::Auth(status.to_string()));
-        }
-        if !status.is_success() {
-            return Err(IntegrationError::Network(
-                response.error_for_status_ref().unwrap_err(),
-            ));
-        }
+        let response = self.request(Method::GET, "myself").send().await?;
+        check_status(response, None)?;
         Ok(())
     }
 
@@ -72,43 +50,12 @@ impl JiraIntegration {
         &self,
         ticket_key: &str,
     ) -> Result<IssueInfo, IntegrationError> {
-        let url = format!(
-            "https://{}/rest/api/2/issue/{}?fields=summary",
-            self.host, ticket_key
-        );
-
-        let response = (match self.kind.as_str() {
-            "jira-cloud" => self
-                .client
-                .get(&url)
-                .basic_auth(&self.identity, Some(self.token.expose_secret())),
-
-            _ => self
-                .client
-                .get(&url)
-                .bearer_auth(self.token.expose_secret()),
+        let path = format!("issue/{ticket_key}?fields=summary");
+        let response = self.request(Method::GET, &path).send().await?;
+        let issue: Issue = check_status(response, Some(ticket_key))?.json().await?;
+        Ok(IssueInfo {
+            title: issue.fields.summary,
         })
-        .timeout(Duration::from_secs(30))
-        .send()
-        .await?;
-
-        let status = response.status();
-        if status == reqwest::StatusCode::NOT_FOUND {
-            return Err(IntegrationError::TicketNotFound(ticket_key.to_string()));
-        }
-        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-            return Err(IntegrationError::Auth(status.to_string()));
-        }
-        if !status.is_success() {
-            return Err(IntegrationError::Network(
-                response.error_for_status_ref().unwrap_err(),
-            ));
-        }
-
-        let body: serde_json::Value = response.json().await?;
-        let summary = body["fields"]["summary"].as_str().unwrap_or("").to_string();
-
-        Ok(IssueInfo { summary })
     }
 
     pub(crate) async fn publish_slot(
@@ -117,11 +64,6 @@ impl JiraIntegration {
         started_at: i64,
         seconds: i64,
     ) -> Result<(), IntegrationError> {
-        let url = format!(
-            "https://{}/rest/api/2/issue/{}/worklog",
-            self.host, ticket_key
-        );
-
         let started = chrono::DateTime::from_timestamp(started_at, 0)
             .unwrap()
             .format("%Y-%m-%dT%H:%M:%S.000%z");
@@ -131,35 +73,35 @@ impl JiraIntegration {
             "started": started.to_string(),
         });
 
-        let response = (match self.kind.as_str() {
-            "jira-cloud" => self
-                .client
-                .post(&url)
-                .basic_auth(&self.identity, Some(self.token.expose_secret())),
-
-            _ => self
-                .client
-                .post(&url)
-                .bearer_auth(self.token.expose_secret()),
-        })
-        .json(&body)
-        .timeout(Duration::from_secs(30))
-        .send()
-        .await?;
-
-        let status = response.status();
-        if status == reqwest::StatusCode::NOT_FOUND {
-            return Err(IntegrationError::TicketNotFound(ticket_key.to_string()));
-        }
-        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-            return Err(IntegrationError::Auth(status.to_string()));
-        }
-        if !status.is_success() {
-            return Err(IntegrationError::Network(
-                response.error_for_status_ref().unwrap_err(),
-            ));
-        }
-
+        let path = format!("issue/{ticket_key}/worklog");
+        let response = self.request(Method::POST, &path).json(&body).send().await?;
+        check_status(response, Some(ticket_key))?;
         Ok(())
+    }
+
+    fn request(&self, method: Method, path: &str) -> RequestBuilder {
+        let url = format!("https://{}/rest/api/2/{path}", self.host);
+        let request = self.client.request(method, url).timeout(TIMEOUT);
+        match &self.auth {
+            JiraAuth::Basic { email, token } => {
+                request.basic_auth(email, Some(token.expose_secret()))
+            }
+            JiraAuth::Bearer(token) => request.bearer_auth(token.expose_secret()),
+        }
+    }
+}
+
+fn check_status(
+    response: Response,
+    ticket_key: Option<&str>,
+) -> Result<Response, IntegrationError> {
+    match (response.status(), ticket_key) {
+        (StatusCode::NOT_FOUND, Some(key)) => {
+            Err(IntegrationError::TicketNotFound(key.to_string()))
+        }
+        (status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN), _) => {
+            Err(IntegrationError::Auth(status.to_string()))
+        }
+        _ => Ok(response.error_for_status()?),
     }
 }

@@ -147,10 +147,6 @@ logged from the start.
 - [x] Add the `credential` command: `credential list`, `credential update`
       and `credential move`.
 - [ ] Add `connection edit` to change identity or host.
-- [ ] Add the `env` secret store for CLI integration tests: the credentials
-      row holds the name of the environment variable with the token, which
-      must start with `NIRVANA_`. Hidden from `--help` and the interactive
-      picker, available in all builds.
 - [ ] Fix error messages of the errors these commands return (decision 21):
       no `{0}` in `#[from]` variants (config, I/O, DB, keyring), lowercase
       CLI messages (`connection '{query}' not found`).
@@ -167,18 +163,22 @@ logged from the start.
 
 ## Tickets
 
-- [ ] Make sure start, stop, resume, switch, edit, delete are working and tested.
+- [ ] Add `ticket list`, `ticket remove` and `ticket load`.
 - [x] Add `nirvana profile add` - a fresh DB has no profile, so connections
       cannot be added until one is created.
+- [ ] Decide how owning connection is resolved when profile has multiple
+      connections (proposal in the implementation guide).
+- [ ] Let's update ticket name and description when interacting with it (async).
+- [ ] Return `DomainError::NoActiveConnection` from core when `list` needs
+      a connection, instead of `.context("No active connection")` in the CLI.
+
+## Tracking
+
+- [ ] Make sure start, stop, resume, switch, edit, delete are working and tested.
 - [ ] Get these commands working in CLI and start integration testing as well.
 - [ ] Check for blocking calls inside async code while refactoring the CLI.
 - [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
       through the public API).
-- [ ] Add e2e tests for nirvana: run the built release binary in CI, with
-      tokens from GitHub secrets through the `env` secret store.
-- [ ] Decide how owning connection is resolved when profile has multiple
-      connections (proposal in the implementation guide).
-- [ ] Let's update ticket name and description when interacting with it (async).
 - [ ] Validate overlaps on edit; published slots are read-only.
 - [ ] Validate overlaps on start with `--at` - a backdated start must not
       cover closed or published slots (only manual create checks today).
@@ -186,8 +186,6 @@ logged from the start.
 - [ ] Reject future times in `start_slot` and `stop_slot` with
       `DomainError::FutureTime`, remove the `parse_time` copies in
       `start.rs` and `stop.rs` and use `cli::parse_time`.
-- [ ] Return `DomainError::NoActiveConnection` from core when `list` needs
-      a connection, instead of `.context("No active connection")` in the CLI.
 - [ ] Return from the interactive start picker on Esc instead of
       `std::process::exit(0)`.
 
@@ -217,6 +215,15 @@ logged from the start.
 - [ ] Need error checking for each log.
 - [ ] Fix error messages of the errors publishing returns (decision 21):
       no `{0}` in `IntegrationError::Network`.
+
+## E2E tests
+
+- [ ] Add the `env` secret store for CLI integration tests: the credentials
+      row holds the name of the environment variable with the token, which
+      must start with `NIRVANA_`. Hidden from `--help` and the interactive
+      picker, available in all builds.
+- [ ] Add e2e tests for nirvana: run the built release binary in CI, with
+      tokens from GitHub secrets through the `env` secret store.
 
 ## Nirvana API
 

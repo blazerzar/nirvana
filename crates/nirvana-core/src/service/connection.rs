@@ -285,7 +285,7 @@ mod tests {
 
     use super::*;
     use crate::secrets::read_credential;
-    use crate::service::test_support::test_service;
+    use crate::service::test_support::{keyring_passwords, test_service};
 
     fn keyring_data(name: &str) -> ConnectionData {
         ConnectionData {
@@ -296,21 +296,6 @@ mod tests {
             secret_store: SecretStore::Keyring,
             token: "keyring-token".into(),
         }
-    }
-
-    fn keyring_passwords(service: &Nirvana) -> Vec<String> {
-        let store = (service.keyring)().unwrap();
-        let spec = [("service", "nirvana")].into();
-        store
-            .search(&spec)
-            .unwrap()
-            .into_iter()
-            .filter_map(|entry| match entry.get_password() {
-                Ok(password) => Some(password),
-                Err(keyring_core::Error::NoEntry) => None,
-                Err(e) => panic!("keyring read failed: {e}"),
-            })
-            .collect()
     }
 
     #[tokio::test]

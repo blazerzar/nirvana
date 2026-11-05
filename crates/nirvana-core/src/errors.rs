@@ -6,6 +6,7 @@ pub use crate::config::ConfigError;
 use crate::domain::Kind;
 pub use crate::integration::IntegrationError;
 pub use crate::secrets::SecretError;
+use crate::secrets::SecretStore;
 pub use crate::storage::DbError;
 
 #[derive(Debug, Error)]
@@ -57,6 +58,8 @@ pub enum DomainError {
     MissingConnectionSettings(i64),
     #[error("connection {0} has no credential")]
     MissingCredential(i64),
+    #[error("credential of connection '{0}' is already in {1}")]
+    CredentialAlreadyIn(String, SecretStore),
 
     // publishing
     #[error("publishing is disabled for connection '{0}'")]

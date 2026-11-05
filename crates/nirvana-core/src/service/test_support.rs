@@ -65,3 +65,18 @@ pub(super) async fn test_service() -> TestService {
 
     TestService { service, _dir: dir }
 }
+
+pub(super) fn keyring_passwords(service: &Nirvana) -> Vec<String> {
+    let store = (service.keyring)().unwrap();
+    let spec = [("service", "nirvana")].into();
+    store
+        .search(&spec)
+        .unwrap()
+        .into_iter()
+        .filter_map(|entry| match entry.get_password() {
+            Ok(password) => Some(password),
+            Err(keyring_core::Error::NoEntry) => None,
+            Err(e) => panic!("keyring read failed: {e}"),
+        })
+        .collect()
+}

@@ -143,7 +143,7 @@ logged from the start.
       existing `jira-dc` rows.
 - [x] Add the `linear` connection kind: host and token, no identity, no
       settings yet.
-- [ ] Let users move plaintext tokens into the keyring.
+- [x] Let users move plaintext tokens into the keyring.
 - [ ] Add the `credential` command: `credential list`, `credential update`
       and `credential move`.
 - [ ] Add `connection edit` to change identity or host.

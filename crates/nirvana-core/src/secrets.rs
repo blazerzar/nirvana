@@ -10,6 +10,10 @@
 //!   Manager on Windows, Secret Service on Linux).
 //! - `env`: not supported yet.
 //!
+//! The token of an existing connection can be updated in place, or moved
+//! between `plaintext` and `keyring`. The keyring is written before the row,
+//! so the row is left untouched when the keyring is unavailable.
+//!
 //! Keyring calls are synchronous and can show unlock dialogs, so every call,
 //! including the `StoreFactory` that creates the store and dropping the store,
 //! runs in `spawn_blocking`.
@@ -99,21 +103,28 @@ pub(crate) async fn store_secret(
 ) -> Result<String, NirvanaError> {
     match store {
         SecretStore::Plaintext => Ok(token.expose_secret().to_string()),
-        SecretStore::Keyring => Ok(store_in_keychain(keyring, profile, connection, token).await?),
+        SecretStore::Keyring => {
+            let account = keyring_account(profile, connection);
+            Ok(set_in_keychain(keyring, account, token).await?)
+        }
         SecretStore::Env => Err(SecretError::UnsupportedStore(store).into()),
     }
 }
 
-async fn store_in_keychain(
-    keyring: &StoreFactory,
-    profile: &str,
-    connection: &str,
-    token: SecretString,
-) -> Result<String, SecretError> {
-    let account = format!(
+pub(crate) fn keyring_account(profile: &str, connection: &str) -> String {
+    format!(
         "nirvana_{profile}_{connection}_{:08x}",
         rand::random::<u32>()
-    );
+    )
+}
+
+/// Saves `token` in the keyring under `account`, replacing an existing token,
+/// and returns `account`.
+pub(crate) async fn set_in_keychain(
+    keyring: &StoreFactory,
+    account: String,
+    token: SecretString,
+) -> Result<String, SecretError> {
     let keyring = keyring.clone();
     tokio::task::spawn_blocking(move || {
         keyring()
@@ -151,7 +162,7 @@ pub(crate) async fn read_credential(
     Ok(token.into())
 }
 
-async fn read_from_keychain(
+pub(crate) async fn read_from_keychain(
     keyring: &StoreFactory,
     connection_id: i64,
     account: String,

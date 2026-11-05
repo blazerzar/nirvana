@@ -1,4 +1,5 @@
 mod connection;
+mod credential;
 mod info;
 mod profile;
 #[cfg(test)]

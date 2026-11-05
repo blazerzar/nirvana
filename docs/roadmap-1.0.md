@@ -144,7 +144,7 @@ logged from the start.
 - [x] Add the `linear` connection kind: host and token, no identity, no
       settings yet.
 - [x] Let users move plaintext tokens into the keyring.
-- [ ] Add the `credential` command: `credential list`, `credential update`
+- [x] Add the `credential` command: `credential list`, `credential update`
       and `credential move`.
 - [ ] Add `connection edit` to change identity or host.
 - [ ] Add the `env` secret store for CLI integration tests: the credentials

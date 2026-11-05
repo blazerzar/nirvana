@@ -191,9 +191,9 @@ async fn select_connection(service: &Nirvana, prompt: &str) -> anyhow::Result<Op
 pub(crate) async fn rename(name: Option<String>, new_name: Option<String>) -> anyhow::Result<()> {
     let service = Nirvana::new().await?;
 
-    let (name, new_name) = match name.zip(new_name) {
-        Some(names) => names,
-        None => match rename_interactive(&service).await? {
+    let (name, new_name) = match (name, new_name) {
+        (Some(name), Some(new_name)) => (name, new_name),
+        (name, _) => match rename_interactive(&service, name).await? {
             Some(names) => names,
             None => return Ok(()),
         },
@@ -212,9 +212,16 @@ pub(crate) async fn rename(name: Option<String>, new_name: Option<String>) -> an
     Ok(())
 }
 
-async fn rename_interactive(service: &Nirvana) -> anyhow::Result<Option<(String, String)>> {
-    let Some(name) = select_connection(service, "Select a connection to rename").await? else {
-        return Ok(None);
+async fn rename_interactive(
+    service: &Nirvana,
+    name: Option<String>,
+) -> anyhow::Result<Option<(String, String)>> {
+    let name = match name {
+        Some(name) => name,
+        None => match select_connection(service, "Select a connection to rename").await? {
+            Some(name) => name,
+            None => return Ok(None),
+        },
     };
 
     let new_name = Input::<String>::with_theme(&theme())

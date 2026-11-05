@@ -143,8 +143,7 @@ enum Profile {
     },
     /// Rename a profile
     Rename {
-        /// Current profile name (omit both for interactive selection)
-        #[arg(requires = "new_name")]
+        /// Current profile name (omit for interactive selection)
         name: Option<String>,
         /// New profile name
         new_name: Option<String>,
@@ -183,8 +182,7 @@ enum Connection {
     },
     /// Rename a connection
     Rename {
-        /// Current connection name (omit both for interactive selection)
-        #[arg(requires = "new_name")]
+        /// Current connection name (omit for interactive selection)
         name: Option<String>,
         /// New connection name
         new_name: Option<String>,
@@ -224,8 +222,7 @@ enum Credential {
     },
     /// Move credential secret to a different store
     Move {
-        /// Connection name (omit both for interactive selection)
-        #[arg(requires = "to")]
+        /// Connection name (omit for interactive selection)
         name: Option<String>,
         /// Secret store to move the token to
         #[arg(long, value_parser = storage_parser(), requires = "name")]

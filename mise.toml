@@ -4,6 +4,7 @@ pkl = "0.32.1"
 dprint = "0.63.0"
 jactionlint = "2.2.0"
 editorconfig-checker = "4.0.2"
+shellcheck = "0.11.0"
 rust = { version = "1.99.0", profile = "default" }
 
 [env]

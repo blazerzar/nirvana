@@ -26,6 +26,7 @@ local linters = new Mapping<String, Step> {
   ...formatters
   ["jactionlint"] = Builtins.jactionlint
   ["editorconfig"] = Builtins.editorconfig_checker
+  ["shellcheck"] = Builtins.shellcheck
   ["cargo-clippy"] = (Builtins.cargo_clippy) {
     workspace_indicator = "Cargo.lock"
     check = new CommandSpec {

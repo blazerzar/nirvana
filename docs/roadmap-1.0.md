@@ -146,7 +146,8 @@ logged from the start.
 - [x] Let users move plaintext tokens into the keyring.
 - [x] Add the `credential` command: `credential list`, `credential update`
       and `credential move`.
-- [ ] Add `connection edit` to change identity or host.
+- [x] Add `connection edit` to change name, identity or host. It replaces
+      `connection rename`.
 - [ ] Fix error messages of the errors these commands return (decision 21):
       no `{0}` in `#[from]` variants (config, I/O, DB, keyring), lowercase
       CLI messages (`connection '{query}' not found`).

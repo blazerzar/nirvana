@@ -148,6 +148,26 @@ impl Nirvana {
         self.find_connections(profile.id).await
     }
 
+    /// Returns the connection named `name` in the active profile.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no profile is active, the config is unavailable,
+    /// the connection does not exist, has invalid settings or no credential,
+    /// or the database query fails.
+    pub async fn get_connection(&self, name: &str) -> Result<Connection, NirvanaError> {
+        let profile = self.find_active_profile().await?;
+        let connection = ConnectionEntity::load()
+            .with(credential::Entity)
+            .with(jira_settings::Entity)
+            .filter(connection::COLUMN.profile_id.eq(profile.id))
+            .filter(connection::COLUMN.name.eq(name))
+            .one(&self.db)
+            .await?
+            .ok_or_else(|| DomainError::ConnectionNotFound(name.to_owned()))?;
+        Ok(Connection::new(connection)?)
+    }
+
     pub(super) async fn find_connections(
         &self,
         profile_id: i64,
@@ -238,13 +258,7 @@ impl Nirvana {
     /// identity, the token cannot be read, the backend cannot be reached or
     /// rejects the token, or a database query fails.
     pub async fn test_connection(&self, name: &str) -> Result<(), NirvanaError> {
-        let profile = self.find_active_profile().await?;
-        let connection = self
-            .find_connections(profile.id)
-            .await?
-            .into_iter()
-            .find(|connection| connection.model.name == name)
-            .ok_or_else(|| DomainError::ConnectionNotFound(name.to_owned()))?;
+        let connection = self.get_connection(name).await?;
 
         info!(kind = %connection.kind, "testing connection");
         let token = read_credential(&self.keyring, connection.model.id, &self.db).await?;
@@ -805,6 +819,23 @@ mod tests {
         service.create_profile("work".to_string()).await.unwrap();
         service.switch_profile("work").await.unwrap();
         assert!(service.list_connections().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_connection_finds_only_in_active_profile() {
+        let mut service = test_service().await;
+
+        let connection = service.get_connection("Test Jira").await.unwrap();
+        assert_eq!(connection.model.name, "Test Jira");
+        assert_eq!(connection.secret_store, SecretStore::Plaintext);
+
+        service.create_profile("work".to_string()).await.unwrap();
+        service.switch_profile("work").await.unwrap();
+        let err = service.get_connection("Test Jira").await.unwrap_err();
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::ConnectionNotFound(name)) if name == "Test Jira"
+        ));
     }
 
     #[tokio::test]

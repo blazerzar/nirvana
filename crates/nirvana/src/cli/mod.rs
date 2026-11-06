@@ -180,12 +180,19 @@ enum Connection {
         #[arg(long, value_parser = storage_parser(), requires = "name")]
         storage: Option<SecretStore>,
     },
-    /// Rename a connection
-    Rename {
-        /// Current connection name (omit for interactive selection)
+    /// Edit a connection's name, host or identity
+    Edit {
+        /// Connection name (omit for interactive selection)
         name: Option<String>,
         /// New connection name
+        #[arg(long = "name", value_name = "NAME", requires = "name")]
         new_name: Option<String>,
+        /// New host URL
+        #[arg(long, requires = "name")]
+        host: Option<String>,
+        /// New identity (jira-cloud email)
+        #[arg(long, requires = "name")]
+        identity: Option<String>,
     },
     /// Delete a connection
     Delete {
@@ -286,7 +293,12 @@ pub(crate) async fn run() -> anyhow::Result<()> {
                 credential,
                 storage,
             } => connection::add(name, kind, host, credential, storage).await,
-            Connection::Rename { name, new_name } => connection::rename(name, new_name).await,
+            Connection::Edit {
+                name,
+                new_name,
+                host,
+                identity,
+            } => connection::edit(name, new_name, host, identity).await,
             Connection::Delete {
                 name,
                 with_tickets,

@@ -4,7 +4,7 @@ use anyhow::bail;
 use console::{Term, style};
 use dialoguer::{Confirm, Input, Password, Select};
 use indicatif::ProgressBar;
-use nirvana_core::domain::{ConnectionData, Kind};
+use nirvana_core::domain::{ConnectionData, ConnectionEdit, Kind};
 use nirvana_core::errors::{DomainError, NirvanaError};
 use nirvana_core::secrets::{SecretStore, selectable_stores};
 use nirvana_core::service::Nirvana;
@@ -188,47 +188,92 @@ async fn select_connection(service: &Nirvana, prompt: &str) -> anyhow::Result<Op
     Ok(idx.map(|i| items.swap_remove(i)))
 }
 
-pub(crate) async fn rename(name: Option<String>, new_name: Option<String>) -> anyhow::Result<()> {
+pub(crate) async fn edit(
+    name: Option<String>,
+    new_name: Option<String>,
+    host: Option<String>,
+    identity: Option<String>,
+) -> anyhow::Result<()> {
     let service = Nirvana::new().await?;
 
-    let (name, new_name) = match (name, new_name) {
-        (Some(name), Some(new_name)) => (name, new_name),
-        (name, _) => match rename_interactive(&service, name).await? {
-            Some(names) => names,
+    let (name, edit) = match name {
+        Some(name) if new_name.is_some() || host.is_some() || identity.is_some() => (
+            name,
+            ConnectionEdit {
+                name: new_name,
+                host,
+                identity,
+            },
+        ),
+        name => match edit_interactive(&service, name).await? {
+            Some(choice) => choice,
             None => return Ok(()),
         },
     };
 
-    service.rename_connection(&name, new_name.clone()).await?;
-
     let term = Term::stdout();
+    if edit.name.is_none() && edit.host.is_none() && edit.identity.is_none() {
+        term.write_line(&format!(
+            "{}",
+            style(format!("Connection {name} was not changed")).yellow()
+        ))?;
+        return Ok(());
+    }
+
+    let edited_name = edit.name.clone().unwrap_or_else(|| name.clone());
+    service.edit_connection(&name, edit).await?;
+
     term.write_line(&format!(
-        "{} connection {} to {}",
-        style("Renamed").green(),
-        style(&name).dim(),
-        style(&new_name).bold(),
+        "{} connection {}",
+        style("Updated").green(),
+        style(&edited_name).bold(),
     ))?;
 
     Ok(())
 }
 
-async fn rename_interactive(
+/// Prompts for every field of the connection with its current value as the
+/// default and keeps only the changed ones.
+async fn edit_interactive(
     service: &Nirvana,
     name: Option<String>,
-) -> anyhow::Result<Option<(String, String)>> {
+) -> anyhow::Result<Option<(String, ConnectionEdit)>> {
     let name = match name {
         Some(name) => name,
-        None => match select_connection(service, "Select a connection to rename").await? {
+        None => match select_connection(service, "Select a connection to edit").await? {
             Some(name) => name,
             None => return Ok(None),
         },
     };
+    let connection = service.get_connection(&name).await?;
 
+    let changed = |value: String, current: &str| (value != current).then_some(value);
     let new_name = Input::<String>::with_theme(&theme())
-        .with_prompt("New name")
+        .with_prompt("Name")
+        .default(name.clone())
         .interact_text()?;
+    let host = Input::<String>::with_theme(&theme())
+        .with_prompt("Host URL")
+        .default(connection.model.host.clone())
+        .interact_text()?;
+    let identity = match connection.kind {
+        Kind::JiraCloud => {
+            let current = connection.model.identity.unwrap_or_default();
+            let identity = Input::<String>::with_theme(&theme())
+                .with_prompt("Email")
+                .default(current.clone())
+                .interact_text()?;
+            changed(identity, &current)
+        }
+        Kind::JiraDc | Kind::Linear => None,
+    };
 
-    Ok(Some((name, new_name)))
+    let edit = ConnectionEdit {
+        name: changed(new_name, &name),
+        host: changed(host, &connection.model.host),
+        identity,
+    };
+    Ok(Some((name, edit)))
 }
 
 pub(crate) async fn delete(

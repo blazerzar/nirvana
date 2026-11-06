@@ -98,11 +98,17 @@ async fn move_interactive(
     };
     let current = credential.location.store();
 
+    let keyring_available = service.keyring_status().await.is_ok();
     let stores: Vec<SecretStore> = selectable_stores()
         .iter()
         .copied()
-        .filter(|store| *store != current)
+        .filter(|store| *store != current && (keyring_available || *store != SecretStore::Keyring))
         .collect();
+    if stores.is_empty() {
+        Term::stdout().write_line(&format!("{}", style("No other stores available").yellow()))?;
+        return Ok(None);
+    }
+
     let Some(idx) = Select::with_theme(&theme())
         .with_prompt(format!("Move the token from {current} to"))
         .items(&stores)

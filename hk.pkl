@@ -38,7 +38,7 @@ local linters = new Mapping<String, Step> {
 
 hooks {
   ["pre-commit"] { fix = true; stash = "git"; steps = formatters }
-  ["pre-push"] { steps = linters }
+  ["pre-push"] { steps { ["lint"] = new Step { check = "hk check --all"; interactive = true } } }
   ["commit-msg"] { steps { ["conventional"] = Builtins.check_conventional_commit } }
   ["check"] { steps = linters }
   ["fix"] { fix = true; steps = formatters }

@@ -136,7 +136,7 @@ logged from the start.
 
 ## Profiles and connections CLI
 
-- [ ] Rework the CLI for profiles and connections. The interactive picker
+- [x] Rework the CLI for profiles and connections. The interactive picker
       offers Keyring only when the keyring is available.
 - [x] Make `connections.identity` nullable: only Jira Cloud has one (the
       email). Do not ask for a username for Jira DC and set it to NULL for
@@ -148,7 +148,7 @@ logged from the start.
       and `credential move`.
 - [x] Add `connection edit` to change name, identity or host. It replaces
       `connection rename`.
-- [ ] Fix error messages of the errors these commands return (decision 21):
+- [x] Fix error messages of the errors these commands return (decision 21):
       no `{0}` in `#[from]` variants (config, I/O, DB, keyring), lowercase
       CLI messages (`connection '{query}' not found`).
 - [ ] Check there is correct and sufficient logging.

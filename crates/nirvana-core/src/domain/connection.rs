@@ -70,6 +70,14 @@ impl Kind {
             Self::Linear => "linear",
         }
     }
+
+    pub(crate) fn validate_identity(self, identity: Option<&str>) -> Result<(), DomainError> {
+        match (self, identity.map(str::trim)) {
+            (Self::JiraCloud, None | Some("")) => Err(DomainError::MissingIdentity(self)),
+            (Self::JiraDc | Self::Linear, Some(_)) => Err(DomainError::UnexpectedIdentity(self)),
+            (Self::JiraCloud, Some(_)) | (Self::JiraDc | Self::Linear, None) => Ok(()),
+        }
+    }
 }
 
 impl fmt::Display for Kind {
@@ -127,14 +135,15 @@ impl ConnectionData {
         if self.name.trim().is_empty() {
             return Err(DomainError::EmptyConnectionName);
         }
-        match (self.kind, self.identity.as_deref().map(str::trim)) {
-            (Kind::JiraCloud, None | Some("")) => Err(DomainError::MissingIdentity(self.kind)),
-            (Kind::JiraDc | Kind::Linear, Some(_)) => {
-                Err(DomainError::UnexpectedIdentity(self.kind))
-            }
-            (Kind::JiraCloud, Some(_)) | (Kind::JiraDc | Kind::Linear, None) => Ok(()),
-        }
+        self.kind.validate_identity(self.identity.as_deref())
     }
+}
+
+#[derive(Debug, Default)]
+pub struct ConnectionEdit {
+    pub name: Option<String>,
+    pub host: Option<String>,
+    pub identity: Option<String>,
 }
 
 #[cfg(test)]

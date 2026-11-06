@@ -14,7 +14,7 @@ use sea_orm::{
 };
 use tracing::info;
 
-use crate::domain::{Connection, ConnectionData, Kind, Settings};
+use crate::domain::{Connection, ConnectionData, ConnectionEdit, Kind, Settings};
 use crate::errors::{DomainError, NirvanaError};
 use crate::integration::Integration;
 use crate::secrets::{SecretStore, delete_from_keychain, read_credential, store_secret};
@@ -78,21 +78,26 @@ impl Nirvana {
         added
     }
 
-    /// Renames the connection named `name` in the active profile to
-    /// `new_name`. The keyring entry keeps its account, so the token stays
-    /// readable.
+    /// Changes the name, host or identity of the connection named `name` in
+    /// the active profile. Fields that are `None` are kept. The keyring entry
+    /// keeps its account, so the token stays readable after a rename.
     ///
     /// # Errors
     ///
-    /// Returns an error if the new name is empty, no profile is active, the
+    /// Returns an error if the new name is empty, the identity is empty for
+    /// Jira Cloud or given for Jira DC or Linear, no profile is active, the
     /// config is unavailable, the connection does not exist, the profile
     /// already has a connection with the new name or a database query fails.
-    pub async fn rename_connection(
+    pub async fn edit_connection(
         &self,
         name: &str,
-        new_name: String,
+        edit: ConnectionEdit,
     ) -> Result<(), NirvanaError> {
-        if new_name.trim().is_empty() {
+        if edit
+            .name
+            .as_deref()
+            .is_some_and(|name| name.trim().is_empty())
+        {
             return Err(DomainError::EmptyConnectionName.into());
         }
 
@@ -104,14 +109,26 @@ impl Nirvana {
         else {
             return Err(DomainError::ConnectionNotFound(name.to_owned()).into());
         };
+        if edit.identity.is_some() {
+            let kind: Kind = connection.kind.parse()?;
+            kind.validate_identity(edit.identity.as_deref())?;
+        }
 
         let mut connection: connection::ActiveModel = connection.into();
-        connection.name = Set(new_name.clone());
+        if let Some(new_name) = &edit.name {
+            connection.name = Set(new_name.clone());
+        }
+        if let Some(host) = &edit.host {
+            connection.host = Set(normalize_host(host));
+        }
+        if let Some(identity) = edit.identity {
+            connection.identity = Set(Some(identity));
+        }
         connection
             .update(&self.db)
             .await
-            .map_err(|e| match e.sql_err() {
-                Some(SqlErr::UniqueConstraintViolation(_)) => {
+            .map_err(|e| match (e.sql_err(), edit.name) {
+                (Some(SqlErr::UniqueConstraintViolation(_)), Some(new_name)) => {
                     NirvanaError::from(DomainError::ConnectionExists(new_name))
                 }
                 _ => e.into(),
@@ -532,7 +549,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rename_connection_keeps_keyring_token() {
+    async fn edit_connection_renames_and_keeps_keyring_token() {
         let service = test_service().await;
         let added = service
             .add_connection(keyring_data("Keyring Jira"))
@@ -540,7 +557,13 @@ mod tests {
             .unwrap();
 
         service
-            .rename_connection("Keyring Jira", "Work Jira".to_string())
+            .edit_connection(
+                "Keyring Jira",
+                ConnectionEdit {
+                    name: Some("Work Jira".to_string()),
+                    ..Default::default()
+                },
+            )
             .await
             .unwrap();
 
@@ -552,13 +575,130 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rename_connection_only_renames_in_active_profile() {
+    async fn edit_connection_changes_host_and_identity() {
+        let service = test_service().await;
+
+        service
+            .edit_connection(
+                "Test Jira",
+                ConnectionEdit {
+                    host: Some(" https://new.atlassian.net/ ".to_string()),
+                    identity: Some("new@example.com".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        let connection = &service.list_connections().await.unwrap()[0];
+        assert_eq!(connection.model.name, "Test Jira");
+        assert_eq!(connection.model.host, "new.atlassian.net");
+        assert_eq!(
+            connection.model.identity.as_deref(),
+            Some("new@example.com")
+        );
+    }
+
+    #[tokio::test]
+    async fn edit_connection_keeps_fields_that_are_not_edited() {
+        let service = test_service().await;
+
+        service
+            .edit_connection(
+                "Test Jira",
+                ConnectionEdit {
+                    host: Some("new.atlassian.net".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        let connection = &service.list_connections().await.unwrap()[0];
+        assert_eq!(connection.model.host, "new.atlassian.net");
+        assert_eq!(
+            connection.model.identity.as_deref(),
+            Some("tester@example.com")
+        );
+    }
+
+    #[tokio::test]
+    async fn edit_connection_rejects_empty_jira_cloud_identity() {
+        let service = test_service().await;
+
+        let err = service
+            .edit_connection(
+                "Test Jira",
+                ConnectionEdit {
+                    identity: Some(" ".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::MissingIdentity(Kind::JiraCloud))
+        ));
+    }
+
+    #[tokio::test]
+    async fn edit_connection_rejects_identity_without_identity_kind() {
+        let service = test_service().await;
+        for (name, kind) in [("DC Jira", Kind::JiraDc), ("Linear", Kind::Linear)] {
+            service
+                .add_connection(ConnectionData {
+                    kind,
+                    identity: None,
+                    ..keyring_data(name)
+                })
+                .await
+                .unwrap();
+
+            let err = service
+                .edit_connection(
+                    name,
+                    ConnectionEdit {
+                        identity: Some("me@example.com".to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap_err();
+
+            assert!(matches!(
+                err,
+                NirvanaError::Domain(DomainError::UnexpectedIdentity(k)) if k == kind
+            ));
+        }
+        let identities: Vec<_> = service
+            .list_connections()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|connection| connection.model.identity)
+            .collect();
+        assert_eq!(
+            identities,
+            [Some("tester@example.com".to_string()), None, None]
+        );
+    }
+
+    #[tokio::test]
+    async fn edit_connection_only_edits_in_active_profile() {
         let mut service = test_service().await;
         service.create_profile("work".to_string()).await.unwrap();
         service.switch_profile("work").await.unwrap();
 
         let err = service
-            .rename_connection("Test Jira", "Work Jira".to_string())
+            .edit_connection(
+                "Test Jira",
+                ConnectionEdit {
+                    name: Some("Work Jira".to_string()),
+                    ..Default::default()
+                },
+            )
             .await
             .unwrap_err();
 
@@ -571,7 +711,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rename_connection_rejects_duplicate_name() {
+    async fn edit_connection_rejects_duplicate_name() {
         let service = test_service().await;
         service
             .add_connection(keyring_data("Keyring Jira"))
@@ -579,7 +719,13 @@ mod tests {
             .unwrap();
 
         let err = service
-            .rename_connection("Keyring Jira", "Test Jira".to_string())
+            .edit_connection(
+                "Keyring Jira",
+                ConnectionEdit {
+                    name: Some("Test Jira".to_string()),
+                    ..Default::default()
+                },
+            )
             .await
             .unwrap_err();
 
@@ -594,11 +740,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rename_connection_rejects_missing_connection() {
+    async fn edit_connection_rejects_missing_connection() {
         let service = test_service().await;
 
         let err = service
-            .rename_connection("missing", "Work Jira".to_string())
+            .edit_connection(
+                "missing",
+                ConnectionEdit {
+                    name: Some("Work Jira".to_string()),
+                    ..Default::default()
+                },
+            )
             .await
             .unwrap_err();
 
@@ -609,11 +761,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rename_connection_rejects_empty_name() {
+    async fn edit_connection_rejects_empty_name() {
         let service = test_service().await;
 
         let err = service
-            .rename_connection("Test Jira", " ".to_string())
+            .edit_connection(
+                "Test Jira",
+                ConnectionEdit {
+                    name: Some(" ".to_string()),
+                    ..Default::default()
+                },
+            )
             .await
             .unwrap_err();
 

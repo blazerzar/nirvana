@@ -1,6 +1,7 @@
 mod connection;
 mod credential;
 mod info;
+mod logs;
 mod profile;
 #[cfg(test)]
 mod test_support;

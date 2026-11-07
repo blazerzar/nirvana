@@ -11,11 +11,12 @@ keyring-core = "1.0.1"
 nirvana-entity = { path = "../nirvana-entity" }
 nirvana-migration = { path = "../nirvana-migration" }
 rand = "0.9.5"
+same-file = "1.0.6"
 secrecy = "0.10.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"
-tokio = { version = "1.53.3", features = ["macros", "rt"] }
+tokio = { version = "1.53.3", features = ["macros", "rt", "fs", "io-util", "time"] }
 toml = "1.1.8"
 tracing = "0.1.44"
 

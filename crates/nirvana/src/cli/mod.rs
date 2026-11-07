@@ -4,6 +4,7 @@ mod delete;
 mod edit;
 mod info;
 mod list;
+mod logs;
 mod profile;
 mod publish;
 mod start;
@@ -60,6 +61,11 @@ enum Command {
     Credential {
         #[command(subcommand)]
         command: Credential,
+    },
+    /// View and clear logs
+    Logs {
+        #[command(subcommand)]
+        command: Logs,
     },
 }
 
@@ -236,6 +242,25 @@ enum Credential {
     },
 }
 
+#[derive(Subcommand)]
+enum Logs {
+    /// Show the log file
+    View {
+        /// Show only the last N lines
+        #[arg(short = 'n', long)]
+        lines: Option<usize>,
+        /// Keep printing new lines as they are written
+        #[arg(short, long)]
+        follow: bool,
+    },
+    /// Clear the log file
+    Clear {
+        /// Clear without asking
+        #[arg(short, long)]
+        yes: bool,
+    },
+}
+
 fn kind_parser() -> impl TypedValueParser<Value = Kind> {
     PossibleValuesParser::new(Kind::ALL.map(|kind| PossibleValue::new(kind.as_str())))
         .try_map(|s| s.parse::<Kind>())
@@ -310,6 +335,10 @@ pub(crate) async fn run() -> anyhow::Result<()> {
             Credential::List => credential::list().await,
             Credential::Update { name, token } => credential::update(name, token).await,
             Credential::Move { name, to } => credential::move_to(name, to).await,
+        },
+        Some(Command::Logs { command }) => match command {
+            Logs::View { lines, follow } => logs::view(lines, follow).await,
+            Logs::Clear { yes } => logs::clear(yes).await,
         },
         None => Ok(()),
     }

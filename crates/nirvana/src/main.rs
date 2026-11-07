@@ -23,6 +23,11 @@ async fn main() {
     let result = crate::cli::run().await;
 
     if let Err(e) = result {
+        if e.downcast_ref::<std::io::Error>()
+            .is_some_and(|e| e.kind() == std::io::ErrorKind::BrokenPipe)
+        {
+            return;
+        }
         error!("{e:#}");
         eprintln!(
             "{} {e:#}",

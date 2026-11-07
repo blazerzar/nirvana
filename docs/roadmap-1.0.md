@@ -152,14 +152,12 @@ logged from the start.
       no `{0}` in `#[from]` variants (config, I/O, DB, keyring), lowercase
       CLI messages (`connection '{query}' not found`).
 - [x] Check there is correct and sufficient logging.
-- [ ] Add scripts for seting up DB with dev data (profile, connections with
-      credentials from infisical).
 
 ## Settings, logs and config CLI
 
 - [ ] Add commands for reading and setting profile settings.
 - [ ] Add commands for reading and setting connection settings.
-- [ ] Add commands for reading and clearing logs.
+- [x] Add commands for reading and clearing logs.
 - [ ] Add commands for reading and setting config.
 
 ## Tickets
@@ -175,6 +173,8 @@ logged from the start.
 
 ## Tracking
 
+- [ ] Add scripts for seting up DB with dev data (profile, connections with
+      credentials from infisical).
 - [ ] Make sure start, stop, resume, switch, edit, delete are working and tested.
 - [ ] Get these commands working in CLI and start integration testing as well.
 - [ ] Check for blocking calls inside async code while refactoring the CLI.
@@ -234,6 +234,7 @@ logged from the start.
       the active connection and build it themselves.
 - [ ] Separate profile settings from machine settings.
 - [ ] Export logs to CSV and JSON.
+- [ ] Rotate the log file.
 - [ ] Connection health checks (ping every 60 s, latency, auth status).
 - [ ] Change notification so CLI, desktop and web stay in sync.
 

@@ -12,7 +12,7 @@ use sea_orm::{
     ActiveModelTrait, DatabaseConnection, DbErr, EntityTrait, ModelTrait, QueryFilter, QueryOrder,
     QuerySelect, QueryTrait, Set, SqlErr, TransactionTrait,
 };
-use tracing::info;
+use tracing::debug;
 
 use crate::domain::{Connection, ConnectionData, ConnectionEdit, Kind, Settings};
 use crate::errors::{DomainError, NirvanaError};
@@ -47,7 +47,7 @@ impl Nirvana {
         } = connection;
         let profile = self.find_active_profile().await?;
 
-        info!(%secret_store, "adding connection");
+        debug!(%name, %kind, %secret_store, "adding connection");
         let secret = store_secret(&self.keyring, &profile.name, &name, secret_store, token).await?;
 
         let model = connection::ActiveModel {
@@ -260,7 +260,7 @@ impl Nirvana {
     pub async fn test_connection(&self, name: &str) -> Result<(), NirvanaError> {
         let connection = self.get_connection(name).await?;
 
-        info!(kind = %connection.kind, "testing connection");
+        debug!(%name, kind = %connection.kind, "testing connection");
         let token = read_credential(&self.keyring, connection.model.id, &self.db).await?;
         Integration::new(&connection, token)?
             .test_connection()

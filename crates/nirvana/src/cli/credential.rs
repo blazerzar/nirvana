@@ -4,6 +4,7 @@ use nirvana_core::domain::{Credential, SecretLocation};
 use nirvana_core::secrets::{SecretStore, selectable_stores};
 use nirvana_core::service::Nirvana;
 use secrecy::SecretString;
+use tracing::info;
 
 use crate::cli::table::{self, Column};
 use crate::cli::theme;
@@ -57,6 +58,7 @@ pub(crate) async fn update(name: Option<String>, token: Option<String>) -> anyho
     service
         .update_credential(&name, SecretString::from(token))
         .await?;
+    info!(%name, "credential updated");
 
     Term::stdout().write_line(&format!(
         "{} credential of {}",
@@ -78,6 +80,7 @@ pub(crate) async fn move_to(name: Option<String>, to: Option<SecretStore>) -> an
     };
 
     service.move_credential(&name, to).await?;
+    info!(%name, %to, "credential moved");
 
     Term::stdout().write_line(&format!(
         "{} credential of {} to {}",

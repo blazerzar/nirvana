@@ -6,7 +6,8 @@
 //! # Levels
 //!
 //! - `error`, `warn`
-//! - `info`: user issued commands and state changes
+//! - `info`: user issued commands, logged by the frontend, and DB and config
+//!   migrations
 //! - `debug`: everything else
 //! - `trace`: dev only, compiled out in release builds
 //!

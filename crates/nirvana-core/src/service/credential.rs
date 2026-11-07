@@ -9,7 +9,7 @@ use sea_orm::{
     ActiveModelTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder, Set,
 };
 use secrecy::{ExposeSecret, SecretString};
-use tracing::info;
+use tracing::debug;
 
 use crate::domain::{Credential, SecretLocation};
 use crate::errors::{DomainError, NirvanaError};
@@ -74,7 +74,7 @@ impl Nirvana {
         let profile = self.find_active_profile().await?;
         let (_, credential) = self.find_credential(profile.id, name).await?;
 
-        info!(secret_store = %credential.secret_store, "updating credential");
+        debug!(%name, secret_store = %credential.secret_store, "updating credential");
         match credential.secret_store {
             SecretStore::Plaintext => {
                 let mut credential: credential::ActiveModel = credential.into();
@@ -119,7 +119,7 @@ impl Nirvana {
                 Err(DomainError::CredentialAlreadyIn(name.to_owned(), to).into())
             }
             (SecretStore::Plaintext, SecretStore::Keyring) => {
-                info!(%from, %to, "moving credential");
+                debug!(%name, %from, %to, "moving credential");
                 let token = SecretString::from(credential.credential.clone());
                 let account = keyring_account(&profile.name, &connection.name);
                 let account = set_in_keychain(&self.keyring, account, token).await?;
@@ -130,7 +130,7 @@ impl Nirvana {
                 Ok(moved?)
             }
             (SecretStore::Keyring, SecretStore::Plaintext) => {
-                info!(%from, %to, "moving credential");
+                debug!(%name, %from, %to, "moving credential");
                 let account = credential.credential.clone();
                 let token =
                     read_from_keychain(&self.keyring, connection.id, account.clone()).await?;

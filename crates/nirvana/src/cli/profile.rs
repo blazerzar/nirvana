@@ -3,6 +3,7 @@ use console::{Alignment, Term, style};
 use dialoguer::{Confirm, Input, Select};
 use nirvana_core::errors::DomainError;
 use nirvana_core::service::Nirvana;
+use tracing::info;
 
 use crate::cli::table::{self, Column};
 use crate::cli::theme;
@@ -31,6 +32,7 @@ pub(crate) async fn switch(name: Option<String>) -> anyhow::Result<()> {
 
     let term = Term::stdout();
     if service.switch_profile(&name).await? {
+        info!(%name, "profile switched");
         print_switched(&term, &name)?;
     } else {
         term.write_line(&format!(
@@ -124,6 +126,7 @@ pub(crate) async fn create(name: Option<String>, switch: bool) -> anyhow::Result
 
     let mut service = Nirvana::new().await?;
     let created = service.create_profile(name).await?;
+    info!(name = %created.name, "profile created");
 
     let term = Term::stdout();
     term.write_line(&format!(
@@ -134,6 +137,7 @@ pub(crate) async fn create(name: Option<String>, switch: bool) -> anyhow::Result
 
     if switch {
         service.switch_profile(&created.name).await?;
+        info!(name = %created.name, "profile switched");
         print_switched(&term, &created.name)?;
     }
 
@@ -178,12 +182,14 @@ pub(crate) async fn delete(name: Option<String>, yes: bool) -> anyhow::Result<()
             .interact()?
     {
         let active = service.delete_profile(&name).await?;
+        info!(%name, "profile deleted");
         term.write_line(&format!(
             "{} profile {}",
             style("Deleted").green(),
             style(&name).bold(),
         ))?;
         if let Some(active) = active {
+            info!(name = %active, "profile switched");
             print_switched(&term, &active)?;
         }
     } else {
@@ -215,6 +221,7 @@ pub(crate) async fn rename(name: Option<String>, new_name: Option<String>) -> an
     };
 
     service.rename_profile(&name, new_name.clone()).await?;
+    info!(%name, %new_name, "profile renamed");
 
     let term = Term::stdout();
     term.write_line(&format!(

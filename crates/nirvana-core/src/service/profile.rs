@@ -10,6 +10,7 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ActiveModelTrait, DatabaseConnection, EntityTrait, ModelTrait, QueryFilter, QueryOrder, SqlErr,
 };
+use tracing::warn;
 
 use crate::errors::{DomainError, NirvanaError};
 use crate::secrets::{SecretStore, delete_from_keychain};
@@ -186,16 +187,20 @@ pub(crate) async fn resolve(
     db: &DatabaseConnection,
     configured: Option<String>,
 ) -> Result<Option<String>, NirvanaError> {
-    if let Some(name) = configured
-        && ProfileEntity::find_by_name(&name).one(db).await?.is_some()
+    if let Some(name) = &configured
+        && ProfileEntity::find_by_name(name).one(db).await?.is_some()
     {
-        return Ok(Some(name));
+        return Ok(configured);
     }
-    Ok(ProfileEntity::find()
+    let oldest = ProfileEntity::find()
         .order_by_asc(profile::COLUMN.id)
         .one(db)
         .await?
-        .map(|profile| profile.name))
+        .map(|profile| profile.name);
+    if let Some(name) = configured {
+        warn!(%name, fallback = ?oldest, "configured profile not found");
+    }
+    Ok(oldest)
 }
 
 #[cfg(test)]

@@ -9,6 +9,7 @@ use nirvana_core::errors::{DomainError, NirvanaError};
 use nirvana_core::secrets::{SecretStore, selectable_stores};
 use nirvana_core::service::Nirvana;
 use secrecy::SecretString;
+use tracing::{info, warn};
 
 use crate::cli::table::{self, Column};
 use crate::cli::theme;
@@ -52,6 +53,12 @@ pub(crate) async fn add(
     };
 
     let added = service.add_connection(connection).await?;
+    info!(
+        name = %added.model.name,
+        kind = %added.kind,
+        secret_store = %added.secret_store,
+        "connection added"
+    );
 
     let term = Term::stdout();
     term.write_line(&format!(
@@ -221,7 +228,9 @@ pub(crate) async fn edit(
     }
 
     let edited_name = edit.name.clone().unwrap_or_else(|| name.clone());
+    let changes = format!("{edit:?}");
     service.edit_connection(&name, edit).await?;
+    info!(%name, %changes, "connection edited");
 
     term.write_line(&format!(
         "{} connection {}",
@@ -310,6 +319,7 @@ pub(crate) async fn delete(
             .interact()?
     {
         service.delete_connection(&name, with_tickets).await?;
+        info!(%name, with_tickets, "connection deleted");
         term.write_line(&format!(
             "{} connection {}",
             style("Deleted").green(),
@@ -366,11 +376,12 @@ pub(crate) async fn test(name: Option<String>, all: bool) -> anyhow::Result<()> 
         let name = &connection.model.name;
         if let Err(e) = test_one(&service, &term, name).await {
             failed += 1;
+            let error = format!("{:#}", anyhow::Error::from(e));
+            warn!(%name, %error, "connection test failed");
             term.write_line(&format!(
-                "{} {} {:#}",
+                "{} {} {error}",
                 style("✗").red(),
                 style(name).bold(),
-                anyhow::Error::from(e),
             ))?;
         }
     }
@@ -388,6 +399,7 @@ async fn test_one(service: &Nirvana, term: &Term, name: &str) -> Result<(), Nirv
     let result = service.test_connection(name).await;
     spinner.finish_and_clear();
     result?;
+    info!(%name, "connection tested");
 
     term.write_line(&format!(
         "{} {} {}",

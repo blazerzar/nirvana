@@ -151,7 +151,7 @@ logged from the start.
 - [x] Fix error messages of the errors these commands return (decision 21):
       no `{0}` in `#[from]` variants (config, I/O, DB, keyring), lowercase
       CLI messages (`connection '{query}' not found`).
-- [ ] Check there is correct and sufficient logging.
+- [x] Check there is correct and sufficient logging.
 - [ ] Add scripts for seting up DB with dev data (profile, connections with
       credentials from infisical).
 

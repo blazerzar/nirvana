@@ -7,6 +7,7 @@
 use reqwest::{Method, RequestBuilder, Response, StatusCode};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
+use tracing::debug;
 
 use crate::integration::{IntegrationError, IssueInfo, TIMEOUT};
 
@@ -95,6 +96,7 @@ fn check_status(
     response: Response,
     ticket_key: Option<&str>,
 ) -> Result<Response, IntegrationError> {
+    debug!(url = %response.url(), status = %response.status(), "jira response");
     match (response.status(), ticket_key) {
         (StatusCode::NOT_FOUND, Some(key)) => {
             Err(IntegrationError::TicketNotFound(key.to_string()))

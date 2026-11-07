@@ -184,8 +184,8 @@ pub(crate) async fn read_from_keychain(
 /// Deletes the keyring entry of `account`. Failures are logged instead of
 /// returned.
 pub(crate) async fn delete_from_keychain(keyring: &StoreFactory, account: String) {
-    if let Err(e) = delete_entry(keyring, account).await {
-        warn!(error = %e, "failed to delete keyring entry");
+    if let Err(e) = delete_entry(keyring, account.clone()).await {
+        warn!(%account, error = %e, "failed to delete keyring entry");
     }
 }
 

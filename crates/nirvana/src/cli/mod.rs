@@ -261,10 +261,11 @@ pub(crate) fn theme() -> ColorfulTheme {
 }
 
 pub(crate) async fn run() -> anyhow::Result<()> {
-    let args: Vec<_> = std::env::args_os()
-        .skip(1)
-        .map(|arg| arg.to_string_lossy().into_owned())
-        .collect();
+    let args = mask_secrets(
+        std::env::args_os()
+            .skip(1)
+            .map(|arg| arg.to_string_lossy().into_owned()),
+    );
     debug!(?args, "command ran");
 
     let cli = Cli::parse();
@@ -312,5 +313,75 @@ pub(crate) async fn run() -> anyhow::Result<()> {
             Credential::Move { name, to } => credential::move_to(name, to).await,
         },
         None => Ok(()),
+    }
+}
+
+const SECRET_FLAGS: [&str; 2] = ["--credential", "--token"];
+const MASK: &str = "***";
+
+/// Replaces the values of [`SECRET_FLAGS`], given as `--flag value` or
+/// `--flag=value`, with [`MASK`].
+fn mask_secrets(args: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut mask_next = false;
+    args.into_iter()
+        .map(|arg| {
+            if std::mem::take(&mut mask_next) {
+                return MASK.to_string();
+            }
+            if let Some((flag, _)) = arg.split_once('=')
+                && SECRET_FLAGS.contains(&flag)
+            {
+                return format!("{flag}={MASK}");
+            }
+            mask_next = SECRET_FLAGS.contains(&arg.as_str());
+            arg
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(args: &[&str]) -> Vec<String> {
+        args.iter().map(|arg| arg.to_string()).collect()
+    }
+
+    #[test]
+    fn mask_secrets_masks_separate_values() {
+        assert_eq!(
+            mask_secrets(args(&[
+                "connection",
+                "add",
+                "jira",
+                "--credential",
+                "me@example.com:secret",
+                "--storage",
+                "keyring",
+            ])),
+            args(&[
+                "connection",
+                "add",
+                "jira",
+                "--credential",
+                MASK,
+                "--storage",
+                "keyring",
+            ])
+        );
+    }
+
+    #[test]
+    fn mask_secrets_masks_inline_values() {
+        assert_eq!(
+            mask_secrets(args(&["credential", "update", "jira", "--token=secret"])),
+            args(&["credential", "update", "jira", "--token=***"])
+        );
+    }
+
+    #[test]
+    fn mask_secrets_keeps_other_args() {
+        let other = args(&["connection", "edit", "jira", "--host=example.com"]);
+        assert_eq!(mask_secrets(other.clone()), other);
     }
 }

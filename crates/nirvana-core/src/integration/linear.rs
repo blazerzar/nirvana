@@ -10,6 +10,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
+use tracing::debug;
 
 use crate::integration::{IntegrationError, IssueInfo, TIMEOUT};
 
@@ -89,16 +90,16 @@ impl LinearIntegration {
         query: &str,
         variables: serde_json::Value,
     ) -> Result<T, IntegrationError> {
-        let response: GraphQlResponse<T> = self
+        let response = self
             .client
             .post(API_URL)
             .header(AUTHORIZATION, self.token.expose_secret())
             .json(&json!({ "query": query, "variables": variables }))
             .timeout(TIMEOUT)
             .send()
-            .await?
-            .json()
             .await?;
+        debug!(status = %response.status(), "linear response");
+        let response: GraphQlResponse<T> = response.json().await?;
 
         if let Some(error) = response.errors.into_iter().next() {
             return Err(match error.extensions.code.as_deref() {

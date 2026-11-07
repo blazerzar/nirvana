@@ -3,6 +3,10 @@
 # so the keychain keeps "Always Allow" across rebuilds.
 set -euo pipefail
 
+if [[ -n "${CI:-}" ]]; then
+    exec "$@"
+fi
+
 identity="Nirvana Dev"
 identifier="nirvana"
 

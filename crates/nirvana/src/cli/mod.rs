@@ -15,8 +15,7 @@ use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Args, Parser, Subcommand};
 use console::Style;
 use dialoguer::theme::ColorfulTheme;
-use nirvana_core::domain::Kind;
-use nirvana_core::secrets::{SecretStore, selectable_stores};
+use nirvana_core::{Kind, SecretStore, selectable_stores};
 use tracing::debug;
 
 #[derive(Parser)]

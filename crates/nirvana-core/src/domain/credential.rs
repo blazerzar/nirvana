@@ -1,4 +1,4 @@
-use nirvana_entity::credential::SecretStore;
+pub use nirvana_entity::credential::SecretStore;
 
 /// Where the token of a connection is stored. Tokens are never returned.
 #[derive(Debug, PartialEq, Eq)]

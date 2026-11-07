@@ -1,8 +1,6 @@
 use console::{Term, style};
 use dialoguer::{Password, Select};
-use nirvana_core::domain::{Credential, SecretLocation};
-use nirvana_core::secrets::{SecretStore, selectable_stores};
-use nirvana_core::service::Nirvana;
+use nirvana_core::{Credential, Nirvana, SecretLocation, SecretStore, selectable_stores};
 use secrecy::SecretString;
 use tracing::info;
 

@@ -21,12 +21,13 @@
 use std::sync::Arc;
 
 use keyring_core::CredentialStore;
-pub use nirvana_entity::credential::{Entity as CredentialEntity, SecretStore};
+use nirvana_entity::credential::Entity as CredentialEntity;
 use sea_orm::{DatabaseConnection, DbErr, EntityTrait};
 use secrecy::{ExposeSecret, SecretString};
 use thiserror::Error;
 use tracing::warn;
 
+use crate::domain::SecretStore;
 use crate::errors::NirvanaError;
 
 #[cfg(target_os = "macos")]

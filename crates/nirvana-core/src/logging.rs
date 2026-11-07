@@ -51,7 +51,7 @@ const CRATES: [&str; 4] = [
 /// use tracing_subscriber::layer::SubscriberExt;
 /// use tracing_subscriber::util::SubscriberInitExt;
 ///
-/// match nirvana_core::logging::file_layer() {
+/// match nirvana_core::file_layer() {
 ///     Ok(layer) => tracing_subscriber::registry().with(layer).init(),
 ///     Err(e) => eprintln!("logging disabled: {e}"),
 /// }

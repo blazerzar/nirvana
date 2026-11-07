@@ -1,11 +1,15 @@
 mod config;
-pub mod domain;
-pub mod errors;
+mod domain;
+mod errors;
 mod integration;
-pub mod logging;
+mod logging;
 mod paths;
-pub mod secrets;
-pub mod service;
+mod secrets;
+mod service;
 mod storage;
 
-pub use nirvana_entity as entity;
+pub use domain::*;
+pub use errors::{DomainError, NirvanaError};
+pub use logging::file_layer;
+pub use secrets::selectable_stores;
+pub use service::Nirvana;

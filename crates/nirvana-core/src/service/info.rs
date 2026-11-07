@@ -3,8 +3,9 @@
 //! Diagnostics about the running app: version, file locations, SQLite
 //! version, keyring status and dev mode.
 
+use crate::domain::AppInfo;
 use crate::errors::NirvanaError;
-use crate::service::{AppInfo, Nirvana};
+use crate::service::Nirvana;
 use crate::{secrets, storage};
 
 impl Nirvana {

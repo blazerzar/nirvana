@@ -11,11 +11,10 @@ use sea_orm::{
 use secrecy::{ExposeSecret, SecretString};
 use tracing::debug;
 
-use crate::domain::{Credential, SecretLocation};
+use crate::domain::{Credential, SecretLocation, SecretStore};
 use crate::errors::{DomainError, NirvanaError};
 use crate::secrets::{
-    SecretError, SecretStore, delete_from_keychain, keyring_account, read_from_keychain,
-    set_in_keychain,
+    SecretError, delete_from_keychain, keyring_account, read_from_keychain, set_in_keychain,
 };
 use crate::service::Nirvana;
 

@@ -4,10 +4,10 @@ use anyhow::bail;
 use console::{Term, style};
 use dialoguer::{Confirm, Input, Password, Select};
 use indicatif::ProgressBar;
-use nirvana_core::domain::{ConnectionData, ConnectionEdit, Kind};
-use nirvana_core::errors::{DomainError, NirvanaError};
-use nirvana_core::secrets::{SecretStore, selectable_stores};
-use nirvana_core::service::Nirvana;
+use nirvana_core::{
+    ConnectionData, ConnectionEdit, DomainError, Kind, Nirvana, NirvanaError, SecretStore,
+    selectable_stores,
+};
 use secrecy::SecretString;
 use tracing::{info, warn};
 

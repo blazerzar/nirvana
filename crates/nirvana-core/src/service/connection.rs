@@ -14,10 +14,10 @@ use sea_orm::{
 };
 use tracing::debug;
 
-use crate::domain::{Connection, ConnectionData, ConnectionEdit, Kind, Settings};
+use crate::domain::{Connection, ConnectionData, ConnectionEdit, Kind, SecretStore, Settings};
 use crate::errors::{DomainError, NirvanaError};
 use crate::integration::Integration;
-use crate::secrets::{SecretStore, delete_from_keychain, read_credential, store_secret};
+use crate::secrets::{delete_from_keychain, read_credential, store_secret};
 use crate::service::Nirvana;
 
 impl Nirvana {

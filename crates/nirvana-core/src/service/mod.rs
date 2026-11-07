@@ -5,14 +5,12 @@ mod profile;
 #[cfg(test)]
 mod test_support;
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use sea_orm::DatabaseConnection;
 use tracing::warn;
 
 use crate::config::{AppConfig, ConfigError};
-pub use crate::domain::{ActiveProfile, Change, Profile, SlotCreate, SlotEdit, SlotSort};
 use crate::errors::NirvanaError;
 use crate::paths::AppPaths;
 use crate::secrets::{StoreFactory, native_store};
@@ -23,16 +21,6 @@ pub struct Nirvana {
     config: Result<AppConfig, Arc<ConfigError>>,
     db: DatabaseConnection,
     keyring: StoreFactory,
-}
-
-pub struct AppInfo {
-    pub version: String,
-    pub config_file: PathBuf,
-    pub db_file: PathBuf,
-    pub log_file: PathBuf,
-    pub sqlite_version: String,
-    pub keyring: Result<String, String>,
-    pub is_dev: bool,
 }
 
 impl Nirvana {

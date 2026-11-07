@@ -6,7 +6,7 @@ mod cli;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    match nirvana_core::logging::file_layer() {
+    match nirvana_core::file_layer() {
         Ok(layer) => tracing_subscriber::registry().with(layer).init(),
         Err(e) => eprintln!(
             "{} logging disabled: {e}",

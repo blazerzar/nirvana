@@ -2,12 +2,11 @@ use std::sync::Arc;
 
 use thiserror::Error;
 
-pub use crate::config::ConfigError;
-use crate::domain::Kind;
-pub use crate::integration::IntegrationError;
-pub use crate::secrets::SecretError;
-use crate::secrets::SecretStore;
-pub use crate::storage::DbError;
+use crate::config::ConfigError;
+use crate::domain::{Kind, SecretStore};
+use crate::integration::IntegrationError;
+use crate::secrets::SecretError;
+use crate::storage::DbError;
 
 #[derive(Debug, Error)]
 pub enum NirvanaError {

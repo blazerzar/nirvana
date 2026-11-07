@@ -12,9 +12,10 @@ use sea_orm::{
 };
 use tracing::warn;
 
+use crate::domain::{ActiveProfile, Profile, SecretStore};
 use crate::errors::{DomainError, NirvanaError};
-use crate::secrets::{SecretStore, delete_from_keychain};
-use crate::service::{ActiveProfile, Nirvana, Profile};
+use crate::secrets::delete_from_keychain;
+use crate::service::Nirvana;
 
 impl Nirvana {
     /// Makes the profile named `name` active and saves the config. Returns

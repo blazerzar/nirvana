@@ -1,7 +1,7 @@
 use std::env;
 
 use console::{Style, Term};
-use nirvana_core::service::Nirvana;
+use nirvana_core::Nirvana;
 
 const SHORT_HASH: Option<&str> = option_env!("SHORT_HASH");
 const COMMIT_HASH: Option<&str> = option_env!("COMMIT_HASH");

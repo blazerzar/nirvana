@@ -1,8 +1,7 @@
 use anyhow::bail;
 use console::{Alignment, Term, style};
 use dialoguer::{Confirm, Input, Select};
-use nirvana_core::errors::DomainError;
-use nirvana_core::service::Nirvana;
+use nirvana_core::{DomainError, Nirvana};
 use tracing::info;
 
 use crate::cli::table::{self, Column};

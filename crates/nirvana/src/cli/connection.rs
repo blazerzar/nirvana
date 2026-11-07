@@ -1,379 +1,445 @@
-use std::cmp::max;
+use std::time::{Duration, Instant};
 
-use chrono::{Local, TimeZone};
-use clap::ValueEnum;
-use console::{Style, Term};
-use dialoguer::theme::ColorfulTheme;
-use dialoguer::{Input, Password, Select};
-use nirvana_core::domain::{Connection, ConnectionData};
+use anyhow::bail;
+use console::{Term, style};
+use dialoguer::{Confirm, Input, Password, Select};
+use indicatif::ProgressBar;
+use nirvana_core::domain::{ConnectionData, ConnectionEdit, Kind};
+use nirvana_core::errors::{DomainError, NirvanaError};
 use nirvana_core::secrets::{SecretStore, selectable_stores};
 use nirvana_core::service::Nirvana;
+use secrecy::SecretString;
+use tracing::{info, warn};
 
-use crate::cli::{AddArgs, ConnectionKind};
+use crate::cli::table::{self, Column};
+use crate::cli::theme;
+use crate::cli::time::format_timestamp;
 
-enum Column {
-    Unlimited(&'static str),
-    Limited(&'static str, usize),
-    Static(&'static str, usize),
-}
-
-impl Column {
-    fn header(&self) -> &'static str {
-        match self {
-            Column::Unlimited(h) | Column::Limited(h, _) | Column::Static(h, _) => h,
-        }
-    }
-
-    fn initial_width(&self) -> usize {
-        match self {
-            Column::Unlimited(h) => h.len(),
-            Column::Limited(h, _) => h.len(),
-            Column::Static(h, n) => max(h.len(), *n),
-        }
-    }
-
-    fn fit(&self, current: usize, cell: &str) -> usize {
-        match self {
-            Column::Unlimited(_) => max(current, cell.len()),
-            Column::Limited(_, cap) => max(current, cell.len().min(*cap)),
-            Column::Static(_, _) => current,
-        }
-    }
-
-    fn render(&self, cell: &str) -> String {
-        match self {
-            Column::Limited(_, cap) if cell.len() > *cap => {
-                let mut s = cell[..cap.saturating_sub(1)].to_string();
-                s.push('…');
-                s
-            }
-            Column::Static(_, n) if cell.len() > *n => cell[..*n].to_string(),
-            _ => cell.to_string(),
-        }
-    }
-}
-
-const COLUMNS: &[Column] = &[
-    Column::Unlimited("ID"),
-    Column::Static("ACTIVE", "ACTIVE".len()),
-    Column::Limited("NAME", 15),
-    Column::Unlimited("KIND"),
-    Column::Limited("HOST", 30),
-    Column::Limited("IDENTITY", 25),
-    Column::Static("UPDATED", "2026-05-17".len()),
+const COLUMNS: [Column; 7] = [
+    Column::new("NAME").max_width(30),
+    Column::new("KIND"),
+    Column::new("HOST").max_width(40),
+    Column::new("IDENTITY").max_width(30),
+    Column::new("STORAGE"),
+    Column::new("CREATED"),
+    Column::new("UPDATED"),
 ];
 
-pub(crate) async fn list() -> anyhow::Result<()> {
-    let api = Nirvana::new().await?;
-    let connections = api.list_connections().await?;
+pub(crate) async fn add(
+    name: Option<String>,
+    kind: Option<Kind>,
+    host: Option<String>,
+    credential: Option<String>,
+    storage: Option<SecretStore>,
+) -> anyhow::Result<()> {
+    let service = Nirvana::new().await?;
+
+    let connection = match (name, kind, host, storage) {
+        (Some(name), Some(kind), Some(host), Some(secret_store)) => {
+            let (identity, token) = match credential {
+                Some(credential) => split_credential(kind, credential)?,
+                None => prompt_credential(kind)?,
+            };
+            ConnectionData {
+                name,
+                kind,
+                host,
+                identity,
+                secret_store,
+                token: SecretString::from(token),
+            }
+        }
+        _ => add_interactive(&service).await?,
+    };
+
+    let added = service.add_connection(connection).await?;
+    info!(
+        name = %added.model.name,
+        kind = %added.kind,
+        secret_store = %added.secret_store,
+        "connection added"
+    );
 
     let term = Term::stdout();
+    term.write_line(&format!(
+        "{} connection {}",
+        style("Added").green(),
+        style(&added.model.name).bold(),
+    ))?;
+
+    Ok(())
+}
+
+fn split_credential(kind: Kind, credential: String) -> anyhow::Result<(Option<String>, String)> {
+    match kind {
+        Kind::JiraCloud => match credential.split_once(':') {
+            Some((email, token)) => Ok((Some(email.to_owned()), token.to_owned())),
+            None => bail!("{kind} credential must be \"<email>:<token>\""),
+        },
+        Kind::JiraDc | Kind::Linear => Ok((None, credential)),
+    }
+}
+
+fn prompt_credential(kind: Kind) -> anyhow::Result<(Option<String>, String)> {
+    let identity = match kind {
+        Kind::JiraCloud => Some(
+            Input::<String>::with_theme(&theme())
+                .with_prompt("Email")
+                .interact_text()?,
+        ),
+        Kind::JiraDc | Kind::Linear => None,
+    };
+
+    let token = Password::with_theme(&theme())
+        .with_prompt("Token")
+        .interact()?;
+
+    Ok((identity, token))
+}
+
+async fn add_interactive(service: &Nirvana) -> anyhow::Result<ConnectionData> {
+    service.active_profile().await?;
+
+    let name = Input::<String>::with_theme(&theme())
+        .with_prompt("Connection name")
+        .interact_text()?;
+
+    let kind = Kind::ALL[Select::with_theme(&theme())
+        .with_prompt("Connection kind")
+        .items(Kind::ALL)
+        .default(0)
+        .interact()?];
+
+    let host = Input::<String>::with_theme(&theme())
+        .with_prompt("Host URL")
+        .interact_text()?;
+
+    let (identity, token) = prompt_credential(kind)?;
+
+    let keyring_available = service.keyring_status().await.is_ok();
+    let stores: Vec<SecretStore> = selectable_stores()
+        .iter()
+        .copied()
+        .filter(|store| keyring_available || *store != SecretStore::Keyring)
+        .collect();
+    let secret_store = stores[Select::with_theme(&theme())
+        .with_prompt("Where to store the token")
+        .items(&stores)
+        .default(0)
+        .interact()?];
+
+    Ok(ConnectionData {
+        name,
+        kind,
+        host,
+        identity,
+        secret_store,
+        token: SecretString::from(token),
+    })
+}
+
+pub(crate) async fn list() -> anyhow::Result<()> {
+    let service = Nirvana::new().await?;
+    let connections = service.list_connections().await?;
+    let term = Term::stdout();
     if connections.is_empty() {
-        term.write_line("No connections found.")?;
-        term.write_line("Add one with: nirvana connection add")?;
+        print_no_connections(&term)?;
         return Ok(());
     }
 
-    let rows: Vec<[String; COLUMNS.len()]> = connections
-        .iter()
-        .map(|c| {
-            let updated = Local
-                .timestamp_opt(c.model.updated_at, 0)
-                .single()
-                .unwrap()
-                .date_naive()
-                .to_string();
-            let active = if is_active(c, &api) { "*" } else { "" };
+    let rows: Vec<[String; 7]> = connections
+        .into_iter()
+        .map(|connection| {
             [
-                c.model.id.to_string(),
-                active.to_string(),
-                c.model.name.clone(),
-                c.kind.as_str().to_string(),
-                c.model.host.clone(),
-                c.model.identity.clone(),
-                updated,
+                connection.model.name,
+                connection.kind.to_string(),
+                connection.model.host,
+                connection.model.identity.unwrap_or_default(),
+                connection.secret_store.to_string(),
+                format_timestamp(connection.model.created_at),
+                format_timestamp(connection.model.updated_at),
             ]
         })
         .collect();
 
-    let mut widths: Vec<usize> = COLUMNS.iter().map(|c| c.initial_width()).collect();
-    for row in &rows {
-        for (i, cell) in row.iter().enumerate() {
-            widths[i] = COLUMNS[i].fit(widths[i], cell);
-        }
-    }
-
-    let bold = Style::new().bold();
-    let header: Vec<&str> = COLUMNS.iter().map(|c| c.header()).collect();
-    print_row(&term, &header, &widths, Some(&bold))?;
-
-    for row in &rows {
-        let cells: Vec<String> = row
-            .iter()
-            .enumerate()
-            .map(|(i, cell)| COLUMNS[i].render(cell))
-            .collect();
-        let cell_refs: Vec<&str> = cells.iter().map(|s| s.as_str()).collect();
-        print_row(&term, &cell_refs, &widths, None)?;
-    }
-
-    Ok(())
+    table::print(&term, &COLUMNS, &rows)
 }
 
-fn is_active(conn: &Connection, api: &Nirvana) -> bool {
-    api.active_profile()
-        .is_ok_and(|id| id == conn.model.profile_id)
-}
-
-fn print_row(
-    term: &Term,
-    cells: &[&str],
-    widths: &[usize],
-    style: Option<&Style>,
-) -> anyhow::Result<()> {
-    debug_assert_eq!(cells.len(), widths.len());
-    debug_assert_eq!(cells.len(), COLUMNS.len());
-
-    let parts: Vec<String> = cells
-        .iter()
-        .zip(widths)
-        .enumerate()
-        .map(|(i, (cell, w))| {
-            let padded = match i {
-                0 => format!("{:>w$}", cell, w = *w),
-                1 => format!("{:^w$}", cell, w = *w),
-                _ => format!("{:<w$}", cell, w = *w),
-            };
-            match style {
-                Some(s) => s.apply_to(padded).to_string(),
-                None => padded,
-            }
-        })
-        .collect();
-
-    term.write_line(&parts.join("  "))?;
-    Ok(())
-}
-
-pub(crate) async fn activate(query: Option<&str>) -> anyhow::Result<()> {
-    let mut api = Nirvana::new().await?;
-    let connections = api.list_connections().await?;
-
-    if connections.is_empty() {
-        let term = Term::stdout();
-        term.write_line("No connections found.")?;
-        term.write_line("Add one with: nirvana connection add")?;
-        return Ok(());
-    }
-
-    let idx = match query {
-        Some(q) => resolve_query(q, &connections)?,
-        None => pick_interactive(&connections)?,
-    };
-    let chosen = &connections[idx];
-
-    api.set_active_profile(chosen.model.profile_id).await?;
-    let term = Term::stdout();
+fn print_no_connections(term: &Term) -> std::io::Result<()> {
+    term.write_line(&format!("{}", style("No connections found").yellow()))?;
     term.write_line(&format!(
-        "Active profile set to id {}",
-        chosen.model.profile_id
-    ))?;
-    Ok(())
+        "Add one with: {}",
+        style("nirvana connection add").bold()
+    ))
 }
 
-fn resolve_query(query: &str, connections: &[Connection]) -> anyhow::Result<usize> {
-    if let Ok(id) = query.parse::<i64>()
-        && let Some(idx) = connections.iter().position(|c| c.model.id == id)
-    {
-        return Ok(idx);
+async fn select_connection(service: &Nirvana, prompt: &str) -> anyhow::Result<Option<String>> {
+    let connections = service.active_profile().await?.connections;
+
+    let term = Term::stdout();
+    if connections.is_empty() {
+        print_no_connections(&term)?;
+        return Ok(None);
     }
-    if let Some(idx) = connections.iter().position(|c| c.model.name == query) {
-        return Ok(idx);
-    }
-    anyhow::bail!("Connection '{query}' not found")
-}
 
-fn pick_interactive(connections: &[Connection]) -> anyhow::Result<usize> {
-    let dim = Style::new().dim();
-    let name_width = connections
-        .iter()
-        .map(|c| c.model.name.len())
-        .max()
-        .unwrap_or(0);
-
-    let items: Vec<String> = connections
-        .iter()
-        .map(|c| {
-            format!(
-                "{:name_w$}  {} {}",
-                c.model.name,
-                dim.apply_to(&c.model.identity),
-                dim.apply_to(format!("({})", c.kind.as_str())),
-                name_w = name_width,
-            )
-        })
-        .collect();
-
-    let theme = ColorfulTheme {
-        active_item_prefix: Style::new().green().apply_to(String::from("❯")),
-        ..ColorfulTheme::default()
-    };
-
-    let idx = Select::with_theme(&theme)
-        .with_prompt("Select a connection")
+    let mut items: Vec<String> = connections.into_iter().map(|c| c.model.name).collect();
+    let idx = Select::with_theme(&theme())
+        .with_prompt(prompt)
         .items(&items)
         .default(0)
         .interact_opt()?;
 
-    match idx {
-        Some(i) => Ok(i),
-        None => std::process::exit(0),
+    if idx.is_none() {
+        term.write_line(&format!("{}", style("No connection selected").yellow()))?;
     }
+    Ok(idx.map(|i| items.swap_remove(i)))
 }
 
-pub(crate) async fn add(args: AddArgs) -> anyhow::Result<()> {
-    let mut api = Nirvana::new().await?;
-    let data = if args.name.is_none() {
-        add_interactive(&api).await?
-    } else {
-        add_command(args)?
+pub(crate) async fn edit(
+    name: Option<String>,
+    new_name: Option<String>,
+    host: Option<String>,
+    identity: Option<String>,
+) -> anyhow::Result<()> {
+    let service = Nirvana::new().await?;
+
+    let (name, edit) = match name {
+        Some(name) if new_name.is_some() || host.is_some() || identity.is_some() => (
+            name,
+            ConnectionEdit {
+                name: new_name,
+                host,
+                identity,
+            },
+        ),
+        name => match edit_interactive(&service, name).await? {
+            Some(choice) => choice,
+            None => return Ok(()),
+        },
     };
 
-    let connection = api.add_connection(data).await?;
-
     let term = Term::stdout();
+    if edit.name.is_none() && edit.host.is_none() && edit.identity.is_none() {
+        term.write_line(&format!(
+            "{}",
+            style(format!("Connection {name} was not changed")).yellow()
+        ))?;
+        return Ok(());
+    }
+
+    let edited_name = edit.name.clone().unwrap_or_else(|| name.clone());
+    let changes = format!("{edit:?}");
+    service.edit_connection(&name, edit).await?;
+    info!(%name, %changes, "connection edited");
+
     term.write_line(&format!(
-        "Added connection '{}' (id {})",
-        connection.model.name, connection.model.id
+        "{} connection {}",
+        style("Updated").green(),
+        style(&edited_name).bold(),
     ))?;
 
-    let use_it = dialoguer::Confirm::new()
-        .with_prompt("Use this connection?")
-        .default(true)
-        .interact()?;
+    Ok(())
+}
 
-    if use_it {
-        api.set_active_profile(connection.model.profile_id).await?;
+/// Prompts for every field of the connection with its current value as the
+/// default and keeps only the changed ones.
+async fn edit_interactive(
+    service: &Nirvana,
+    name: Option<String>,
+) -> anyhow::Result<Option<(String, ConnectionEdit)>> {
+    let name = match name {
+        Some(name) => name,
+        None => match select_connection(service, "Select a connection to edit").await? {
+            Some(name) => name,
+            None => return Ok(None),
+        },
+    };
+    let connection = service.get_connection(&name).await?;
+
+    let changed = |value: String, current: &str| (value != current).then_some(value);
+    let new_name = Input::<String>::with_theme(&theme())
+        .with_prompt("Name")
+        .default(name.clone())
+        .interact_text()?;
+    let host = Input::<String>::with_theme(&theme())
+        .with_prompt("Host URL")
+        .default(connection.model.host.clone())
+        .interact_text()?;
+    let identity = match connection.kind {
+        Kind::JiraCloud => {
+            let current = connection.model.identity.unwrap_or_default();
+            let identity = Input::<String>::with_theme(&theme())
+                .with_prompt("Email")
+                .default(current.clone())
+                .interact_text()?;
+            changed(identity, &current)
+        }
+        Kind::JiraDc | Kind::Linear => None,
+    };
+
+    let edit = ConnectionEdit {
+        name: changed(new_name, &name),
+        host: changed(host, &connection.model.host),
+        identity,
+    };
+    Ok(Some((name, edit)))
+}
+
+pub(crate) async fn delete(
+    name: Option<String>,
+    with_tickets: bool,
+    yes: bool,
+) -> anyhow::Result<()> {
+    let service = Nirvana::new().await?;
+
+    let (name, with_tickets) = match name {
+        Some(name) => {
+            let connections = service.active_profile().await?.connections;
+            if !connections.iter().any(|c| c.model.name == name) {
+                bail!(DomainError::ConnectionNotFound(name));
+            }
+            (name, with_tickets)
+        }
+        None => match delete_interactive(&service, with_tickets).await? {
+            Some(choice) => choice,
+            None => return Ok(()),
+        },
+    };
+
+    let term = Term::stdout();
+    let prompt = if with_tickets {
+        format!("Are you sure you want to delete connection {name} with its tickets and slots?")
+    } else {
+        format!("Are you sure you want to delete connection {name}? Its tickets are kept.")
+    };
+    if yes
+        || Confirm::with_theme(&theme())
+            .with_prompt(prompt)
+            .default(false)
+            .interact()?
+    {
+        service.delete_connection(&name, with_tickets).await?;
+        info!(%name, with_tickets, "connection deleted");
         term.write_line(&format!(
-            "Active profile set to id {}",
-            connection.model.profile_id
+            "{} connection {}",
+            style("Deleted").green(),
+            style(&name).bold(),
+        ))?;
+    } else {
+        term.write_line(&format!(
+            "{}",
+            style(format!("Connection {name} was not deleted")).yellow()
         ))?;
     }
 
     Ok(())
 }
 
-fn add_command(args: AddArgs) -> anyhow::Result<ConnectionData> {
-    Ok(ConnectionData {
-        name: args.name.unwrap(),
-        kind: args.kind.unwrap().to_string(),
-        host: args.host.unwrap(),
-        identity: args.identity.unwrap(),
-        secret_store: args.storage.unwrap(),
-        token: args.token.unwrap().into(),
-    })
+async fn delete_interactive(
+    service: &Nirvana,
+    with_tickets: bool,
+) -> anyhow::Result<Option<(String, bool)>> {
+    let Some(name) = select_connection(service, "Select a connection to delete").await? else {
+        return Ok(None);
+    };
+    let with_tickets = with_tickets
+        || Confirm::with_theme(&theme())
+            .with_prompt("Also delete its tickets and slots?")
+            .default(false)
+            .interact()?;
+    Ok(Some((name, with_tickets)))
 }
 
-async fn add_interactive(api: &Nirvana) -> anyhow::Result<ConnectionData> {
-    let theme = ColorfulTheme {
-        active_item_prefix: Style::new().green().apply_to(String::from("❯")),
-        ..ColorfulTheme::default()
-    };
-
-    let name: String = Input::with_theme(&theme)
-        .with_prompt("Connection name")
-        .interact_text()?;
-
-    let kinds = ConnectionKind::value_variants()
-        .iter()
-        .map(|k| match k {
-            ConnectionKind::JiraCloud => "Jira Cloud",
-            ConnectionKind::JiraDc => "Jira DC",
-        })
-        .collect::<Vec<_>>();
-
-    let kind_idx = Select::with_theme(&theme)
-        .with_prompt("Connection type")
-        .items(&kinds)
-        .default(0)
-        .interact_opt()?;
-
-    let kind = match kind_idx {
-        Some(i) => ConnectionKind::value_variants()[i].clone(),
-        None => std::process::exit(0),
-    };
-
-    let host: String = Input::with_theme(&theme)
-        .with_prompt("Host")
-        .interact_text()?;
-
-    let identity_label = match &kind {
-        ConnectionKind::JiraCloud => "Email",
-        ConnectionKind::JiraDc => "Username",
-    };
-
-    let identity: String = Input::with_theme(&theme)
-        .with_prompt(identity_label)
-        .interact_text()?;
-
-    let dim = Style::new().dim();
-    let storage_items = selectable_stores();
-    let storage_labels: Vec<String> = storage_items
-        .iter()
-        .map(|s| match s {
-            SecretStore::Keyring => format!("Keyring {}", dim.apply_to("(recommended)")),
-            SecretStore::Plaintext => format!("Plaintext {}", dim.apply_to("(stored in database)")),
-            SecretStore::Env => format!("Env {}", dim.apply_to("(environment variable)")),
-        })
-        .collect();
-
-    let preferred_store = if api.keyring_status().await.is_ok() {
-        SecretStore::Keyring
-    } else {
-        SecretStore::Plaintext
-    };
-    let storage_default = storage_items
-        .iter()
-        .position(|s| *s == preferred_store)
-        .unwrap_or(0);
-
-    let storage_idx = Select::with_theme(&theme)
-        .with_prompt("Secret storage")
-        .items(&storage_labels)
-        .default(storage_default)
-        .interact_opt()?;
-
-    let storage = match storage_idx {
-        Some(i) => storage_items[i],
-        None => std::process::exit(0),
-    };
-
-    let token_label = match &kind {
-        ConnectionKind::JiraCloud => "API token",
-        ConnectionKind::JiraDc => "Personal access token",
-    };
-
-    let token = Password::with_theme(&theme)
-        .with_prompt(token_label)
-        .interact()?;
-
-    Ok(ConnectionData {
-        name,
-        kind: kind.to_string(),
-        host,
-        identity,
-        secret_store: storage,
-        token: token.into(),
-    })
-}
-
-pub(crate) async fn test() -> anyhow::Result<()> {
-    let api = Nirvana::new().await?;
+pub(crate) async fn test(name: Option<String>, all: bool) -> anyhow::Result<()> {
+    let service = Nirvana::new().await?;
     let term = Term::stdout();
 
-    match api.test_connection().await {
-        Ok(()) => term.write_line("Connection OK")?,
-        Err(e) => return Err(e.into()),
+    if !all {
+        let name = match name {
+            Some(name) => name,
+            None => match select_connection(&service, "Select a connection to test").await? {
+                Some(name) => name,
+                None => return Ok(()),
+            },
+        };
+        return Ok(test_one(&service, &term, &name).await?);
+    }
+
+    let connections = service.list_connections().await?;
+    if connections.is_empty() {
+        print_no_connections(&term)?;
+        return Ok(());
+    }
+
+    let mut failed = 0;
+    for connection in &connections {
+        let name = &connection.model.name;
+        if let Err(e) = test_one(&service, &term, name).await {
+            failed += 1;
+            let error = format!("{:#}", anyhow::Error::from(e));
+            warn!(%name, %error, "connection test failed");
+            term.write_line(&format!(
+                "{} {} {error}",
+                style("✗").red(),
+                style(name).bold(),
+            ))?;
+        }
+    }
+
+    if failed > 0 {
+        bail!("{failed} of {} connection tests failed", connections.len());
     }
     Ok(())
+}
+
+async fn test_one(service: &Nirvana, term: &Term, name: &str) -> Result<(), NirvanaError> {
+    let spinner = ProgressBar::new_spinner().with_message(format!("Testing {name}"));
+    spinner.enable_steady_tick(Duration::from_millis(50));
+    let started = Instant::now();
+    let result = service.test_connection(name).await;
+    spinner.finish_and_clear();
+    result?;
+    info!(%name, "connection tested");
+
+    term.write_line(&format!(
+        "{} {} {}",
+        style("✓").green(),
+        style(name).bold(),
+        style(format!("{} ms", started.elapsed().as_millis())).dim(),
+    ))?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn jira_cloud_credential_splits_into_email_and_token() {
+        let (identity, token) =
+            split_credential(Kind::JiraCloud, "me@example.com:to:ken".into()).unwrap();
+
+        assert_eq!(identity.as_deref(), Some("me@example.com"));
+        assert_eq!(token, "to:ken");
+    }
+
+    #[test]
+    fn jira_cloud_credential_without_email_is_rejected() {
+        let error = split_credential(Kind::JiraCloud, "token".into()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "jira-cloud credential must be \"<email>:<token>\""
+        );
+    }
+
+    #[test]
+    fn credential_without_identity_is_the_token() {
+        for kind in [Kind::JiraDc, Kind::Linear] {
+            let (identity, token) = split_credential(kind, "to:ken".into()).unwrap();
+
+            assert_eq!(identity, None);
+            assert_eq!(token, "to:ken");
+        }
+    }
 }

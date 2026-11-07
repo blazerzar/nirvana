@@ -136,43 +136,67 @@ logged from the start.
 
 ## Profiles and connections CLI
 
-- [ ] Rework the CLI for profiles and connections. The interactive picker
+- [x] Rework the CLI for profiles and connections. The interactive picker
       offers Keyring only when the keyring is available.
-- [ ] Make `connections.identity` nullable: only Jira Cloud has one (the
+- [x] Make `connections.identity` nullable: only Jira Cloud has one (the
       email). Do not ask for a username for Jira DC and set it to NULL for
       existing `jira-dc` rows.
-- [ ] Let users move plaintext tokens into the keyring.
-- [ ] Add the `env` secret store for CLI integration tests: the credentials
-      row holds the name of the environment variable with the token, which
-      must start with `NIRVANA_`. Hidden from `--help` and the interactive
-      picker, available in all builds.
+- [x] Add the `linear` connection kind: host and token, no identity, no
+      settings yet.
+- [x] Let users move plaintext tokens into the keyring.
+- [x] Add the `credential` command: `credential list`, `credential update`
+      and `credential move`.
+- [x] Add `connection edit` to change name, identity or host. It replaces
+      `connection rename`.
+- [x] Fix error messages of the errors these commands return (decision 21):
+      no `{0}` in `#[from]` variants (config, I/O, DB, keyring), lowercase
+      CLI messages (`connection '{query}' not found`).
+- [x] Check there is correct and sufficient logging.
+- [ ] Add scripts for seting up DB with dev data (profile, connections with
+      credentials from infisical).
+
+## Settings, logs and config CLI
+
+- [ ] Add commands for reading and setting profile settings.
+- [ ] Add commands for reading and setting connection settings.
+- [ ] Add commands for reading and clearing logs.
+- [ ] Add commands for reading and setting config.
 
 ## Tickets
 
-- [ ] Make sure start, stop, resume, switch, edit, delete are working and tested.
-- [ ] Add `nirvana profile add` - a fresh DB has no profile, so connections
+- [ ] Add `ticket list`, `ticket remove` and `ticket load`.
+- [x] Add `nirvana profile add` - a fresh DB has no profile, so connections
       cannot be added until one is created.
+- [ ] Decide how owning connection is resolved when profile has multiple
+      connections (proposal in the implementation guide).
+- [ ] Let's update ticket name and description when interacting with it (async).
+- [ ] Return `DomainError::NoActiveConnection` from core when `list` needs
+      a connection, instead of `.context("No active connection")` in the CLI.
+
+## Tracking
+
+- [ ] Make sure start, stop, resume, switch, edit, delete are working and tested.
 - [ ] Get these commands working in CLI and start integration testing as well.
 - [ ] Check for blocking calls inside async code while refactoring the CLI.
 - [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
       through the public API).
-- [ ] Add e2e tests for nirvana: run the built release binary in CI, with
-      tokens from GitHub secrets through the `env` secret store.
-- [ ] Decide how owning connection is resolved when profile has multiple
-      connections (proposal in the implementation guide).
-- [ ] Let's update ticket name and description when interacting with it (async).
 - [ ] Validate overlaps on edit; published slots are read-only.
 - [ ] Validate overlaps on start with `--at` - a backdated start must not
       cover closed or published slots (only manual create checks today).
 - [ ] Stop the running slot and start the new one in a single transaction.
+- [ ] Reject future times in `start_slot` and `stop_slot` with
+      `DomainError::FutureTime`, remove the `parse_time` copies in
+      `start.rs` and `stop.rs` and use `cli::parse_time`.
+- [ ] Return from the interactive start picker on Esc instead of
+      `std::process::exit(0)`.
 
 ## Linear
 
-- [ ] Add scripts for obtaining Linear ticket information.
-- [ ] Rewrite scripts for JIRA and Linear and clean them up.
-- [ ] Add Linear integration - GraphQL, ticket name + description, workspace
-      and user detected from key.
-- [ ] Publish time to Linear as issue comment.
+- [x] Add scripts for obtaining Linear ticket information.
+- [x] Rewrite scripts for JIRA and Linear and clean them up.
+- [x] Add Linear integration - GraphQL, ticket title only. The connection
+      host is the workspace URL (`linear.app/<workspace>`), used for issue
+      URLs, and the API endpoint is constant.
 - [ ] Build HTTP clients with `reqwest::Client::builder()` (timeout set on the
       client instead of per request).
 
@@ -190,6 +214,17 @@ logged from the start.
 - [ ] Get publishing ready in CLI (--target).
 - [ ] Make sure we are able to publish from any range (today, all).
 - [ ] Need error checking for each log.
+- [ ] Fix error messages of the errors publishing returns (decision 21):
+      no `{0}` in `IntegrationError::Network`.
+
+## E2E tests
+
+- [ ] Add the `env` secret store for CLI integration tests: the credentials
+      row holds the name of the environment variable with the token, which
+      must start with `NIRVANA_`. Hidden from `--help` and the interactive
+      picker, available in all builds.
+- [ ] Add e2e tests for nirvana: run the built release binary in CI, with
+      tokens from GitHub secrets through the `env` secret store.
 
 ## Nirvana API
 

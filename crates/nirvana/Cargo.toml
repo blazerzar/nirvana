@@ -10,7 +10,9 @@ chrono = "0.4.45"
 clap = { version = "4.6.7", features = ["derive", "string"] }
 console = "0.16.6"
 dialoguer = { version = "0.12.0", features = ["fuzzy-select"] }
+indicatif = "0.18.6"
 nirvana-core = { path = "../nirvana-core" }
+secrecy = "0.10.3"
 tokio = { version = "1.53.3", features = ["macros", "rt"] }
 tracing = { version = "0.1.44", features = ["release_max_level_debug"] }
 tracing-subscriber = "0.3.23"

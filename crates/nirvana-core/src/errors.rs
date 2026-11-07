@@ -3,22 +3,24 @@ use std::sync::Arc;
 use thiserror::Error;
 
 pub use crate::config::ConfigError;
+use crate::domain::Kind;
 pub use crate::integration::IntegrationError;
 pub use crate::secrets::SecretError;
+use crate::secrets::SecretStore;
 pub use crate::storage::DbError;
 
 #[derive(Debug, Error)]
 pub enum NirvanaError {
-    #[error("config error: {0}")]
+    #[error("config error")]
     Config(#[from] ConfigError),
-    #[error("config unavailable: {0}")]
+    #[error("config unavailable")]
     ConfigUnavailable(#[from] Arc<ConfigError>),
     #[error(transparent)]
     Db(#[from] DbError),
-    #[error("I/O error: {0}")]
+    #[error("I/O error")]
     Io(#[from] std::io::Error),
     #[error(transparent)]
-    Tracking(#[from] TrackingError),
+    Domain(#[from] DomainError),
     #[error(transparent)]
     Integration(#[from] IntegrationError),
     #[error(transparent)]
@@ -26,27 +28,50 @@ pub enum NirvanaError {
 }
 
 #[derive(Debug, Error)]
-pub enum TrackingError {
-    #[error("no active connection")]
-    NoActiveConnection,
+pub enum DomainError {
+    // profiles
     #[error("no active profile")]
     NoActiveProfile,
-    #[error("profile not found: {0}")]
-    ProfileNotFound(i64),
-    #[error("connection not found: {0}")]
-    ConnectionNotFound(i64),
-    #[error("cannot delete a connection with local history")]
-    ConnectionHasHistory,
+    #[error("profile '{0}' not found")]
+    ProfileNotFound(String),
+    #[error("profile '{0}' already exists")]
+    ProfileExists(String),
+    #[error("profile name must not be empty")]
+    EmptyProfileName,
+
+    // connections
+    #[error("no active connection")]
+    NoActiveConnection,
+    #[error("connection '{0}' already exists")]
+    ConnectionExists(String),
+    #[error("connection name must not be empty")]
+    EmptyConnectionName,
+    #[error("{0} connection requires an identity")]
+    MissingIdentity(Kind),
+    #[error("{0} connection does not use an identity")]
+    UnexpectedIdentity(Kind),
+    #[error("connection '{0}' not found")]
+    ConnectionNotFound(String),
     #[error("unsupported connection kind: {0}")]
     UnsupportedConnectionKind(String),
     #[error("connection {0} has no settings")]
     MissingConnectionSettings(i64),
+    #[error("connection {0} has no credential")]
+    MissingCredential(i64),
+    #[error("credential of connection '{0}' is already in {1}")]
+    CredentialAlreadyIn(String, SecretStore),
+
+    // publishing
     #[error("publishing is disabled for connection '{0}'")]
     PublishDisabled(String),
+
+    // tickets
     #[error("ticket not found: {0}")]
     TicketNotFound(String),
     #[error("ticket {0} has no connection")]
     TicketHasNoConnection(String),
+
+    // slots
     #[error("slot not found: {0}")]
     SlotNotFound(i64),
     #[error("cannot edit a published slot")]

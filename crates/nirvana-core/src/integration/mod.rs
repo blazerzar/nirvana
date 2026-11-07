@@ -1,86 +1,77 @@
-pub(crate) mod jira;
+//! Clients for the backends behind connections.
+//!
+//! An [`Integration`] is built from a [`Connection`] and its token, with one
+//! variant per backend. Every integration can test its connection and fetch
+//! an issue title. Publishing is backend-specific and called on the variant.
+//! Issue URLs need no client and are built by [`Connection::issue_url`].
 
-use jira::JiraIntegration;
+#![expect(dead_code)]
+
+pub(crate) mod jira;
+pub(crate) mod linear;
+
+use std::time::Duration;
+
+use jira::{JiraAuth, JiraIntegration};
+use linear::LinearIntegration;
 use secrecy::SecretString;
 use thiserror::Error;
 
-use crate::domain::{Connection, ConnectionKind};
+use crate::domain::{Connection, Kind};
+use crate::errors::DomainError;
+
+const TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Error)]
 pub enum IntegrationError {
-    #[error("network error: {0}")]
+    #[error("network error")]
     Network(#[from] reqwest::Error),
     #[error("ticket not found: {0}")]
     TicketNotFound(String),
     #[error("authentication failed: {0}")]
     Auth(String),
+    #[error("API error: {0}")]
+    Api(String),
 }
 
 pub(crate) struct IssueInfo {
-    pub summary: String,
+    pub title: String,
 }
 
-enum IntegrationKind {
+pub(crate) enum Integration {
     Jira(JiraIntegration),
-}
-
-pub(crate) struct Integration {
-    kind: IntegrationKind,
+    Linear(LinearIntegration),
 }
 
 impl Integration {
-    pub fn build_for_url(connection: &Connection) -> Integration {
-        let kind = match &connection.kind {
-            ConnectionKind::JiraCloud(_) | ConnectionKind::JiraDc(_) => {
-                IntegrationKind::Jira(JiraIntegration::new_unauthenticated(
-                    &connection.model.host,
-                    connection.kind.as_str(),
-                ))
+    pub fn new(connection: &Connection, token: SecretString) -> Result<Self, DomainError> {
+        let host = &connection.model.host;
+        let integration = match connection.kind {
+            Kind::JiraCloud => {
+                let email = connection
+                    .model
+                    .identity
+                    .clone()
+                    .ok_or(DomainError::MissingIdentity(connection.kind))?;
+                Self::Jira(JiraIntegration::new(host, JiraAuth::Basic { email, token }))
             }
+            Kind::JiraDc => Self::Jira(JiraIntegration::new(host, JiraAuth::Bearer(token))),
+            Kind::Linear => Self::Linear(LinearIntegration::new(token)),
         };
-        Integration { kind }
-    }
-
-    pub fn get_issue_link(&self, ticket_key: &str) -> String {
-        match &self.kind {
-            IntegrationKind::Jira(j) => j.get_issue_link(ticket_key),
-        }
+        Ok(integration)
     }
 
     pub async fn test_connection(&self) -> Result<(), IntegrationError> {
-        match &self.kind {
-            IntegrationKind::Jira(j) => j.test_connection().await,
+        match self {
+            Self::Jira(j) => j.test_connection().await,
+            Self::Linear(l) => l.test_connection().await,
         }
     }
 
     pub async fn fetch_issue(&self, ticket_key: &str) -> Result<IssueInfo, IntegrationError> {
-        match &self.kind {
-            IntegrationKind::Jira(j) => j.fetch_issue(ticket_key).await,
+        match self {
+            Self::Jira(j) => j.fetch_issue(ticket_key).await,
+            Self::Linear(l) => l.fetch_issue(ticket_key).await,
         }
     }
-
-    pub async fn publish_slot(
-        &self,
-        ticket_key: &str,
-        started_at: i64,
-        seconds: i64,
-    ) -> Result<(), IntegrationError> {
-        match &self.kind {
-            IntegrationKind::Jira(j) => j.publish_slot(ticket_key, started_at, seconds).await,
-        }
-    }
-}
-
-pub(crate) fn build_integration(connection: &Connection, token: &SecretString) -> Integration {
-    let kind = match &connection.kind {
-        ConnectionKind::JiraCloud(_) | ConnectionKind::JiraDc(_) => {
-            IntegrationKind::Jira(JiraIntegration::new(
-                &connection.model.host,
-                &connection.model.identity,
-                token,
-                connection.kind.as_str(),
-            ))
-        }
-    };
-    Integration { kind }
 }

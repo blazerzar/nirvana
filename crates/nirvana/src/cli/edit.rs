@@ -1,31 +1,6 @@
-use console::style;
-use nirvana_core::domain::{Change, SlotEdit};
-use nirvana_core::service::Nirvana;
-
-pub(crate) struct EditArgs {
-    pub slot_id: i64,
-    pub ticket_key: Option<String>,
-    pub started_at: Option<i64>,
-    pub stopped_at: Change<i64>,
-}
+use crate::cli::EditArgs;
 
 pub(crate) async fn run(args: EditArgs) -> anyhow::Result<()> {
-    let api = Nirvana::new().await?;
-
-    let edit = SlotEdit {
-        ticket_key: args.ticket_key,
-        started_at: args.started_at,
-        stopped_at: args.stopped_at,
-    };
-
-    let (slot, ticket) = api.edit_slot(args.slot_id, edit).await?;
-
-    println!(
-        "{} {} slot {}",
-        style("Edited").green().bold(),
-        style(&ticket.ticket_key).bold(),
-        style(slot.id),
-    );
-
+    println!("editing slot {}", args.slot_id);
     Ok(())
 }

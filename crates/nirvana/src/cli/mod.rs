@@ -1,21 +1,22 @@
 mod connection;
+mod credential;
 mod delete;
 mod edit;
 mod info;
 mod list;
+mod profile;
 mod publish;
 mod start;
 mod stop;
+mod table;
 mod time;
 
-use std::fmt;
-use std::fmt::Display;
-
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
-use clap::{Args, Parser, Subcommand, ValueEnum};
-use nirvana_core::domain::Change;
+use clap::{Args, Parser, Subcommand};
+use console::Style;
+use dialoguer::theme::ColorfulTheme;
+use nirvana_core::domain::Kind;
 use nirvana_core::secrets::{SecretStore, selectable_stores};
-pub(crate) use time::parse_time;
 use tracing::debug;
 
 #[derive(Parser)]
@@ -23,7 +24,7 @@ use tracing::debug;
     name = "nirvana",
     version,
     arg_required_else_help = true,
-    about = "App to get you to time-tracking nirvana"
+    about = "App that gets you to time tracking nirvana"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -46,10 +47,20 @@ enum Command {
     List(ListArgs),
     /// Publish slots to backend
     Publish(PublishArgs),
+    /// Manage profiles
+    Profile {
+        #[command(subcommand)]
+        command: Profile,
+    },
     /// Manage connections
     Connection {
         #[command(subcommand)]
         command: Connection,
+    },
+    /// Manage credentials
+    Credential {
+        #[command(subcommand)]
+        command: Credential,
     },
 }
 
@@ -114,50 +125,121 @@ struct PublishArgs {
 }
 
 #[derive(Subcommand)]
+enum Profile {
+    /// List all profiles
+    List,
+    /// Create a new profile
+    Create {
+        /// Profile name (omit for interactive creation)
+        name: Option<String>,
+        /// Switch to the new profile
+        #[arg(short, long)]
+        switch: bool,
+    },
+    /// Switch the active profile
+    Switch {
+        /// Profile name (omit for interactive selection)
+        name: Option<String>,
+    },
+    /// Rename a profile
+    Rename {
+        /// Current profile name (omit for interactive selection)
+        name: Option<String>,
+        /// New profile name
+        new_name: Option<String>,
+    },
+    /// Delete a profile with its connections, tickets and slots
+    Delete {
+        /// Profile name (omit for interactive selection)
+        name: Option<String>,
+        /// Delete without asking
+        #[arg(short, long)]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum Connection {
-    /// Add a new connection
-    Add(AddArgs),
     /// List all connections
     List,
-    /// Change active connection
-    Use {
-        /// Connection ID or name (omit for interactive selection)
-        query: Option<String>,
+    /// Add a new connection
+    Add {
+        /// Connection name (omit for interactive creation)
+        #[arg(requires_all = ["kind", "host", "storage"])]
+        name: Option<String>,
+        /// Connection kind
+        #[arg(long, value_parser = kind_parser(), requires = "name")]
+        kind: Option<Kind>,
+        /// Host URL
+        #[arg(long, requires = "name")]
+        host: Option<String>,
+        /// Token, or "<email>:<token>" for jira-cloud (omit to enter it interactively)
+        #[arg(long, requires = "name")]
+        credential: Option<String>,
+        /// Where to store the token
+        #[arg(long, value_parser = storage_parser(), requires = "name")]
+        storage: Option<SecretStore>,
     },
-    /// Test active connection
-    Test,
+    /// Edit a connection's name, host or identity
+    Edit {
+        /// Connection name (omit for interactive selection)
+        name: Option<String>,
+        /// New connection name
+        #[arg(long = "name", value_name = "NAME", requires = "name")]
+        new_name: Option<String>,
+        /// New host URL
+        #[arg(long, requires = "name")]
+        host: Option<String>,
+        /// New identity (jira-cloud email)
+        #[arg(long, requires = "name")]
+        identity: Option<String>,
+    },
+    /// Delete a connection
+    Delete {
+        /// Connection name (omit for interactive selection)
+        name: Option<String>,
+        /// Also delete the connection's tickets and their slots
+        #[arg(long)]
+        with_tickets: bool,
+        /// Delete without asking
+        #[arg(short, long)]
+        yes: bool,
+    },
+    /// Test a connection
+    Test {
+        /// Connection name (omit for interactive selection)
+        name: Option<String>,
+        /// Test all connections
+        #[arg(short, long, conflicts_with = "name")]
+        all: bool,
+    },
 }
 
-#[derive(Args, Debug)]
-struct AddArgs {
-    #[arg(long, requires_all = ["kind", "host", "identity", "storage", "token"])]
-    name: Option<String>,
-    #[arg(long, requires_all = ["name", "host", "identity", "storage", "token"])]
-    kind: Option<ConnectionKind>,
-    #[arg(long, requires_all = ["name", "kind", "identity", "storage", "token"])]
-    host: Option<String>,
-    #[arg(long, requires_all = ["name", "kind", "host", "storage", "token"])]
-    identity: Option<String>,
-    #[arg(long, value_parser = storage_parser(), requires_all = ["name", "kind", "host", "identity", "token"])]
-    storage: Option<SecretStore>,
-    #[arg(long, requires_all = ["name", "kind", "host", "identity", "storage"])]
-    token: Option<String>,
+#[derive(Subcommand)]
+enum Credential {
+    /// List credentials for all connections
+    List,
+    /// Update credential secret
+    Update {
+        /// Connection name (omit for interactive selection)
+        name: Option<String>,
+        /// Token (omit to enter it interactively)
+        #[arg(long, requires = "name")]
+        token: Option<String>,
+    },
+    /// Move credential secret to a different store
+    Move {
+        /// Connection name (omit for interactive selection)
+        name: Option<String>,
+        /// Secret store to move the token to
+        #[arg(long, value_parser = storage_parser(), requires = "name")]
+        to: Option<SecretStore>,
+    },
 }
 
-#[derive(Clone, ValueEnum, Debug)]
-pub(crate) enum ConnectionKind {
-    JiraCloud,
-    JiraDc,
-}
-
-impl Display for ConnectionKind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let kind = match self {
-            Self::JiraCloud => "jira-cloud",
-            Self::JiraDc => "jira-dc",
-        };
-        write!(f, "{}", kind,)
-    }
+fn kind_parser() -> impl TypedValueParser<Value = Kind> {
+    PossibleValuesParser::new(Kind::ALL.map(|kind| PossibleValue::new(kind.as_str())))
+        .try_map(|s| s.parse::<Kind>())
 }
 
 fn storage_parser() -> impl TypedValueParser<Value = SecretStore> {
@@ -171,11 +253,19 @@ fn storage_parser() -> impl TypedValueParser<Value = SecretStore> {
     .try_map(|s| s.parse::<SecretStore>())
 }
 
+pub(crate) fn theme() -> ColorfulTheme {
+    ColorfulTheme {
+        active_item_prefix: Style::new().green().apply_to(String::from("❯")),
+        ..ColorfulTheme::default()
+    }
+}
+
 pub(crate) async fn run() -> anyhow::Result<()> {
-    let args: Vec<_> = std::env::args_os()
-        .skip(1)
-        .map(|arg| arg.to_string_lossy().into_owned())
-        .collect();
+    let args = mask_secrets(
+        std::env::args_os()
+            .skip(1)
+            .map(|arg| arg.to_string_lossy().into_owned()),
+    );
     debug!(?args, "command ran");
 
     let cli = Cli::parse();
@@ -184,35 +274,114 @@ pub(crate) async fn run() -> anyhow::Result<()> {
         Some(Command::Info) => info::run().await,
         Some(Command::Start(args)) => start::run(args).await,
         Some(Command::Stop(args)) => stop::run(args).await,
-        Some(Command::Edit(args)) => {
-            let started_at = args.start.as_deref().map(parse_time).transpose()?;
-            let stopped_at = match &args.stop {
-                None => Change::Skip,
-                Some(s) if s.is_empty() => Change::Clear,
-                Some(s) => Change::Set(parse_time(s)?),
-            };
-            edit::run(edit::EditArgs {
-                slot_id: args.slot_id,
-                ticket_key: args.ticket,
-                started_at,
-                stopped_at,
-            })
-            .await
-        }
-        Some(Command::Delete(args)) => {
-            delete::run(delete::DeleteArgs {
-                slot_id: args.slot_id,
-            })
-            .await
-        }
+        Some(Command::Edit(args)) => edit::run(args).await,
+        Some(Command::Delete(args)) => delete::run(args).await,
         Some(Command::List(args)) => list::run(args).await,
         Some(Command::Publish(args)) => publish::run(args).await,
+        Some(Command::Profile { command }) => match command {
+            Profile::List => profile::list().await,
+            Profile::Create { name, switch } => profile::create(name, switch).await,
+            Profile::Switch { name } => profile::switch(name).await,
+            Profile::Rename { name, new_name } => profile::rename(name, new_name).await,
+            Profile::Delete { name, yes } => profile::delete(name, yes).await,
+        },
         Some(Command::Connection { command }) => match command {
-            Connection::Add(args) => connection::add(args).await,
             Connection::List => connection::list().await,
-            Connection::Use { query } => connection::activate(query.as_deref()).await,
-            Connection::Test => connection::test().await,
+            Connection::Add {
+                name,
+                kind,
+                host,
+                credential,
+                storage,
+            } => connection::add(name, kind, host, credential, storage).await,
+            Connection::Edit {
+                name,
+                new_name,
+                host,
+                identity,
+            } => connection::edit(name, new_name, host, identity).await,
+            Connection::Delete {
+                name,
+                with_tickets,
+                yes,
+            } => connection::delete(name, with_tickets, yes).await,
+            Connection::Test { name, all } => connection::test(name, all).await,
+        },
+        Some(Command::Credential { command }) => match command {
+            Credential::List => credential::list().await,
+            Credential::Update { name, token } => credential::update(name, token).await,
+            Credential::Move { name, to } => credential::move_to(name, to).await,
         },
         None => Ok(()),
+    }
+}
+
+const SECRET_FLAGS: [&str; 2] = ["--credential", "--token"];
+const MASK: &str = "***";
+
+/// Replaces the values of [`SECRET_FLAGS`], given as `--flag value` or
+/// `--flag=value`, with [`MASK`].
+fn mask_secrets(args: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut mask_next = false;
+    args.into_iter()
+        .map(|arg| {
+            if std::mem::take(&mut mask_next) {
+                return MASK.to_string();
+            }
+            if let Some((flag, _)) = arg.split_once('=')
+                && SECRET_FLAGS.contains(&flag)
+            {
+                return format!("{flag}={MASK}");
+            }
+            mask_next = SECRET_FLAGS.contains(&arg.as_str());
+            arg
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(args: &[&str]) -> Vec<String> {
+        args.iter().map(|arg| arg.to_string()).collect()
+    }
+
+    #[test]
+    fn mask_secrets_masks_separate_values() {
+        assert_eq!(
+            mask_secrets(args(&[
+                "connection",
+                "add",
+                "jira",
+                "--credential",
+                "me@example.com:secret",
+                "--storage",
+                "keyring",
+            ])),
+            args(&[
+                "connection",
+                "add",
+                "jira",
+                "--credential",
+                MASK,
+                "--storage",
+                "keyring",
+            ])
+        );
+    }
+
+    #[test]
+    fn mask_secrets_masks_inline_values() {
+        assert_eq!(
+            mask_secrets(args(&["credential", "update", "jira", "--token=secret"])),
+            args(&["credential", "update", "jira", "--token=***"])
+        );
+    }
+
+    #[test]
+    fn mask_secrets_keeps_other_args() {
+        let other = args(&["connection", "edit", "jira", "--host=example.com"]);
+        assert_eq!(mask_secrets(other.clone()), other);
     }
 }

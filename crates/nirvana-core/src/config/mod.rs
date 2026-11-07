@@ -29,11 +29,11 @@ const CURRENT_SCHEMA_VERSION: i64 = 2;
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
-    #[error("config I/O error: {0}")]
+    #[error("config I/O error")]
     Io(#[from] std::io::Error),
-    #[error("config parse error: {0}")]
+    #[error("config parse error")]
     Parse(#[from] toml::de::Error),
-    #[error("config save error: {0}")]
+    #[error("config save error")]
     Save(#[from] toml::ser::Error),
     #[error("unsupported config schema_version: {0}")]
     UnsupportedSchema(toml::Value),
@@ -183,7 +183,7 @@ impl AppConfig {
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub(crate) struct CoreConfig {
     #[serde(default)]
-    pub(crate) profile: Option<i64>,
+    pub(crate) profile: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
@@ -283,7 +283,7 @@ mod tests {
 schema_version = 2
 
 [core]
-profile = 3
+profile = "work"
 
 [gui]
 theme = "dark"
@@ -303,7 +303,9 @@ level = "debug"
             config,
             AppConfig {
                 schema_version: 2,
-                core: CoreConfig { profile: Some(3) },
+                core: CoreConfig {
+                    profile: Some("work".into()),
+                },
                 gui: GuiConfig { theme: Theme::Dark },
                 idle: IdleConfig {
                     enabled: false,
@@ -358,7 +360,9 @@ level = "debug"
     #[test]
     fn saved_config_parses_back() {
         let config = AppConfig {
-            core: CoreConfig { profile: Some(1) },
+            core: CoreConfig {
+                profile: Some("work".into()),
+            },
             ..AppConfig::default()
         };
 
@@ -411,7 +415,9 @@ level = "debug"
     #[test]
     fn saves_non_default_values() {
         let config = AppConfig {
-            core: CoreConfig { profile: Some(1) },
+            core: CoreConfig {
+                profile: Some("work".into()),
+            },
             idle: IdleConfig {
                 enabled: default_idle_enabled(),
                 methods: default_idle_methods(),
@@ -431,7 +437,7 @@ level = "debug"
 schema_version = 2
 
 [core]
-profile = 1
+profile = "work"
 
 [idle]
 threshold_secs = 450
@@ -638,7 +644,9 @@ threshold_secs = 600
     #[test]
     fn overwrites_unreadable_file() {
         let config = AppConfig {
-            core: CoreConfig { profile: Some(1) },
+            core: CoreConfig {
+                profile: Some("work".into()),
+            },
             ..AppConfig::default()
         };
 
@@ -650,7 +658,7 @@ threshold_secs = 600
 schema_version = 2
 
 [core]
-profile = 1
+profile = "work"
 "#
             .parse()
             .unwrap()

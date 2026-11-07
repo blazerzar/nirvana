@@ -10,12 +10,10 @@ use crate::paths;
 
 #[derive(Debug, Error)]
 pub enum DbError {
-    #[error("database error: {0}")]
+    #[error("database error")]
     Db(#[from] sea_orm::DbErr),
-    #[error("db I/O error: {0}")]
+    #[error("db I/O error")]
     Io(#[from] std::io::Error),
-    #[error("duplicate connection name: '{0}'")]
-    DuplicateName(String),
     #[error("stop time must be after the slot start time")]
     StopBeforeStart,
     #[error("invalid db path")]
@@ -166,7 +164,7 @@ mod tests {
                      where not ('{table}' = 'slots'
                              and name in ('note', 'published_at', 'connection_id'))
                          and not ('{table}' = 'tickets' and name = 'summary')
-                         and not ('{table}' = 'connections' and name = 'secret_store')"
+                         and not ('{table}' = 'connections' and name in ('secret_store', 'identity'))"
                 ),
             )
             .await
@@ -230,6 +228,31 @@ mod tests {
             text_rows(&db, "select cast(count(*) as text) from main.slots").await,
             text_rows(&db, "select cast(count(*) as text) from old.slots").await
         );
+    }
+
+    #[tokio::test]
+    async fn migrated_030_jira_dc_connections_have_no_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = migrate_fixture(dir.path()).await;
+
+        let identities = text_rows(
+            &db,
+            "select json_array(id, identity) from main.connections order by id",
+        )
+        .await;
+        let old = text_rows(
+            &db,
+            "select json_array(id, identity) from old.connections order by id",
+        )
+        .await;
+        let expected = text_rows(
+            &db,
+            "select json_array(id, iif(kind = 'jira-dc', null, identity))
+             from old.connections order by id",
+        )
+        .await;
+        assert_ne!(expected, old);
+        assert_eq!(identities, expected);
     }
 
     #[tokio::test]
@@ -393,7 +416,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db_file = changed_fixture(dir.path(), sql).await;
 
-        open(&db_file).await.unwrap_err().to_string()
+        let error = open(&db_file).await.unwrap_err();
+        std::error::Error::source(&error).unwrap().to_string()
     }
 
     #[tokio::test]
@@ -571,7 +595,7 @@ mod tests {
                 name: Set(name.to_string()),
                 kind: Set("jira-cloud".to_string()),
                 host: Set("host".to_string()),
-                identity: Set("identity".to_string()),
+                identity: Set(Some("identity".to_string())),
                 profile_id,
                 ..Default::default()
             }
@@ -625,7 +649,7 @@ mod tests {
             name: Set("work".to_string()),
             kind: Set("jira-cloud".to_string()),
             host: Set("host".to_string()),
-            identity: Set("identity".to_string()),
+            identity: Set(Some("identity".to_string())),
             profile_id: Set(profile.id),
             ..Default::default()
         }
@@ -665,7 +689,7 @@ mod tests {
             name: Set("work".to_string()),
             kind: Set("jira-cloud".to_string()),
             host: Set("host".to_string()),
-            identity: Set("identity".to_string()),
+            identity: Set(Some("identity".to_string())),
             profile_id: Set(profile.id),
             ..Default::default()
         }

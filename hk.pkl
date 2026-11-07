@@ -26,6 +26,7 @@ local linters = new Mapping<String, Step> {
   ...formatters
   ["jactionlint"] = Builtins.jactionlint
   ["editorconfig"] = Builtins.editorconfig_checker
+  ["shellcheck"] = Builtins.shellcheck
   ["cargo-clippy"] = (Builtins.cargo_clippy) {
     workspace_indicator = "Cargo.lock"
     check = new CommandSpec {
@@ -37,7 +38,7 @@ local linters = new Mapping<String, Step> {
 
 hooks {
   ["pre-commit"] { fix = true; stash = "git"; steps = formatters }
-  ["pre-push"] { steps = linters }
+  ["pre-push"] { steps { ["lint"] = new Step { check = "hk check --all"; interactive = true } } }
   ["commit-msg"] { steps { ["conventional"] = Builtins.check_conventional_commit } }
   ["check"] { steps = linters }
   ["fix"] { fix = true; steps = formatters }

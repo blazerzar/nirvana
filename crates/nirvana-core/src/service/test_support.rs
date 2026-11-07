@@ -6,36 +6,36 @@ use sea_orm::{ActiveModelTrait, Set};
 use tempfile::TempDir;
 
 use crate::config::AppConfig;
-use crate::domain::ConnectionData;
+use crate::domain::{ConnectionData, Kind};
 use crate::paths::AppPaths;
 use crate::secrets::mock_store;
 use crate::service::Nirvana;
 use crate::storage;
 
-pub(super) struct TestApi {
-    api: Nirvana,
+pub(super) struct TestService {
+    service: Nirvana,
     _dir: TempDir,
 }
 
-impl Deref for TestApi {
+impl Deref for TestService {
     type Target = Nirvana;
 
     fn deref(&self) -> &Self::Target {
-        &self.api
+        &self.service
     }
 }
 
-impl DerefMut for TestApi {
+impl DerefMut for TestService {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.api
+        &mut self.service
     }
 }
 
-pub(super) async fn test_api() -> TestApi {
+pub(super) async fn test_service() -> TestService {
     let dir = tempfile::tempdir().unwrap();
     let paths = AppPaths::in_dir(dir.path());
     let db = storage::open(&paths.db_file).await.unwrap();
-    let mut api = Nirvana {
+    let mut service = Nirvana {
         paths,
         config: Ok(AppConfig::default()),
         db,
@@ -45,23 +45,38 @@ pub(super) async fn test_api() -> TestApi {
         name: Set("test".to_string()),
         ..Default::default()
     }
-    .insert(&api.db)
+    .insert(&service.db)
     .await
     .unwrap();
-    let connection = api
+    let config = service.config.as_mut().unwrap();
+    config.core.profile = Some("test".to_string());
+    config.idle.enabled = false;
+    service
         .add_connection(ConnectionData {
             name: "Test Jira".to_string(),
-            kind: "jira-cloud".to_string(),
+            kind: Kind::JiraCloud,
             host: "https://example.atlassian.net".to_string(),
-            identity: "tester@example.com".to_string(),
+            identity: Some("tester@example.com".to_string()),
             secret_store: SecretStore::Plaintext,
             token: "token".into(),
         })
         .await
         .unwrap();
-    let config = api.config.as_mut().unwrap();
-    config.core.profile = Some(connection.model.profile_id);
-    config.idle.enabled = false;
 
-    TestApi { api, _dir: dir }
+    TestService { service, _dir: dir }
+}
+
+pub(super) fn keyring_passwords(service: &Nirvana) -> Vec<String> {
+    let store = (service.keyring)().unwrap();
+    let spec = [("service", "nirvana")].into();
+    store
+        .search(&spec)
+        .unwrap()
+        .into_iter()
+        .filter_map(|entry| match entry.get_password() {
+            Ok(password) => Some(password),
+            Err(keyring_core::Error::NoEntry) => None,
+            Err(e) => panic!("keyring read failed: {e}"),
+        })
+        .collect()
 }

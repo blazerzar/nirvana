@@ -39,8 +39,6 @@ pub enum DomainError {
     EmptyProfileName,
 
     // connections
-    #[error("no active connection")]
-    NoActiveConnection,
     #[error("connection '{0}' already exists")]
     ConnectionExists(String),
     #[error("connection name must not be empty")]

@@ -41,7 +41,7 @@ worklogs.
 | 2 | **0.3 migration: the existing DB becomes one profile** (e.g. `default`) holding all existing connections. Tickets keep their `connection_id`; a slot's connection comes from its ticket (verify `slots.connection_id` always matches before dropping it). In 0.3 slots of different connections can overlap, so the web lets users remove a connection with all its tickets and their slots (Webserver stage). | Simple, lossless. Splitting into more profiles can be done by hand later. Most users have a single connection, so one profile changes nothing for them. |
 | 3 | **Async core on tokio + SeaORM**, async reqwest. Use SeaORM as much as possible: the raw SQL migration files are replaced by SeaORM migrations, with `0001` and `0002` rewritten as the baseline. | axum, Leptos and Iced tasks are async anyway, and SeaORM is async-only. |
 | 4 | **TUI dropped for 1.0.** Remove the ratatui stub and the ratatui/crossterm deps. | No TUI tasks or v6 screens exist. Can come back after 1.0. |
-| 5 | Tickets keep a `connection_id` FK. **Open:** how the owner is picked when a profile has several connections (see §9). | |
+| 5 | **A ticket is owned by its profile and sourced from a connection.** `connection_id` is the connection the ticket was obtained from. Deleting the connection keeps the ticket with `connection_id` NULL (disconnected), unless its tickets are deleted too. | |
 | 6 | **No rounding anywhere.** Jira rejects worklogs under 60 s, so a sub-minute entry **fails that entry with a visible error** and stays unpublished. | Design product rule: never silently alter time. |
 | 7 | Git hooks with **hk** (+ mise). **Mise tasks** replace the justfile. **dprint** (TOML, YAML, JSON) replaces Tombi and sql-formatter, so Node is no longer needed. Tool versions are pinned in `mise.toml`. | Cross-platform, one tool manager, one formatter. |
 | 8 | **Idle detection** is restored from `main` (`crates/nirvana-gui/src-tauri/src/idle/{mod,macos,windows}.rs`) when the Iced app needs it. **Tray and menu-bar code is rewritten** for Iced. The GUI crate can be deleted without porting anything first. | |
@@ -110,7 +110,7 @@ jira_settings(connection_id, publish bool default true,
             -- one settings table per connection kind
             -- linear has no settings table yet
 tickets(id, profile_id, connection_id NULL, ticket_key, title,
-        last_worked_at, synced_at)   -- NULL = owner not resolved yet
+        last_worked_at, synced_at)   -- NULL = source connection deleted
             -- no unique key besides id
             -- deleting a profile cascades
 slots(id, uuid, profile_id, ticket_id, started_at, stopped_at)
@@ -472,32 +472,27 @@ possible now:
 
 ## 9. Open questions
 
-1. **Ticket owner resolution** with several connections in a profile.
-   Proposed: ask every connection (async), cache the first hit in
-   `tickets.connection_id`, and ask the user if several answer. A ticket with
-   no owner is allowed ("checked when published") and resolved on the next
-   sync or at publish time. Tickets have no unique key besides `id`.
-2. Leptos CSR vs SSR for the local web (CSR recommended, §3 #10).
-3. The per-profile DB path in the design versus the single-DB decision:
+1. Leptos CSR vs SSR for the local web (CSR recommended, §3 #10).
+2. The per-profile DB path in the design versus the single-DB decision:
    adjust the copy on the profile card, Settings → data and setup ("logs are
    stored in …").
-4. Does the web server run only inside the desktop app, or also headless
+3. Does the web server run only inside the desktop app, or also headless
    (`nirvana serve`)? How does the desktop detect profile creation done in
    web (shared process, or DB change notification)?
-5. Notes: export them before dropping the column?
-6. Linux packaging format (AppImage / deb / Flatpak) and Linux tray support in
+4. Notes: export them before dropping the column?
+5. Linux packaging format (AppImage / deb / Flatpak) and Linux tray support in
    Iced.
-7. Change propagation between CLI, desktop and web: poll
+6. Change propagation between CLI, desktop and web: poll
    `PRAGMA data_version`, or a notify channel inside the process.
-8. Branch flow after 1.0: keep `dev-1.0` (or a `dev` branch) or PR straight
+7. Branch flow after 1.0: keep `dev-1.0` (or a `dev` branch) or PR straight
    into `main`. Release PRs (release-plz) that land on `main` must not break
    the fast-forward from the dev branch.
-9. Logging to the terminal when running with `cargo run` (dev mode): stdout
+8. Logging to the terminal when running with `cargo run` (dev mode): stdout
    or stderr, and should it replace or add to the log file?
-10. Release boundary: the first standalone release (Stage 1 CICD) freezes the
-    DB and config schema it ships. Later changes then need migrations and
-    fixtures from that release too. Until then, 1.0 migrations can still be
-    edited.
+9. Release boundary: the first standalone release (Stage 1 CICD) freezes the
+   DB and config schema it ships. Later changes then need migrations and
+   fixtures from that release too. Until then, 1.0 migrations can still be
+   edited.
 
 ## 10. Security notes
 
@@ -530,7 +525,7 @@ possible now:
    tests, Windows and Linux arm64 CI.
 7. **Profiles and connections CLI**: CLI rework, nullable identity,
    user-driven token move, `env` store.
-8. **Tickets**: commands + tests, owner resolution, async title/description
+8. **Tickets**: commands + tests, async title/description
    sync.
 9. **Linear** integration.
 10. **Publishing**: fan-out, squash, per-entry errors, retry, sub-minute rule,

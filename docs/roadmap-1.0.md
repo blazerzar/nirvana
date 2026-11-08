@@ -165,17 +165,15 @@ logged from the start.
 - [ ] Add `ticket list`, `ticket remove` and `ticket load`.
 - [x] Add `nirvana profile add` - a fresh DB has no profile, so connections
       cannot be added until one is created.
-- [ ] Decide how owning connection is resolved when profile has multiple
+- [x] Decide how owning connection is resolved when profile has multiple
       connections (proposal in the implementation guide).
-- [ ] Let's update ticket name and description when interacting with it (async).
-- [ ] Return `DomainError::NoActiveConnection` from core when `list` needs
-      a connection, instead of `.context("No active connection")` in the CLI.
 
 ## Tracking
 
 - [ ] Add scripts for seting up DB with dev data (profile, connections with
       credentials from infisical).
 - [ ] Make sure start, stop, resume, switch, edit, delete are working and tested.
+- [ ] Let's update ticket name and description when interacting with it (async).
 - [ ] Get these commands working in CLI and start integration testing as well.
 - [ ] Check for blocking calls inside async code while refactoring the CLI.
 - [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,

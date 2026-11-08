@@ -28,7 +28,7 @@ mod legacy_030;
 const CURRENT_SCHEMA_VERSION: i64 = 2;
 
 /// Config keys as `section.key`, in the order of [`AppConfig`].
-pub(crate) const KEYS: [&str; 6] = [
+pub(crate) const KEYS: &[&str] = &[
     "core.profile",
     "gui.theme",
     "idle.enabled",
@@ -170,15 +170,20 @@ impl AppConfig {
         self.write(paths, &existing)
     }
 
-    /// Returns the table [`save`](Self::save) would write.
-    pub(crate) fn saved_table(&self, paths: &AppPaths) -> Result<toml::Table, ConfigError> {
-        self.table_without_defaults(&existing_table(paths))
+    /// Returns the table [`save`](Self::save) would write, given the
+    /// [`defaults_table`].
+    pub(crate) fn saved_table(
+        &self,
+        paths: &AppPaths,
+        defaults: &toml::Table,
+    ) -> Result<toml::Table, ConfigError> {
+        self.table_without_defaults(&existing_table(paths), defaults)
     }
 
     /// Writes the config like [`save`](Self::save), keeping default values
     /// only for keys present in `existing`.
     fn write(&self, paths: &AppPaths, existing: &toml::Table) -> Result<(), ConfigError> {
-        let table = self.table_without_defaults(existing)?;
+        let table = self.table_without_defaults(existing, &defaults_table()?)?;
         fs::create_dir_all(&paths.config_dir)?;
         let temp_file = paths.config_file.with_extension("toml.tmp");
         fs::write(&temp_file, toml::to_string_pretty(&table)?)?;
@@ -188,8 +193,11 @@ impl AppConfig {
 
     /// Returns the config as a table without default values, except for keys
     /// present in `existing`. `schema_version` is always kept.
-    fn table_without_defaults(&self, existing: &toml::Table) -> Result<toml::Table, ConfigError> {
-        let defaults = toml::Table::try_from(Self::default())?;
+    fn table_without_defaults(
+        &self,
+        existing: &toml::Table,
+        defaults: &toml::Table,
+    ) -> Result<toml::Table, ConfigError> {
         let mut table = toml::Table::try_from(self)?;
         table.retain(|key, value| {
             if key == "schema_version" {
@@ -210,6 +218,11 @@ impl AppConfig {
         });
         Ok(table)
     }
+}
+
+/// Returns the default config as a table.
+pub(crate) fn defaults_table() -> Result<toml::Table, ConfigError> {
+    Ok(toml::Table::try_from(AppConfig::default())?)
 }
 
 /// Returns the content of `config.toml`, or an empty table if it cannot be
@@ -363,13 +376,19 @@ level = "debug"
     #[test]
     fn keys_are_all_config_keys() {
         let config = AppConfig {
+            schema_version: CURRENT_SCHEMA_VERSION,
             core: CoreConfig {
                 profile: Some("work".into()),
+            },
+            gui: GuiConfig { theme: Theme::Dark },
+            idle: IdleConfig {
+                enabled: false,
+                methods: vec!["lock".into()],
+                threshold_secs: 600,
             },
             log: LogConfig {
                 level: Some(LogLevel::Debug),
             },
-            ..AppConfig::default()
         };
 
         let keys: Vec<String> = toml::Table::try_from(config)

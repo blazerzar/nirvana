@@ -3,10 +3,11 @@
 //! Keys are `section.key`, see [`KEYS`]. `core.profile` is changed by
 //! switching the active profile and cannot be unset.
 
-use crate::config::{AppConfig, ConfigError, KEYS};
+use crate::config::{self, AppConfig, ConfigError, KEYS};
 use crate::domain::ConfigEntry;
 use crate::errors::{DomainError, NirvanaError};
 use crate::logging;
+use crate::paths::AppPaths;
 use crate::service::Nirvana;
 
 const PROFILE_KEY: &str = "core.profile";
@@ -22,7 +23,8 @@ impl Nirvana {
     /// Returns an error if the key is unknown or the config is unavailable.
     pub fn get_config(&self, key: Option<&str>) -> Result<Vec<ConfigEntry>, NirvanaError> {
         let keys: Vec<&'static str> = KEYS
-            .into_iter()
+            .iter()
+            .copied()
             .filter(|candidate| {
                 key.is_none_or(|key| {
                     *candidate == key
@@ -36,8 +38,8 @@ impl Nirvana {
             return Err(DomainError::UnknownConfigKey(key.unwrap_or_default().to_owned()).into());
         }
 
-        let values = self.config()?.saved_table(&self.paths)?;
-        let defaults = toml::Table::try_from(AppConfig::default()).map_err(ConfigError::from)?;
+        let defaults = config::defaults_table()?;
+        let values = self.config()?.saved_table(&self.paths, &defaults)?;
         Ok(keys
             .into_iter()
             .map(|key| ConfigEntry {
@@ -64,26 +66,18 @@ impl Nirvana {
     /// key, the profile for `core.profile` does not exist, the config is
     /// unavailable or cannot be saved, or the database query fails.
     pub async fn set_config(&mut self, key: &str, value: &str) -> Result<(), NirvanaError> {
-        let (section, name) = split_key(key)?;
         if key == PROFILE_KEY {
             self.switch_profile(value).await?;
             return Ok(());
         }
 
-        let mut table = toml::Table::try_from(self.config()?).map_err(ConfigError::from)?;
-        table
-            .entry(section)
-            .or_insert_with(|| toml::Table::new().into())
-            .as_table_mut()
-            .ok_or_else(|| DomainError::UnknownConfigKey(key.to_owned()))?
-            .insert(name.to_owned(), parse_value(value));
-        let config: AppConfig = table
-            .try_into()
-            .map_err(|e| DomainError::InvalidConfigValue(key.to_owned(), e))?;
-
-        *self.config_mut()? = config;
-        self.config()?.save(&self.paths)?;
-        Ok(())
+        self.edit_config(
+            key,
+            |section, name| {
+                section.insert(name.to_owned(), parse_value(value));
+            },
+            AppConfig::save,
+        )
     }
 
     /// Removes the config key `key` (`section.key`) from `config.toml`,
@@ -94,21 +88,41 @@ impl Nirvana {
     /// Returns an error if the key is unknown or is `core.profile`, or the
     /// config is unavailable or cannot be saved.
     pub fn unset_config(&mut self, key: &str) -> Result<(), NirvanaError> {
-        let (section, name) = split_key(key)?;
         if key == PROFILE_KEY {
             return Err(DomainError::ConfigKeyRequired(key.to_owned()).into());
         }
 
+        self.edit_config(
+            key,
+            |section, name| {
+                section.remove(name);
+            },
+            |config, paths| config.save_without(paths, key),
+        )
+    }
+
+    /// Applies `edit` to the section table and key name of `key`
+    /// (`section.key`), saves the resulting config with `save` and keeps it
+    /// only if saving succeeds.
+    fn edit_config(
+        &mut self,
+        key: &str,
+        edit: impl FnOnce(&mut toml::Table, &str),
+        save: impl FnOnce(&AppConfig, &AppPaths) -> Result<(), ConfigError>,
+    ) -> Result<(), NirvanaError> {
+        let (section, name) = split_key(key)?;
         let mut table = toml::Table::try_from(self.config()?).map_err(ConfigError::from)?;
-        if let Some(section) = table.get_mut(section).and_then(toml::Value::as_table_mut) {
-            section.remove(name);
-        }
+        let section = table
+            .get_mut(section)
+            .and_then(toml::Value::as_table_mut)
+            .ok_or_else(|| DomainError::UnknownConfigKey(key.to_owned()))?;
+        edit(section, name);
         let config: AppConfig = table
             .try_into()
             .map_err(|e| DomainError::InvalidConfigValue(key.to_owned(), e))?;
 
+        save(&config, &self.paths)?;
         *self.config_mut()? = config;
-        self.config()?.save_without(&self.paths, key)?;
         Ok(())
     }
 }
@@ -269,6 +283,16 @@ mod tests {
                 "{key}: {err}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn set_config_keeps_config_when_save_fails() {
+        let mut service = test_service().await;
+        std::fs::create_dir(&service.paths.config_file).unwrap();
+
+        service.set_config("gui.theme", "dark").await.unwrap_err();
+
+        assert_eq!(service.config().unwrap().gui.theme, Theme::default());
     }
 
     #[tokio::test]

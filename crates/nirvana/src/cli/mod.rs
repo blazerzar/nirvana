@@ -1,3 +1,4 @@
+mod config;
 mod connection;
 mod credential;
 mod delete;
@@ -72,6 +73,11 @@ enum Command {
     Settings {
         #[command(subcommand)]
         command: Settings,
+    },
+    /// View and change config
+    Config {
+        #[command(subcommand)]
+        command: Config,
     },
 }
 
@@ -289,6 +295,30 @@ enum Settings {
     },
 }
 
+#[derive(Subcommand)]
+enum Config {
+    /// Show config values
+    Get {
+        /// Section or key (section.key) to show (omit to show all)
+        key: Option<String>,
+        /// Also show keys that are not set
+        #[arg(long)]
+        show_unset: bool,
+    },
+    /// Change a config value
+    Set {
+        /// Key to change (section.key)
+        key: String,
+        /// New value
+        value: String,
+    },
+    /// Reset a config value to its default
+    Unset {
+        /// Key to reset (section.key)
+        key: String,
+    },
+}
+
 fn kind_parser() -> impl TypedValueParser<Value = Kind> {
     PossibleValuesParser::new(Kind::ALL.map(|kind| PossibleValue::new(kind.as_str())))
         .try_map(|s| s.parse::<Kind>())
@@ -375,6 +405,11 @@ pub(crate) async fn run() -> anyhow::Result<()> {
                 key,
                 value,
             } => settings::set(connection, key, value).await,
+        },
+        Some(Command::Config { command }) => match command {
+            Config::Get { key, show_unset } => config::get(key, show_unset).await,
+            Config::Set { key, value } => config::set(key, value).await,
+            Config::Unset { key } => config::unset(key).await,
         },
         None => Ok(()),
     }

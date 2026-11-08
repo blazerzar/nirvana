@@ -158,7 +158,7 @@ logged from the start.
 - [ ] Add commands for reading and setting profile settings.
 - [x] Add commands for reading and setting connection settings.
 - [x] Add commands for reading and clearing logs.
-- [ ] Add commands for reading and setting config.
+- [x] Add commands for reading, setting and unsetting config.
 
 ## Tickets
 

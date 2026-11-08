@@ -73,8 +73,8 @@ opens the database, backs it up and runs the migrations. Migrations are only
 run by the application.
 
 `nirvana` is the terminal app. It exposes Clap subcommands for app info,
-connections, publishing, task timing, listing, editing, starting, stopping,
-and deleting.
+connections, settings, publishing, task timing, listing, editing, starting,
+stopping, and deleting.
 
 ## Rust Guidance
 

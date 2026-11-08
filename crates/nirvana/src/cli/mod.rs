@@ -7,6 +7,7 @@ mod list;
 mod logs;
 mod profile;
 mod publish;
+mod settings;
 mod start;
 mod stop;
 mod table;
@@ -66,6 +67,11 @@ enum Command {
     Logs {
         #[command(subcommand)]
         command: Logs,
+    },
+    /// View and change settings
+    Settings {
+        #[command(subcommand)]
+        command: Settings,
     },
 }
 
@@ -261,6 +267,28 @@ enum Logs {
     },
 }
 
+#[derive(Subcommand)]
+enum Settings {
+    /// Show connection settings
+    Get {
+        /// Connection name
+        #[arg(long)]
+        connection: String,
+        /// Setting to show (omit to show all)
+        key: Option<String>,
+    },
+    /// Change a connection setting
+    Set {
+        /// Connection name
+        #[arg(long)]
+        connection: String,
+        /// Setting to change
+        key: String,
+        /// New value
+        value: String,
+    },
+}
+
 fn kind_parser() -> impl TypedValueParser<Value = Kind> {
     PossibleValuesParser::new(Kind::ALL.map(|kind| PossibleValue::new(kind.as_str())))
         .try_map(|s| s.parse::<Kind>())
@@ -339,6 +367,14 @@ pub(crate) async fn run() -> anyhow::Result<()> {
         Some(Command::Logs { command }) => match command {
             Logs::View { lines, follow } => logs::view(lines, follow).await,
             Logs::Clear { yes } => logs::clear(yes).await,
+        },
+        Some(Command::Settings { command }) => match command {
+            Settings::Get { connection, key } => settings::get(connection, key).await,
+            Settings::Set {
+                connection,
+                key,
+                value,
+            } => settings::set(connection, key, value).await,
         },
         None => Ok(()),
     }

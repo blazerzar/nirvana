@@ -156,7 +156,7 @@ logged from the start.
 ## Settings, logs and config CLI
 
 - [ ] Add commands for reading and setting profile settings.
-- [ ] Add commands for reading and setting connection settings.
+- [x] Add commands for reading and setting connection settings.
 - [x] Add commands for reading and clearing logs.
 - [ ] Add commands for reading and setting config.
 

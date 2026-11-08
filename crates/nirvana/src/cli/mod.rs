@@ -304,6 +304,9 @@ enum Config {
         /// Also show keys that are not set
         #[arg(long)]
         show_unset: bool,
+        /// Show the default instead of the value of a single key
+        #[arg(long)]
+        show_default: bool,
     },
     /// Change a config value
     Set {
@@ -407,7 +410,11 @@ pub(crate) async fn run() -> anyhow::Result<()> {
             } => settings::set(connection, key, value).await,
         },
         Some(Command::Config { command }) => match command {
-            Config::Get { key, show_unset } => config::get(key, show_unset).await,
+            Config::Get {
+                key,
+                show_unset,
+                show_default,
+            } => config::get(key, show_unset, show_default).await,
             Config::Set { key, value } => config::set(key, value).await,
             Config::Unset { key } => config::unset(key).await,
         },

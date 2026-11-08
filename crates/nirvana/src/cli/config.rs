@@ -10,13 +10,23 @@ const COLUMNS: [Column; 3] = [
     Column::new("DEFAULT"),
 ];
 
-pub(crate) async fn get(key: Option<String>, show_unset: bool) -> anyhow::Result<()> {
+pub(crate) async fn get(
+    key: Option<String>,
+    show_unset: bool,
+    show_default: bool,
+) -> anyhow::Result<()> {
     let service = Nirvana::new().await?;
     let entries = service.get_config(key.as_deref())?;
     let term = Term::stdout();
 
     if key.is_some_and(|key| key.contains('.')) {
-        let value = entries.into_iter().find_map(|entry| entry.value);
+        let value = entries.into_iter().find_map(|entry| {
+            if show_default {
+                entry.default
+            } else {
+                entry.value
+            }
+        });
         term.write_line(&value.unwrap_or_default())?;
         return Ok(());
     }

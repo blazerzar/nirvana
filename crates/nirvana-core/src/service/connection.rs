@@ -14,7 +14,9 @@ use sea_orm::{
 };
 use tracing::debug;
 
-use crate::domain::{Connection, ConnectionData, ConnectionEdit, Kind, SecretStore, Settings};
+use crate::domain::{
+    Connection, ConnectionData, ConnectionEdit, Kind, SecretStore, Settings, SettingsEdit,
+};
 use crate::errors::{DomainError, NirvanaError};
 use crate::integration::Integration;
 use crate::secrets::{delete_from_keychain, read_credential, store_secret};
@@ -134,6 +136,50 @@ impl Nirvana {
                 _ => e.into(),
             })?;
         Ok(())
+    }
+
+    /// Changes the settings of the connection named `name` in the active
+    /// profile. Settings that are `None` in the edit are kept.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no profile is active, the config is unavailable,
+    /// the connection does not exist, the edit does not match its kind, its
+    /// settings row is missing or a database query fails.
+    pub async fn edit_connection_settings(
+        &self,
+        name: &str,
+        edit: SettingsEdit,
+    ) -> Result<(), NirvanaError> {
+        let profile = self.find_active_profile().await?;
+        let Some(connection) =
+            ConnectionEntity::find_by_name_in_profile((name.to_owned(), profile.id))
+                .one(&self.db)
+                .await?
+        else {
+            return Err(DomainError::ConnectionNotFound(name.to_owned()).into());
+        };
+
+        let kind: Kind = connection.kind.parse()?;
+        match (kind, edit) {
+            (Kind::JiraCloud | Kind::JiraDc, SettingsEdit::Jira(edit)) => {
+                let mut settings: jira_settings::ActiveModel =
+                    jira_settings::Entity::find_by_id(connection.id)
+                        .one(&self.db)
+                        .await?
+                        .ok_or(DomainError::MissingConnectionSettings(connection.id))?
+                        .into();
+                if let Some(publish) = edit.publish {
+                    settings.publish = Set(publish);
+                }
+                if let Some(squash) = edit.squash {
+                    settings.squash = Set(squash);
+                }
+                settings.update(&self.db).await?;
+                Ok(())
+            }
+            (Kind::Linear, _) => Err(DomainError::UnexpectedSettings(kind).into()),
+        }
     }
 
     /// Returns the connections of the active profile, oldest first.
@@ -315,6 +361,7 @@ mod tests {
     use secrecy::ExposeSecret;
 
     use super::*;
+    use crate::domain::JiraSettingsEdit;
     use crate::secrets::read_credential;
     use crate::service::test_support::{keyring_passwords, test_service};
 
@@ -794,6 +841,104 @@ mod tests {
             NirvanaError::Domain(DomainError::EmptyConnectionName)
         ));
         assert_eq!(connection_names(&service).await, ["Test Jira"]);
+    }
+
+    fn jira_settings_edit(publish: Option<bool>, squash: Option<bool>) -> SettingsEdit {
+        SettingsEdit::Jira(JiraSettingsEdit { publish, squash })
+    }
+
+    async fn jira_settings_of(service: &Nirvana, name: &str) -> (bool, bool) {
+        match service.get_connection(name).await.unwrap().settings {
+            Settings::Jira(settings) => (settings.publish, settings.squash),
+            Settings::Linear => panic!("expected jira settings"),
+        }
+    }
+
+    #[tokio::test]
+    async fn edit_connection_settings_changes_jira_settings() {
+        let service = test_service().await;
+
+        service
+            .edit_connection_settings("Test Jira", jira_settings_edit(Some(false), Some(true)))
+            .await
+            .unwrap();
+
+        assert_eq!(jira_settings_of(&service, "Test Jira").await, (false, true));
+    }
+
+    #[tokio::test]
+    async fn edit_connection_settings_keeps_settings_that_are_not_edited() {
+        let service = test_service().await;
+
+        service
+            .edit_connection_settings("Test Jira", jira_settings_edit(None, Some(true)))
+            .await
+            .unwrap();
+
+        assert_eq!(jira_settings_of(&service, "Test Jira").await, (true, true));
+    }
+
+    #[tokio::test]
+    async fn edit_connection_settings_rejects_linear() {
+        let service = test_service().await;
+        service
+            .add_connection(ConnectionData {
+                kind: Kind::Linear,
+                identity: None,
+                secret_store: SecretStore::Plaintext,
+                ..keyring_data("Linear")
+            })
+            .await
+            .unwrap();
+
+        let err = service
+            .edit_connection_settings("Linear", jira_settings_edit(Some(false), None))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::UnexpectedSettings(Kind::Linear))
+        ));
+    }
+
+    #[tokio::test]
+    async fn edit_connection_settings_only_edits_in_active_profile() {
+        let mut service = test_service().await;
+        service.create_profile("work".to_string()).await.unwrap();
+        service.switch_profile("work").await.unwrap();
+
+        let err = service
+            .edit_connection_settings("Test Jira", jira_settings_edit(Some(false), None))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::ConnectionNotFound(name)) if name == "Test Jira"
+        ));
+        service.switch_profile("test").await.unwrap();
+        assert_eq!(jira_settings_of(&service, "Test Jira").await, (true, false));
+    }
+
+    #[tokio::test]
+    async fn edit_connection_settings_rejects_missing_settings() {
+        let service = test_service().await;
+        let id = service.get_connection("Test Jira").await.unwrap().model.id;
+        jira_settings::Entity::delete_by_id(id)
+            .exec(&service.db)
+            .await
+            .unwrap();
+
+        let err = service
+            .edit_connection_settings("Test Jira", jira_settings_edit(Some(false), None))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::MissingConnectionSettings(missing)) if missing == id
+        ));
     }
 
     #[tokio::test]

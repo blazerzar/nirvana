@@ -5,7 +5,10 @@ mod logs;
 mod profile;
 mod slot;
 
-pub use connection::{Connection, ConnectionData, ConnectionEdit, JiraSettings, Kind, Settings};
+pub use connection::{
+    Connection, ConnectionData, ConnectionEdit, JiraSettings, JiraSettingsEdit, Kind, Settings,
+    SettingsEdit,
+};
 pub use credential::{Credential, SecretLocation, SecretStore};
 pub use info::AppInfo;
 pub use logs::LogReader;

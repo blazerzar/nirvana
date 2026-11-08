@@ -55,6 +55,8 @@ pub enum DomainError {
     UnsupportedConnectionKind(String),
     #[error("connection {0} has no settings")]
     MissingConnectionSettings(i64),
+    #[error("{0} connection does not have these settings")]
+    UnexpectedSettings(Kind),
     #[error("connection {0} has no credential")]
     MissingCredential(i64),
     #[error("credential of connection '{0}' is already in {1}")]

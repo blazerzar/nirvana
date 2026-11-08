@@ -121,6 +121,17 @@ impl From<jira_settings::Model> for JiraSettings {
 }
 
 #[derive(Debug)]
+pub enum SettingsEdit {
+    Jira(JiraSettingsEdit),
+}
+
+#[derive(Debug, Default)]
+pub struct JiraSettingsEdit {
+    pub publish: Option<bool>,
+    pub squash: Option<bool>,
+}
+
+#[derive(Debug)]
 pub struct ConnectionData {
     pub name: String,
     pub kind: Kind,

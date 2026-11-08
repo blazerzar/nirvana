@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use thiserror::Error;
 
-use crate::config::ConfigError;
+use crate::config::{ConfigError, KEYS};
 use crate::domain::{Kind, SecretStore};
 use crate::integration::IntegrationError;
 use crate::secrets::SecretError;
@@ -83,6 +83,14 @@ pub enum DomainError {
     FutureTime,
     #[error("slot overlaps an existing slot")]
     SlotOverlap,
+
+    // config
+    #[error("unknown config key '{0}', expected a section or one of: {keys}", keys = KEYS.join(", "))]
+    UnknownConfigKey(String),
+    #[error("invalid value for config key '{0}'")]
+    InvalidConfigValue(String, #[source] toml::de::Error),
+    #[error("config key '{0}' cannot be unset")]
+    ConfigKeyRequired(String),
 }
 
 impl From<sea_orm::DbErr> for NirvanaError {

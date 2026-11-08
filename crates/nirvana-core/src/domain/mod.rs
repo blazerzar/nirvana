@@ -1,3 +1,4 @@
+mod config;
 mod connection;
 mod credential;
 mod info;
@@ -5,6 +6,7 @@ mod logs;
 mod profile;
 mod slot;
 
+pub use config::ConfigEntry;
 pub use connection::{
     Connection, ConnectionData, ConnectionEdit, JiraSettings, JiraSettingsEdit, Kind, Settings,
     SettingsEdit,

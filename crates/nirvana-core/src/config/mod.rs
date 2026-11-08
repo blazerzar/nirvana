@@ -27,6 +27,16 @@ mod legacy_030;
 
 const CURRENT_SCHEMA_VERSION: i64 = 2;
 
+/// Config keys as `section.key`, in the order of [`AppConfig`].
+pub(crate) const KEYS: [&str; 6] = [
+    "core.profile",
+    "gui.theme",
+    "idle.enabled",
+    "idle.methods",
+    "idle.threshold_secs",
+    "log.level",
+];
+
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("config I/O error")]
@@ -143,16 +153,42 @@ impl AppConfig {
     /// is already present in the file. `schema_version` is always written. A
     /// file that cannot be read is overwritten.
     pub(crate) fn save(&self, paths: &AppPaths) -> Result<(), ConfigError> {
-        let existing: toml::Table = fs::read_to_string(&paths.config_file)
-            .ok()
-            .and_then(|content| content.parse().ok())
-            .unwrap_or_default();
+        self.write(paths, &existing_table(paths))
+    }
+
+    /// Writes the config like [`save`](Self::save), as if `key`
+    /// (`section.key`) was not present in the file.
+    pub(crate) fn save_without(&self, paths: &AppPaths, key: &str) -> Result<(), ConfigError> {
+        let mut existing = existing_table(paths);
+        if let Some((section, name)) = key.split_once('.')
+            && let Some(section) = existing
+                .get_mut(section)
+                .and_then(toml::Value::as_table_mut)
+        {
+            section.remove(name);
+        }
         self.write(paths, &existing)
+    }
+
+    /// Returns the table [`save`](Self::save) would write.
+    pub(crate) fn saved_table(&self, paths: &AppPaths) -> Result<toml::Table, ConfigError> {
+        self.table_without_defaults(&existing_table(paths))
     }
 
     /// Writes the config like [`save`](Self::save), keeping default values
     /// only for keys present in `existing`.
     fn write(&self, paths: &AppPaths, existing: &toml::Table) -> Result<(), ConfigError> {
+        let table = self.table_without_defaults(existing)?;
+        fs::create_dir_all(&paths.config_dir)?;
+        let temp_file = paths.config_file.with_extension("toml.tmp");
+        fs::write(&temp_file, toml::to_string_pretty(&table)?)?;
+        fs::rename(&temp_file, &paths.config_file)?;
+        Ok(())
+    }
+
+    /// Returns the config as a table without default values, except for keys
+    /// present in `existing`. `schema_version` is always kept.
+    fn table_without_defaults(&self, existing: &toml::Table) -> Result<toml::Table, ConfigError> {
         let defaults = toml::Table::try_from(Self::default())?;
         let mut table = toml::Table::try_from(self)?;
         table.retain(|key, value| {
@@ -172,12 +208,17 @@ impl AppConfig {
                 value => existing.is_some() || default != Some(value),
             }
         });
-        fs::create_dir_all(&paths.config_dir)?;
-        let temp_file = paths.config_file.with_extension("toml.tmp");
-        fs::write(&temp_file, toml::to_string_pretty(&table)?)?;
-        fs::rename(&temp_file, &paths.config_file)?;
-        Ok(())
+        Ok(table)
     }
+}
+
+/// Returns the content of `config.toml`, or an empty table if it cannot be
+/// read.
+fn existing_table(paths: &AppPaths) -> toml::Table {
+    fs::read_to_string(&paths.config_file)
+        .ok()
+        .and_then(|content| content.parse().ok())
+        .unwrap_or_default()
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
@@ -317,6 +358,31 @@ level = "debug"
                 },
             }
         );
+    }
+
+    #[test]
+    fn keys_are_all_config_keys() {
+        let config = AppConfig {
+            core: CoreConfig {
+                profile: Some("work".into()),
+            },
+            log: LogConfig {
+                level: Some(LogLevel::Debug),
+            },
+            ..AppConfig::default()
+        };
+
+        let keys: Vec<String> = toml::Table::try_from(config)
+            .unwrap()
+            .into_iter()
+            .filter_map(|(section, keys)| Some((section, keys.as_table()?.clone())))
+            .flat_map(|(section, keys)| {
+                keys.into_iter()
+                    .map(move |(key, _)| format!("{section}.{key}"))
+            })
+            .collect();
+
+        assert_eq!(keys, KEYS);
     }
 
     #[test]

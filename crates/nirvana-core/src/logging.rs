@@ -98,15 +98,20 @@ fn filter(
     is_dev: bool,
     level: Option<LogLevel>,
 ) -> EnvFilter {
-    let level = match level {
-        Some(level) => level.as_str(),
-        None if is_dev => "trace",
-        None => "info",
-    };
+    let level = level.unwrap_or_else(|| default_level(is_dev));
     let directives = var(LOG_ENV_VAR)
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| crate_directives(level));
+        .unwrap_or_else(|| crate_directives(level.as_str()));
     EnvFilter::new(directives)
+}
+
+/// Returns the level for our crates when `[log] level` is not set.
+pub(crate) fn default_level(is_dev: bool) -> LogLevel {
+    if is_dev {
+        LogLevel::Trace
+    } else {
+        LogLevel::Info
+    }
 }
 
 /// Returns a filter directive that enables `level` for our crates only.

@@ -227,6 +227,8 @@ logged from the start.
       picker, available in all builds.
 - [ ] Add e2e tests for nirvana: run the built release binary in CI, with
       tokens from GitHub secrets through the `env` secret store.
+- [ ] Add tests for `ticket load` and `ticket sync` using mocks, for Linear
+      and Jira.
 
 ## Nirvana API
 

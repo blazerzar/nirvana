@@ -273,6 +273,9 @@ enum Ticket {
         /// Column to sort by
         #[arg(long, value_parser = ticket_sort_parser(), default_value = TicketSort::default().as_str())]
         sort: TicketSort,
+        /// Show ticket IDs
+        #[arg(long)]
+        show_ids: bool,
     },
     /// Fetch a ticket with its title from your connections
     Load {
@@ -432,7 +435,8 @@ pub(crate) async fn run() -> anyhow::Result<()> {
                 connection,
                 no_connection,
                 sort,
-            } => ticket::list(connection, no_connection, sort).await,
+                show_ids,
+            } => ticket::list(connection, no_connection, sort, show_ids).await,
             Ticket::Load { key, connection } => ticket::load(key, connection).await,
         },
         Some(Command::Credential { command }) => match command {

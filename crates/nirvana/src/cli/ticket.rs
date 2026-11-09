@@ -1,4 +1,4 @@
-use console::{Term, style};
+use console::{Alignment, Term, style};
 use nirvana_core::{Nirvana, TicketConnection, TicketSort};
 use tracing::info;
 
@@ -13,10 +13,20 @@ const COLUMNS: [Column; 5] = [
     Column::new("SYNCED"),
 ];
 
+const COLUMNS_WITH_ID: [Column; 6] = [
+    Column::new("ID").align(Alignment::Right),
+    Column::new("KEY"),
+    Column::new("TITLE").max_width(50),
+    Column::new("CONNECTION").max_width(20),
+    Column::new("LAST WORKED"),
+    Column::new("SYNCED"),
+];
+
 pub(crate) async fn list(
     connection: Option<String>,
     no_connection: bool,
     sort: TicketSort,
+    show_ids: bool,
 ) -> anyhow::Result<()> {
     let connection = match connection {
         Some(name) => TicketConnection::Named(name),
@@ -31,10 +41,10 @@ pub(crate) async fn list(
         return Ok(());
     }
 
-    let rows: Vec<[String; 5]> = tickets
+    let rows: Vec<(String, [String; 5])> = tickets
         .into_iter()
         .map(|(ticket, connection)| {
-            [
+            let row = [
                 ticket.ticket_key,
                 ticket.title.unwrap_or_default(),
                 connection.map_or_else(|| "".to_string(), |c| c.name),
@@ -43,11 +53,23 @@ pub(crate) async fn list(
                     .map(format_timestamp)
                     .unwrap_or_default(),
                 format_timestamp(ticket.synced_at),
-            ]
+            ];
+            (ticket.id.to_string(), row)
         })
         .collect();
 
-    table::print(&term, &COLUMNS, &rows)
+    if show_ids {
+        let rows: Vec<[String; 6]> = rows
+            .into_iter()
+            .map(|(id, [key, title, connection, last_worked, synced])| {
+                [id, key, title, connection, last_worked, synced]
+            })
+            .collect();
+        table::print(&term, &COLUMNS_WITH_ID, &rows)
+    } else {
+        let rows: Vec<[String; 5]> = rows.into_iter().map(|(_, row)| row).collect();
+        table::print(&term, &COLUMNS, &rows)
+    }
 }
 
 pub(crate) async fn load(key: String, connection: Option<String>) -> anyhow::Result<()> {

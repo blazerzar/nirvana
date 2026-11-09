@@ -12,13 +12,14 @@ mod settings;
 mod start;
 mod stop;
 mod table;
+mod ticket;
 mod time;
 
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Args, Parser, Subcommand};
 use console::Style;
 use dialoguer::theme::ColorfulTheme;
-use nirvana_core::{Kind, SecretStore, selectable_stores};
+use nirvana_core::{Kind, SecretStore, TicketSort, selectable_stores};
 use tracing::debug;
 
 #[derive(Parser)]
@@ -49,6 +50,11 @@ enum Command {
     List(ListArgs),
     /// Publish slots to backend
     Publish(PublishArgs),
+    /// Manage tickets
+    Ticket {
+        #[command(subcommand)]
+        command: Ticket,
+    },
     /// Manage profiles
     Profile {
         #[command(subcommand)]
@@ -255,6 +261,22 @@ enum Credential {
 }
 
 #[derive(Subcommand)]
+enum Ticket {
+    /// List tickets
+    List {
+        /// Show only tickets of this connection
+        #[arg(long)]
+        connection: Option<String>,
+        /// Show only tickets without a connection
+        #[arg(long, conflicts_with = "connection")]
+        no_connection: bool,
+        /// Column to sort by
+        #[arg(long, value_parser = ticket_sort_parser(), default_value = TicketSort::default().as_str())]
+        sort: TicketSort,
+    },
+}
+
+#[derive(Subcommand)]
 enum Logs {
     /// Show the log file
     View {
@@ -327,6 +349,11 @@ fn kind_parser() -> impl TypedValueParser<Value = Kind> {
         .try_map(|s| s.parse::<Kind>())
 }
 
+fn ticket_sort_parser() -> impl TypedValueParser<Value = TicketSort> {
+    PossibleValuesParser::new(TicketSort::ALL.map(|sort| PossibleValue::new(sort.as_str())))
+        .try_map(|s| s.parse::<TicketSort>())
+}
+
 fn storage_parser() -> impl TypedValueParser<Value = SecretStore> {
     let hidden = PossibleValue::new(SecretStore::Env.to_string()).hide(true);
     PossibleValuesParser::new(
@@ -391,6 +418,13 @@ pub(crate) async fn run() -> anyhow::Result<()> {
                 yes,
             } => connection::delete(name, with_tickets, yes).await,
             Connection::Test { name, all } => connection::test(name, all).await,
+        },
+        Some(Command::Ticket { command }) => match command {
+            Ticket::List {
+                connection,
+                no_connection,
+                sort,
+            } => ticket::list(connection, no_connection, sort).await,
         },
         Some(Command::Credential { command }) => match command {
             Credential::List => credential::list().await,

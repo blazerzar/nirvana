@@ -69,6 +69,8 @@ pub enum DomainError {
     TicketNotFound(String),
     #[error("ticket {0} has no connection")]
     TicketHasNoConnection(String),
+    #[error("unsupported ticket sort: {0}")]
+    UnsupportedTicketSort(String),
 
     // slots
     #[error("slot not found: {0}")]

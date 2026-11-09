@@ -5,6 +5,7 @@ mod info;
 mod logs;
 mod profile;
 mod slot;
+mod ticket;
 
 pub use config::ConfigEntry;
 pub use connection::{
@@ -16,6 +17,7 @@ pub use info::AppInfo;
 pub use logs::LogReader;
 pub use profile::{ActiveProfile, Profile};
 pub use slot::{PublishFailure, PublishResult, SlotCreate, SlotEdit, SlotSort};
+pub use ticket::{TicketConnection, TicketSort};
 
 #[derive(Debug, Default)]
 pub enum Change<T> {

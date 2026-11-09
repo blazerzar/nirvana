@@ -163,7 +163,7 @@ logged from the start.
 ## Tickets
 
 - [x] Keep tickets unique per connection.
-- [ ] Add `ticket list`.
+- [x] Add `ticket list`.
 - [ ] Add `ticket load`.
 - [ ] Add `ticket remove`.
 - [ ] Add `ticket sync`.

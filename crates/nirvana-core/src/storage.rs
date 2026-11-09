@@ -10,14 +10,20 @@ use crate::paths;
 
 #[derive(Debug, Error)]
 pub enum DbError {
-    #[error("database error")]
-    Db(#[from] sea_orm::DbErr),
+    #[error("database error: {0}")]
+    Db(DbErr),
     #[error("db I/O error")]
     Io(#[from] std::io::Error),
     #[error("stop time must be after the slot start time")]
     StopBeforeStart,
     #[error("invalid db path")]
     InvalidDbPath,
+}
+
+impl From<DbErr> for DbError {
+    fn from(e: DbErr) -> Self {
+        Self::Db(e)
+    }
 }
 
 /// Opens the SQLite database at `db_file`, creating it if missing, and applies
@@ -416,8 +422,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db_file = changed_fixture(dir.path(), sql).await;
 
-        let error = open(&db_file).await.unwrap_err();
-        std::error::Error::source(&error).unwrap().to_string()
+        open(&db_file).await.unwrap_err().to_string()
     }
 
     #[tokio::test]
@@ -507,6 +512,14 @@ mod tests {
         assert!(
             migrated_schema
                 .contains(&"tickets|tickets_by_profile_key|0|0|1|ticket_key".to_string())
+        );
+        assert!(
+            migrated_schema
+                .contains(&"tickets|tickets_by_connection_key|1|0|0|connection_id".to_string())
+        );
+        assert!(
+            migrated_schema
+                .contains(&"tickets|tickets_by_connection_key|1|0|1|ticket_key".to_string())
         );
         assert!(
             !migrated_schema

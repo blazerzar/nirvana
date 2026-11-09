@@ -207,6 +207,15 @@ async fn add_profiles(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
     txn.create_index(stmt).await?;
 
     let stmt = Index::create()
+        .name("tickets_by_connection_key")
+        .table("tickets")
+        .col("connection_id")
+        .col("ticket_key")
+        .unique()
+        .to_owned();
+    txn.create_index(stmt).await?;
+
+    let stmt = Index::create()
         .name("tickets_by_last_worked")
         .table("tickets")
         .col("profile_id")

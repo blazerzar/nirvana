@@ -41,7 +41,7 @@ worklogs.
 | 2 | **0.3 migration: the existing DB becomes one profile** (e.g. `default`) holding all existing connections. Tickets keep their `connection_id`; a slot's connection comes from its ticket (verify `slots.connection_id` always matches before dropping it). In 0.3 slots of different connections can overlap, so the web lets users remove a connection with all its tickets and their slots (Webserver stage). | Simple, lossless. Splitting into more profiles can be done by hand later. Most users have a single connection, so one profile changes nothing for them. |
 | 3 | **Async core on tokio + SeaORM**, async reqwest. Use SeaORM as much as possible: the raw SQL migration files are replaced by SeaORM migrations, with `0001` and `0002` rewritten as the baseline. | axum, Leptos and Iced tasks are async anyway, and SeaORM is async-only. |
 | 4 | **TUI dropped for 1.0.** Remove the ratatui stub and the ratatui/crossterm deps. | No TUI tasks or v6 screens exist. Can come back after 1.0. |
-| 5 | **A ticket is owned by its profile and sourced from a connection.** `connection_id` is the connection the ticket was obtained from. Deleting the connection keeps the ticket with `connection_id` NULL (disconnected), unless its tickets are deleted too. | |
+| 5 | **A ticket is owned by its profile and sourced from a connection.** `connection_id` is the connection the ticket was obtained from. Deleting the connection keeps the ticket with `connection_id` NULL (disconnected), unless its tickets are deleted too. Tickets are unique per connection: `unique (connection_id, ticket_key)`. | |
 | 6 | **No rounding anywhere.** Jira rejects worklogs under 60 s, so a sub-minute entry **fails that entry with a visible error** and stays unpublished. | Design product rule: never silently alter time. |
 | 7 | Git hooks with **hk** (+ mise). **Mise tasks** replace the justfile. **dprint** (TOML, YAML, JSON) replaces Tombi and sql-formatter, so Node is no longer needed. Tool versions are pinned in `mise.toml`. | Cross-platform, one tool manager, one formatter. |
 | 8 | **Idle detection** is restored from `main` (`crates/nirvana-gui/src-tauri/src/idle/{mod,macos,windows}.rs`) when the Iced app needs it. **Tray and menu-bar code is rewritten** for Iced. The GUI crate can be deleted without porting anything first. | |
@@ -111,7 +111,7 @@ jira_settings(connection_id, publish bool default true,
             -- linear has no settings table yet
 tickets(id, profile_id, connection_id NULL, ticket_key, title,
         last_worked_at, synced_at)   -- NULL = source connection deleted
-            -- no unique key besides id
+            -- unique (connection_id, ticket_key)
             -- deleting a profile cascades
 slots(id, uuid, profile_id, ticket_id, started_at, stopped_at)
             -- one running slot per profile

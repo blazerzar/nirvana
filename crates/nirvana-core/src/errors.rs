@@ -55,6 +55,8 @@ pub enum DomainError {
     MissingConnectionSettings(i64),
     #[error("{0} connection does not have these settings")]
     UnexpectedSettings(Kind),
+    #[error("invalid host: {0}")]
+    InvalidHost(String),
     #[error("connection {0} has no credential")]
     MissingCredential(i64),
     #[error("credential of connection '{0}' is already in {1}")]
@@ -67,6 +69,8 @@ pub enum DomainError {
     // tickets
     #[error("ticket not found: {0}")]
     TicketNotFound(String),
+    #[error("ticket {0} found in more than one connection: {connections}", connections = .1.join(", "))]
+    AmbiguousTicket(String, Vec<String>),
     #[error("ticket {0} has no connection")]
     TicketHasNoConnection(String),
     #[error("unsupported ticket sort: {0}")]

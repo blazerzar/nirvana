@@ -1,5 +1,6 @@
 use console::{Term, style};
 use nirvana_core::{Nirvana, TicketConnection, TicketSort};
+use tracing::info;
 
 use crate::cli::table::{self, Column};
 use crate::cli::time::format_timestamp;
@@ -47,6 +48,21 @@ pub(crate) async fn list(
         .collect();
 
     table::print(&term, &COLUMNS, &rows)
+}
+
+pub(crate) async fn load(key: String, connection: Option<String>) -> anyhow::Result<()> {
+    let service = Nirvana::new().await?;
+    let ticket = service.load_ticket(&key, connection.as_deref()).await?;
+    info!(key = %ticket.ticket_key, connection_id = ?ticket.connection_id, "ticket loaded");
+
+    Term::stdout().write_line(&format!(
+        "{} ticket {} {}",
+        style("Loaded").green(),
+        style(&ticket.ticket_key).bold(),
+        ticket.title.unwrap_or_default(),
+    ))?;
+
+    Ok(())
 }
 
 fn print_no_tickets(term: &Term) -> std::io::Result<()> {

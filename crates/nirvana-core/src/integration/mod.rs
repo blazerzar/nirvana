@@ -34,7 +34,9 @@ pub enum IntegrationError {
     Api(String),
 }
 
+#[derive(Debug)]
 pub(crate) struct IssueInfo {
+    pub key: String,
     pub title: String,
 }
 
@@ -46,6 +48,10 @@ pub(crate) enum Integration {
 impl Integration {
     pub fn new(connection: &Connection, token: SecretString) -> Result<Self, DomainError> {
         let host = &connection.model.host;
+        let jira_url = || {
+            reqwest::Url::parse(&format!("https://{host}/rest/api/2"))
+                .map_err(|_| DomainError::InvalidHost(host.clone()))
+        };
         let integration = match connection.kind {
             Kind::JiraCloud => {
                 let email = connection
@@ -53,9 +59,12 @@ impl Integration {
                     .identity
                     .clone()
                     .ok_or(DomainError::MissingIdentity(connection.kind))?;
-                Self::Jira(JiraIntegration::new(host, JiraAuth::Basic { email, token }))
+                Self::Jira(JiraIntegration::new(
+                    jira_url()?,
+                    JiraAuth::Basic { email, token },
+                ))
             }
-            Kind::JiraDc => Self::Jira(JiraIntegration::new(host, JiraAuth::Bearer(token))),
+            Kind::JiraDc => Self::Jira(JiraIntegration::new(jira_url()?, JiraAuth::Bearer(token))),
             Kind::Linear => Self::Linear(LinearIntegration::new(token)),
         };
         Ok(integration)

@@ -4,7 +4,7 @@
 //! Data Center with a personal access token (bearer auth). Time is published
 //! as worklogs.
 
-use reqwest::{Method, RequestBuilder, Response, StatusCode};
+use reqwest::{Method, RequestBuilder, Response, StatusCode, Url};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use tracing::debug;
@@ -17,13 +17,14 @@ pub(crate) enum JiraAuth {
 }
 
 pub(crate) struct JiraIntegration {
-    host: String,
+    api_url: Url,
     auth: JiraAuth,
     client: reqwest::Client,
 }
 
 #[derive(Deserialize)]
 struct Issue {
+    key: String,
     fields: IssueFields,
 }
 
@@ -33,16 +34,19 @@ struct IssueFields {
 }
 
 impl JiraIntegration {
-    pub(crate) fn new(host: &str, auth: JiraAuth) -> Self {
+    pub(crate) fn new(api_url: Url, auth: JiraAuth) -> Self {
         Self {
-            host: host.to_string(),
+            api_url,
             auth,
             client: reqwest::Client::new(),
         }
     }
 
     pub(crate) async fn test_connection(&self) -> Result<(), IntegrationError> {
-        let response = self.request(Method::GET, "myself").send().await?;
+        let response = self
+            .request(Method::GET, self.url(&["myself"]))
+            .send()
+            .await?;
         check_status(response, None)?;
         Ok(())
     }
@@ -51,10 +55,12 @@ impl JiraIntegration {
         &self,
         ticket_key: &str,
     ) -> Result<IssueInfo, IntegrationError> {
-        let path = format!("issue/{ticket_key}?fields=summary");
-        let response = self.request(Method::GET, &path).send().await?;
+        let mut url = self.url(&["issue", ticket_key]);
+        url.set_query(Some("fields=summary"));
+        let response = self.request(Method::GET, url).send().await?;
         let issue: Issue = check_status(response, Some(ticket_key))?.json().await?;
         Ok(IssueInfo {
+            key: issue.key,
             title: issue.fields.summary,
         })
     }
@@ -74,14 +80,21 @@ impl JiraIntegration {
             "started": started.to_string(),
         });
 
-        let path = format!("issue/{ticket_key}/worklog");
-        let response = self.request(Method::POST, &path).json(&body).send().await?;
+        let url = self.url(&["issue", ticket_key, "worklog"]);
+        let response = self.request(Method::POST, url).json(&body).send().await?;
         check_status(response, Some(ticket_key))?;
         Ok(())
     }
 
-    fn request(&self, method: Method, path: &str) -> RequestBuilder {
-        let url = format!("https://{}/rest/api/2/{path}", self.host);
+    fn url(&self, segments: &[&str]) -> Url {
+        let mut url = self.api_url.clone();
+        url.path_segments_mut()
+            .expect("https URL has path segments")
+            .extend(segments);
+        url
+    }
+
+    fn request(&self, method: Method, url: Url) -> RequestBuilder {
         let request = self.client.request(method, url).timeout(TIMEOUT);
         match &self.auth {
             JiraAuth::Basic { email, token } => {
@@ -105,5 +118,27 @@ fn check_status(
             Err(IntegrationError::Auth(status.to_string()))
         }
         _ => Ok(response.error_for_status()?),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn url_encodes_ticket_key() {
+        let jira = JiraIntegration::new(
+            Url::parse("https://jira.example.com/rest/api/2").unwrap(),
+            JiraAuth::Bearer("token".into()),
+        );
+
+        for (key, path) in [
+            ("DES-1", "/rest/api/2/issue/DES-1"),
+            ("DES-1?x", "/rest/api/2/issue/DES-1%3Fx"),
+            ("DES/1#x", "/rest/api/2/issue/DES%2F1%23x"),
+            ("..", "/rest/api/2/issue"),
+        ] {
+            assert_eq!(jira.url(&["issue", key]).path(), path, "{key}");
+        }
     }
 }

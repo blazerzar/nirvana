@@ -274,6 +274,14 @@ enum Ticket {
         #[arg(long, value_parser = ticket_sort_parser(), default_value = TicketSort::default().as_str())]
         sort: TicketSort,
     },
+    /// Fetch a ticket with its title from your connections
+    Load {
+        /// Ticket key (e.g. DES-1234)
+        key: String,
+        /// Fetch only from this connection (omit to search all connections)
+        #[arg(long)]
+        connection: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -425,6 +433,7 @@ pub(crate) async fn run() -> anyhow::Result<()> {
                 no_connection,
                 sort,
             } => ticket::list(connection, no_connection, sort).await,
+            Ticket::Load { key, connection } => ticket::load(key, connection).await,
         },
         Some(Command::Credential { command }) => match command {
             Credential::List => credential::list().await,

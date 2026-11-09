@@ -47,6 +47,7 @@ struct IssueData {
 
 #[derive(Deserialize)]
 struct Issue {
+    identifier: String,
     title: String,
 }
 
@@ -70,7 +71,7 @@ impl LinearIntegration {
     ) -> Result<IssueInfo, IntegrationError> {
         let data: IssueData = self
             .query(
-                "query($id: String!) { issue(id: $id) { title } }",
+                "query($id: String!) { issue(id: $id) { identifier title } }",
                 json!({ "id": ticket_key }),
             )
             .await
@@ -81,6 +82,7 @@ impl LinearIntegration {
                 e => e,
             })?;
         Ok(IssueInfo {
+            key: data.issue.identifier,
             title: data.issue.title,
         })
     }

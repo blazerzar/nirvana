@@ -167,30 +167,37 @@ logged from the start.
 - [x] Add `ticket load`.
 - [x] Add `ticket remove`.
 - [x] Add `ticket sync`.
-- [x] Add `nirvana profile add` - a fresh DB has no profile, so connections
+- [x] Add `nirvana profile create` - a fresh DB has no profile, so connections
       cannot be added until one is created.
 - [x] Decide how owning connection is resolved when profile has multiple
       connections (proposal in the implementation guide).
 
 ## Tracking
 
-- [ ] Add scripts for seting up DB with dev data (profile, connections with
-      credentials from infisical).
-- [ ] Make sure start, stop, resume, switch, edit, delete are working and tested.
-- [ ] Let's update ticket name and description when interacting with it (async).
-- [ ] Get these commands working in CLI and start integration testing as well.
-- [ ] Check for blocking calls inside async code while refactoring the CLI.
+- [ ] Add a mise task that sets up a dev DB: a profile and jira-cloud,
+      jira-dc and linear connections with credentials from Infisical
+      (through the existing connect scripts).
+- [ ] Add a shared `parse_time` in `cli/time.rs`. Core rejects future times
+      with `DomainError::FutureTime`.
+- [ ] Add `start <KEY> [--at <time>] [--connection <name>]`. A running slot
+      is stopped and the new one started in a single transaction. A ticket
+      that is not stored is loaded from the connections (`--connection`
+      limits the lookup to one), `--connection` also selects among stored
+      tickets with the same key. A backdated start must not overlap closed
+      or published slots. The interactive picker returns on Esc instead of
+      calling `std::process::exit`.
+- [ ] Add `stop [--at <time>]`.
+- [ ] Add `resume`: starts the previous ticket while stopped.
+- [ ] Add `switch`: switches to the previous ticket while tracking, in a
+      single transaction.
+- [ ] Add `list` with `--show-ids`.
+- [ ] Add `edit <ID>`: validate overlaps, published slots are read-only.
+      `--stop ""` reopens the slot (one running slot per profile, no
+      overlap).
+- [ ] Add `delete`: by ID (from `list --show-ids`) or by time (`--at`, the
+      slot active at that time), with confirmation.
 - [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
-      through the public API).
-- [ ] Validate overlaps on edit; published slots are read-only.
-- [ ] Validate overlaps on start with `--at` - a backdated start must not
-      cover closed or published slots (only manual create checks today).
-- [ ] Stop the running slot and start the new one in a single transaction.
-- [ ] Reject future times in `start_slot` and `stop_slot` with
-      `DomainError::FutureTime`, remove the `parse_time` copies in
-      `start.rs` and `stop.rs` and use `cli::parse_time`.
-- [ ] Return from the interactive start picker on Esc instead of
-      `std::process::exit(0)`.
+      through the public API) covering the tracking flows.
 
 ## Linear
 
@@ -232,6 +239,8 @@ logged from the start.
 
 ## Nirvana API
 
+- [ ] Check for blocking calls inside async code (sync `std::fs` in config,
+      storage and logs, `dialoguer` prompts).
 - [ ] Check if we should rework the API interface of the core.
 - [ ] The same goes for DB and config API.
 - [ ] Return the issue URL from core with slots, so frontends do not fetch
@@ -279,6 +288,8 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [ ] Global shortcuts, launch at login, close to menu bar.
 - [ ] Idle detection (take from main), not tracking reminder.
 - [ ] GUI will have its own settings that are related to the GUI application.
+- [ ] Update the ticket title when interacting with it (async), enabled by
+      a setting.
 - [ ] Migrate `[gui]` and `[idle]` to desktop settings: remove unused keys
       (font_scale, show_tray_icon), map old themes to light / dark / system
       (new schema_version, backup, migration tests).

@@ -140,6 +140,21 @@ pub(crate) async fn remove(
     Ok(())
 }
 
+pub(crate) async fn sync(key: String, connection: Option<String>) -> anyhow::Result<()> {
+    let service = Nirvana::new().await?;
+    let ticket = service.sync_ticket(&key, connection.as_deref()).await?;
+    info!(key = %ticket.ticket_key, id = ticket.id, "ticket synced");
+
+    Term::stdout().write_line(&format!(
+        "{} ticket {} {}",
+        style("Synced").green(),
+        style(&ticket.ticket_key).bold(),
+        ticket.title.unwrap_or_default(),
+    ))?;
+
+    Ok(())
+}
+
 fn print_no_tickets(term: &Term) -> std::io::Result<()> {
     term.write_line(&format!("{}", style("No tickets found").yellow()))?;
     term.write_line(&format!(

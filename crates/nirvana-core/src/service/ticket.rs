@@ -7,7 +7,8 @@ use nirvana_entity::connection::Entity as ConnectionEntity;
 use nirvana_entity::{connection, slot, ticket};
 use sea_orm::sea_query::{Func, NullOrdering, OnConflict, Order};
 use sea_orm::{
-    EntityTrait, IntoSimpleExpr, PaginatorTrait, QueryFilter, QueryOrder, Set, TransactionTrait,
+    ActiveModelTrait, ConnectionTrait, EntityTrait, IntoSimpleExpr, PaginatorTrait, QueryFilter,
+    QueryOrder, Set, TransactionTrait,
 };
 use tokio::task::JoinSet;
 use tracing::{debug, warn};
@@ -145,41 +146,7 @@ impl Nirvana {
     ) -> Result<ticket::Model, NirvanaError> {
         let profile = self.find_active_profile().await?;
         let txn = self.db.begin().await?;
-        let ticket = match target {
-            TicketTarget::Key { key, connection } => {
-                let query = ticket::Entity::find_by_profile_key(profile.id, &key);
-                let query = match connection {
-                    Some(name) => {
-                        let connection = find_connection_in_profile(&txn, profile.id, name).await?;
-                        query.filter(ticket::COLUMN.connection_id.eq(connection.id))
-                    }
-                    None => query,
-                };
-                let mut found = query
-                    .find_also_related(ConnectionEntity)
-                    .order_by_asc(ticket::COLUMN.id)
-                    .all(&txn)
-                    .await?;
-                match found.len() {
-                    0 => return Err(DomainError::TicketNotFound(key).into()),
-                    1 => found.remove(0).0,
-                    _ => {
-                        let connections = found
-                            .into_iter()
-                            .map(|(_, connection)| {
-                                connection.map_or_else(|| "no connection".to_string(), |c| c.name)
-                            })
-                            .collect();
-                        return Err(DomainError::AmbiguousTicket(key, connections).into());
-                    }
-                }
-            }
-            TicketTarget::Id(id) => ticket::Entity::find_by_id(id)
-                .filter(ticket::COLUMN.profile_id.eq(profile.id))
-                .one(&txn)
-                .await?
-                .ok_or(DomainError::TicketIdNotFound(id))?,
-        };
+        let ticket = find_ticket(&txn, profile.id, target).await?;
 
         let slots = slot::Entity::find()
             .filter(slot::COLUMN.ticket_id.eq(ticket.id))
@@ -197,6 +164,52 @@ impl Nirvana {
         ticket::Entity::delete_by_id(ticket.id).exec(&txn).await?;
         txn.commit().await?;
         Ok(ticket)
+    }
+
+    /// Fetches the title of the ticket `key` of the active profile from the
+    /// ticket's connection and stores it. `connection` selects the ticket of
+    /// the connection with that name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no profile is active, the config is unavailable,
+    /// the connection does not exist, no ticket or more than one ticket
+    /// matches, the ticket has no connection, the credential cannot be read,
+    /// fetching the ticket fails or a database query fails.
+    pub async fn sync_ticket(
+        &self,
+        key: &str,
+        connection: Option<&str>,
+    ) -> Result<ticket::Model, NirvanaError> {
+        let profile = self.find_active_profile().await?;
+        let target = TicketTarget::Key {
+            key: key.to_string(),
+            connection: connection.map(str::to_string),
+        };
+        let ticket = find_ticket(&self.db, profile.id, target).await?;
+        let connection_id = ticket
+            .connection_id
+            .ok_or_else(|| DomainError::TicketHasNoConnection(ticket.ticket_key.clone()))?;
+        let connection = self.find_connection(connection_id).await?;
+
+        debug!(key = %ticket.ticket_key, connection = %connection.model.name, "syncing ticket");
+        let token = read_credential(&self.keyring, connection.model.id, &self.db).await?;
+        let issue = Integration::new(&connection, token)?
+            .fetch_issue(&ticket.ticket_key)
+            .await?;
+        self.update_title(ticket, issue.title).await
+    }
+
+    /// Updates the title and sync time of the stored `ticket`.
+    async fn update_title(
+        &self,
+        ticket: ticket::Model,
+        title: String,
+    ) -> Result<ticket::Model, NirvanaError> {
+        let mut ticket: ticket::ActiveModel = ticket.into();
+        ticket.title = Set(Some(title));
+        ticket.synced_at = Set(chrono::Utc::now().timestamp());
+        Ok(ticket.update(&self.db).await?)
     }
 
     /// Inserts the ticket of `connection` under the key the backend returned,
@@ -222,6 +235,50 @@ impl Nirvana {
             )
             .exec_with_returning(&self.db)
             .await?)
+    }
+}
+
+/// Returns the ticket of the profile with the key and optional connection
+/// name, or with the ID, of `target`.
+async fn find_ticket(
+    db: &impl ConnectionTrait,
+    profile_id: i64,
+    target: TicketTarget,
+) -> Result<ticket::Model, NirvanaError> {
+    match target {
+        TicketTarget::Key { key, connection } => {
+            let query = ticket::Entity::find_by_profile_key(profile_id, &key);
+            let query = match connection {
+                Some(name) => {
+                    let connection = find_connection_in_profile(db, profile_id, name).await?;
+                    query.filter(ticket::COLUMN.connection_id.eq(connection.id))
+                }
+                None => query,
+            };
+            let mut found = query
+                .find_also_related(ConnectionEntity)
+                .order_by_asc(ticket::COLUMN.id)
+                .all(db)
+                .await?;
+            match found.len() {
+                0 => Err(DomainError::TicketNotFound(key).into()),
+                1 => Ok(found.remove(0).0),
+                _ => {
+                    let connections = found
+                        .into_iter()
+                        .map(|(_, connection)| {
+                            connection.map_or_else(|| "no connection".to_string(), |c| c.name)
+                        })
+                        .collect();
+                    Err(DomainError::AmbiguousTicket(key, connections).into())
+                }
+            }
+        }
+        TicketTarget::Id(id) => Ok(ticket::Entity::find_by_id(id)
+            .filter(ticket::COLUMN.profile_id.eq(profile_id))
+            .one(db)
+            .await?
+            .ok_or(DomainError::TicketIdNotFound(id))?),
     }
 }
 
@@ -260,7 +317,6 @@ fn pick_issue(
 #[cfg(test)]
 mod tests {
     use nirvana_entity::credential::SecretStore;
-    use sea_orm::{ActiveModelTrait, Set};
 
     use super::*;
     use crate::domain::{ConnectionData, Kind};
@@ -852,5 +908,68 @@ mod tests {
         let slots = slot::Entity::find().all(&service.db).await.unwrap();
         assert_eq!(slots.len(), 1);
         assert_eq!(slots[0].ticket_id, kept.id);
+    }
+
+    #[tokio::test]
+    async fn sync_ticket_rejects_disconnected_ticket() {
+        let service = test_service().await;
+        add_tickets(&service).await;
+
+        let err = service.sync_ticket("OLD-1", None).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::TicketHasNoConnection(key)) if key == "OLD-1"
+        ));
+    }
+
+    #[tokio::test]
+    async fn sync_ticket_rejects_ambiguous_key() {
+        let service = test_service().await;
+        add_duplicate_ticket(&service).await;
+
+        let err = service.sync_ticket("JIRA-1", None).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::AmbiguousTicket(key, _)) if key == "JIRA-1"
+        ));
+    }
+
+    #[tokio::test]
+    async fn sync_ticket_rejects_missing_ticket_or_connection() {
+        let service = test_service().await;
+        add_tickets(&service).await;
+
+        let err = service.sync_ticket("JIRA-2", None).await.unwrap_err();
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::TicketNotFound(key)) if key == "JIRA-2"
+        ));
+
+        let err = service
+            .sync_ticket("JIRA-1", Some("missing"))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::ConnectionNotFound(name)) if name == "missing"
+        ));
+    }
+
+    #[tokio::test]
+    async fn update_title_keeps_key_and_last_worked_at() {
+        let service = test_service().await;
+        let [jira, ..] = add_tickets(&service).await;
+
+        let ticket = service
+            .update_title(jira.clone(), "Fix logout".to_string())
+            .await
+            .unwrap();
+
+        assert_eq!(ticket.title.as_deref(), Some("Fix logout"));
+        assert!(ticket.synced_at > jira.synced_at);
+        assert_eq!(ticket.ticket_key, jira.ticket_key);
+        assert_eq!(ticket.last_worked_at, jira.last_worked_at);
     }
 }

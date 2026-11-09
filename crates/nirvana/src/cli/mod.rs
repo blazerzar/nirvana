@@ -300,6 +300,14 @@ enum Ticket {
         #[arg(long)]
         with_slots: bool,
     },
+    /// Update a ticket's title from its connection
+    Sync {
+        /// Ticket key (e.g. DES-1234)
+        key: String,
+        /// Sync only the ticket of this connection
+        #[arg(long)]
+        connection: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -459,6 +467,7 @@ pub(crate) async fn run() -> anyhow::Result<()> {
                 id,
                 with_slots,
             } => ticket::remove(key, connection, id, with_slots).await,
+            Ticket::Sync { key, connection } => ticket::sync(key, connection).await,
         },
         Some(Command::Credential { command }) => match command {
             Credential::List => credential::list().await,

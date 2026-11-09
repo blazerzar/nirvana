@@ -49,6 +49,8 @@ pub enum DomainError {
     UnexpectedIdentity(Kind),
     #[error("connection '{0}' not found")]
     ConnectionNotFound(String),
+    #[error("connection with ID {0} not found")]
+    ConnectionIdNotFound(i64),
     #[error("unsupported connection kind: {0}")]
     UnsupportedConnectionKind(String),
     #[error("connection {0} has no settings")]

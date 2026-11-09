@@ -214,6 +214,17 @@ impl Nirvana {
         Ok(Connection::new(connection)?)
     }
 
+    pub(super) async fn find_connection(&self, id: i64) -> Result<Connection, NirvanaError> {
+        let connection = ConnectionEntity::load()
+            .with(credential::Entity)
+            .with(jira_settings::Entity)
+            .filter(connection::COLUMN.id.eq(id))
+            .one(&self.db)
+            .await?
+            .ok_or(DomainError::ConnectionIdNotFound(id))?;
+        Ok(Connection::new(connection)?)
+    }
+
     pub(super) async fn find_connections(
         &self,
         profile_id: i64,

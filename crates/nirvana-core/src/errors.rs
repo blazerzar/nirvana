@@ -69,8 +69,12 @@ pub enum DomainError {
     // tickets
     #[error("ticket not found: {0}")]
     TicketNotFound(String),
+    #[error("ticket with ID {0} not found")]
+    TicketIdNotFound(i64),
     #[error("ticket {0} found in more than one connection: {connections}", connections = .1.join(", "))]
     AmbiguousTicket(String, Vec<String>),
+    #[error("ticket {0} has {1} slots")]
+    TicketHasSlots(String, u64),
     #[error("ticket {0} has no connection")]
     TicketHasNoConnection(String),
     #[error("unsupported ticket sort: {0}")]

@@ -10,6 +10,15 @@ pub enum TicketConnection {
     Disconnected,
 }
 
+#[derive(Clone, Debug)]
+pub enum TicketTarget {
+    Key {
+        key: String,
+        connection: Option<String>,
+    },
+    Id(i64),
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub enum TicketSort {
     Key,

@@ -4,17 +4,20 @@
 //! kept without a connection when its connection is deleted.
 
 use nirvana_entity::connection::Entity as ConnectionEntity;
-use nirvana_entity::{connection, ticket};
+use nirvana_entity::{connection, slot, ticket};
 use sea_orm::sea_query::{Func, NullOrdering, OnConflict, Order};
-use sea_orm::{EntityTrait, IntoSimpleExpr, QueryFilter, QueryOrder, Set};
+use sea_orm::{
+    EntityTrait, IntoSimpleExpr, PaginatorTrait, QueryFilter, QueryOrder, Set, TransactionTrait,
+};
 use tokio::task::JoinSet;
 use tracing::{debug, warn};
 
-use crate::domain::{Connection, TicketConnection, TicketSort};
+use crate::domain::{Connection, TicketConnection, TicketSort, TicketTarget};
 use crate::errors::{DomainError, NirvanaError};
 use crate::integration::{Integration, IntegrationError, IssueInfo};
 use crate::secrets::read_credential;
 use crate::service::Nirvana;
+use crate::service::connection::find_connection_in_profile;
 
 impl Nirvana {
     /// Returns the tickets of the active profile with their connections,
@@ -41,11 +44,7 @@ impl Nirvana {
         let query = match connection {
             TicketConnection::Any => query,
             TicketConnection::Named(name) => {
-                let connection =
-                    ConnectionEntity::find_by_name_in_profile((name.clone(), profile.id))
-                        .one(&self.db)
-                        .await?
-                        .ok_or(DomainError::ConnectionNotFound(name))?;
+                let connection = find_connection_in_profile(&self.db, profile.id, name).await?;
                 query.filter(ticket::COLUMN.connection_id.eq(connection.id))
             }
             TicketConnection::Disconnected => query.filter(ticket::COLUMN.connection_id.is_null()),
@@ -127,6 +126,77 @@ impl Nirvana {
             .map(|(_, connection, issue)| (connection, issue));
         let (connection, issue) = pick_issue(key, results)?;
         self.store_ticket(&connection, issue).await
+    }
+
+    /// Removes the ticket of the active profile with the key and optional
+    /// connection name, or with the ID, of `target`. A ticket with slots is
+    /// only removed with `with_slots`, which removes its slots too.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no profile is active, the config is unavailable,
+    /// the connection does not exist, no ticket or more than one ticket
+    /// matches, the ticket has slots and `with_slots` is not set, or a
+    /// database query fails.
+    pub async fn remove_ticket(
+        &self,
+        target: TicketTarget,
+        with_slots: bool,
+    ) -> Result<ticket::Model, NirvanaError> {
+        let profile = self.find_active_profile().await?;
+        let txn = self.db.begin().await?;
+        let ticket = match target {
+            TicketTarget::Key { key, connection } => {
+                let query = ticket::Entity::find_by_profile_key(profile.id, &key);
+                let query = match connection {
+                    Some(name) => {
+                        let connection = find_connection_in_profile(&txn, profile.id, name).await?;
+                        query.filter(ticket::COLUMN.connection_id.eq(connection.id))
+                    }
+                    None => query,
+                };
+                let mut found = query
+                    .find_also_related(ConnectionEntity)
+                    .order_by_asc(ticket::COLUMN.id)
+                    .all(&txn)
+                    .await?;
+                match found.len() {
+                    0 => return Err(DomainError::TicketNotFound(key).into()),
+                    1 => found.remove(0).0,
+                    _ => {
+                        let connections = found
+                            .into_iter()
+                            .map(|(_, connection)| {
+                                connection.map_or_else(|| "no connection".to_string(), |c| c.name)
+                            })
+                            .collect();
+                        return Err(DomainError::AmbiguousTicket(key, connections).into());
+                    }
+                }
+            }
+            TicketTarget::Id(id) => ticket::Entity::find_by_id(id)
+                .filter(ticket::COLUMN.profile_id.eq(profile.id))
+                .one(&txn)
+                .await?
+                .ok_or(DomainError::TicketIdNotFound(id))?,
+        };
+
+        let slots = slot::Entity::find()
+            .filter(slot::COLUMN.ticket_id.eq(ticket.id))
+            .count(&txn)
+            .await?;
+        if slots > 0 {
+            if !with_slots {
+                return Err(DomainError::TicketHasSlots(ticket.ticket_key, slots).into());
+            }
+            slot::Entity::delete_many()
+                .filter(slot::COLUMN.ticket_id.eq(ticket.id))
+                .exec(&txn)
+                .await?;
+        }
+        ticket::Entity::delete_by_id(ticket.id).exec(&txn).await?;
+        txn.commit().await?;
+        Ok(ticket)
     }
 
     /// Inserts the ticket of `connection` under the key the backend returned,
@@ -237,7 +307,7 @@ mod tests {
         synced_at: i64,
     }
 
-    async fn add_ticket(service: &Nirvana, data: TicketData) {
+    async fn add_ticket(service: &Nirvana, data: TicketData) -> ticket::Model {
         ticket::ActiveModel {
             profile_id: Set(service.find_active_profile().await.unwrap().id),
             connection_id: Set(data.connection_id),
@@ -249,13 +319,13 @@ mod tests {
         }
         .insert(&service.db)
         .await
-        .unwrap();
+        .unwrap()
     }
 
     /// Adds a "linear" connection and three tickets to the active profile:
     /// "JIRA-1" in "Test Jira", "LIN-1" in "linear" and "OLD-1" without a
     /// connection.
-    async fn add_tickets(service: &Nirvana) {
+    async fn add_tickets(service: &Nirvana) -> [ticket::Model; 3] {
         let jira = service.list_connections().await.unwrap()[0].model.id;
         let linear = service
             .add_connection(ConnectionData {
@@ -270,6 +340,7 @@ mod tests {
             .unwrap()
             .model
             .id;
+        let mut tickets = Vec::new();
         for data in [
             TicketData {
                 key: "JIRA-1",
@@ -293,8 +364,9 @@ mod tests {
                 synced_at: 20,
             },
         ] {
-            add_ticket(service, data).await;
+            tickets.push(add_ticket(service, data).await);
         }
+        tickets.try_into().unwrap()
     }
 
     async fn ticket_keys(
@@ -599,5 +671,186 @@ mod tests {
             ticket::Entity::find().all(&service.db).await.unwrap().len(),
             1
         );
+    }
+
+    fn key_target(key: &str, connection: Option<&str>) -> TicketTarget {
+        TicketTarget::Key {
+            key: key.to_string(),
+            connection: connection.map(str::to_string),
+        }
+    }
+
+    /// Adds the tickets of `add_tickets` and a disconnected "JIRA-1", which
+    /// it returns.
+    async fn add_duplicate_ticket(service: &Nirvana) -> ticket::Model {
+        add_tickets(service).await;
+        add_ticket(
+            service,
+            TicketData {
+                key: "JIRA-1",
+                title: None,
+                connection_id: None,
+                last_worked_at: 0,
+                synced_at: 0,
+            },
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn remove_ticket_rejects_ambiguous_key() {
+        let service = test_service().await;
+        add_duplicate_ticket(&service).await;
+
+        let err = service
+            .remove_ticket(key_target("JIRA-1", None), false)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::AmbiguousTicket(key, connections))
+                if key == "JIRA-1" && connections == ["Test Jira", "no connection"]
+        ));
+    }
+
+    #[tokio::test]
+    async fn remove_ticket_removes_match_in_connection() {
+        let service = test_service().await;
+        let disconnected = add_duplicate_ticket(&service).await;
+
+        let ticket = service
+            .remove_ticket(key_target("JIRA-1", Some("Test Jira")), false)
+            .await
+            .unwrap();
+
+        assert_ne!(ticket, disconnected);
+        assert_eq!(
+            ticket_keys(&service, TicketConnection::Any, TicketSort::default()).await,
+            ["LIN-1", "OLD-1", "JIRA-1"]
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_ticket_removes_ticket_by_id() {
+        let service = test_service().await;
+        let disconnected = add_duplicate_ticket(&service).await;
+
+        let ticket = service
+            .remove_ticket(TicketTarget::Id(disconnected.id), false)
+            .await
+            .unwrap();
+
+        assert_eq!(ticket, disconnected);
+        assert_eq!(
+            ticket_keys(&service, TicketConnection::Any, TicketSort::default()).await,
+            ["LIN-1", "JIRA-1", "OLD-1"]
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_ticket_removes_disconnected_match() {
+        let service = test_service().await;
+        add_tickets(&service).await;
+
+        service
+            .remove_ticket(key_target("OLD-1", None), false)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            ticket_keys(&service, TicketConnection::Any, TicketSort::default()).await,
+            ["LIN-1", "JIRA-1"]
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_ticket_rejects_missing_ticket_or_connection() {
+        let service = test_service().await;
+        add_tickets(&service).await;
+
+        let err = service
+            .remove_ticket(key_target("JIRA-2", None), false)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::TicketNotFound(key)) if key == "JIRA-2"
+        ));
+
+        let err = service
+            .remove_ticket(key_target("JIRA-1", Some("missing")), false)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::ConnectionNotFound(name)) if name == "missing"
+        ));
+    }
+
+    #[tokio::test]
+    async fn remove_ticket_keeps_other_profiles_tickets() {
+        let mut service = test_service().await;
+        let [.., other] = add_tickets(&service).await;
+        service.create_profile("work".to_string()).await.unwrap();
+        service.switch_profile("work").await.unwrap();
+
+        let err = service
+            .remove_ticket(key_target("OLD-1", None), false)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::TicketNotFound(_))
+        ));
+        let err = service
+            .remove_ticket(TicketTarget::Id(other.id), false)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::TicketIdNotFound(id)) if id == other.id
+        ));
+        assert_eq!(ticket::Entity::find().count(&service.db).await.unwrap(), 3);
+    }
+
+    #[tokio::test]
+    async fn remove_ticket_removes_slots_only_with_slots() {
+        let service = test_service().await;
+        let [_, kept, removed] = add_tickets(&service).await;
+        for ticket in [&kept, &removed, &removed] {
+            slot::ActiveModel {
+                ticket_id: Set(ticket.id),
+                profile_id: Set(ticket.profile_id),
+                started_at: Set(0),
+                stopped_at: Set(Some(60)),
+                ..Default::default()
+            }
+            .insert(&service.db)
+            .await
+            .unwrap();
+        }
+
+        let err = service
+            .remove_ticket(key_target("OLD-1", None), false)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::TicketHasSlots(key, 2)) if key == "OLD-1"
+        ));
+        assert_eq!(slot::Entity::find().count(&service.db).await.unwrap(), 3);
+
+        service
+            .remove_ticket(key_target("OLD-1", None), true)
+            .await
+            .unwrap();
+        assert_eq!(
+            ticket_keys(&service, TicketConnection::Any, TicketSort::default()).await,
+            ["LIN-1", "JIRA-1"]
+        );
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].ticket_id, kept.id);
     }
 }

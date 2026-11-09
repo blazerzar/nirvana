@@ -17,7 +17,7 @@ pub use info::AppInfo;
 pub use logs::LogReader;
 pub use profile::{ActiveProfile, Profile};
 pub use slot::{PublishFailure, PublishResult, SlotCreate, SlotEdit, SlotSort};
-pub use ticket::{TicketConnection, TicketSort};
+pub use ticket::{TicketConnection, TicketSort, TicketTarget};
 
 #[derive(Debug, Default)]
 pub enum Change<T> {

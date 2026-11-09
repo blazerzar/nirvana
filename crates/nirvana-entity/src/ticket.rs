@@ -26,3 +26,11 @@ pub struct Model {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+
+impl Entity {
+    pub fn find_by_profile_key(profile_id: i64, key: &str) -> Select<Self> {
+        Self::find()
+            .filter(COLUMN.profile_id.eq(profile_id))
+            .filter(COLUMN.ticket_key.eq(key))
+    }
+}

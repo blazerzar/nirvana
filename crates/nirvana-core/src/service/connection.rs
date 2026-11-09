@@ -9,8 +9,8 @@ use nirvana_entity::connection::Entity as ConnectionEntity;
 use nirvana_entity::{connection, credential, jira_settings, publish_entry, slot, ticket};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, DatabaseConnection, DbErr, EntityTrait, ModelTrait, QueryFilter, QueryOrder,
-    QuerySelect, QueryTrait, Set, SqlErr, TransactionTrait,
+    ActiveModelTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait, ModelTrait,
+    QueryFilter, QueryOrder, QuerySelect, QueryTrait, Set, SqlErr, TransactionTrait,
 };
 use tracing::debug;
 
@@ -313,6 +313,18 @@ impl Nirvana {
             .await?;
         Ok(())
     }
+}
+
+/// Finds the connection named `name` in the profile.
+pub(super) async fn find_connection_in_profile(
+    db: &impl ConnectionTrait,
+    profile_id: i64,
+    name: String,
+) -> Result<connection::Model, NirvanaError> {
+    ConnectionEntity::find_by_name_in_profile((name.clone(), profile_id))
+        .one(db)
+        .await?
+        .ok_or_else(|| DomainError::ConnectionNotFound(name).into())
 }
 
 /// Inserts the connection with its credential and the default settings of

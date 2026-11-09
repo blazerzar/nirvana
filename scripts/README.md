@@ -10,7 +10,15 @@ mise run jira:worklog ME-498 "1h 30m" --comment "I did some work here."
 mise run jira:worklog ME-498 "1h 30m" --dc
 mise run linear:issue ENG-123
 mise run linear:issues ENG-123 ENG-124
+mise run jira:seed ME
+mise run linear:seed ENG
+mise run jira:connect keyring
+mise run jira:connect plaintext --dc --bin target/release/nirvana
+mise run linear:connect keyring
 ```
+
+The `seed` tasks create 100 issues in a project or team. The `connect` tasks
+add a connection to Nirvana, run with `cargo run` unless `--bin` is given.
 
 ## Secrets
 

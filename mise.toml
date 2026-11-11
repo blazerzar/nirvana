@@ -5,6 +5,7 @@ dprint = "0.63.0"
 jactionlint = "2.2.0"
 editorconfig-checker = "4.0.2"
 shellcheck = "0.11.0"
+infisical = { version = "0.45.5", platforms = { windows-arm64 = { asset_pattern = "cli_{{ version }}_windows_arm64.zip" } } }
 rust = { version = "1.99.0", profile = "default" }
 
 [env]

@@ -174,7 +174,7 @@ logged from the start.
 
 ## Tracking
 
-- [ ] Add a mise task that sets up a dev DB: a profile and jira-cloud,
+- [x] Add a mise task that sets up a dev DB: a profile and jira-cloud,
       jira-dc and linear connections with credentials from Infisical
       (through the existing connect scripts).
 - [ ] Add a shared `parse_time` in `cli/time.rs`. Core rejects future times

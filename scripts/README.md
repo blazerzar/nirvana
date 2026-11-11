@@ -15,10 +15,16 @@ mise run linear:seed ENG
 mise run jira:connect keyring
 mise run jira:connect plaintext --dc --bin target/release/nirvana
 mise run linear:connect keyring
+mise run dev:setup keyring
 ```
 
 The `seed` tasks create 100 issues in a project or team. The `connect` tasks
 add a connection to Nirvana, run with `cargo run` unless `--bin` is given.
+`dev:setup` creates a profile and adds the Jira Cloud and Linear connections.
+In dev mode the DB lives next to the binary (`target/debug/nirvana.db`), so it
+never touches your real data. Dev mode is on in debug builds or with
+`NIRVANA_DEV=1`, so a release binary given with `--bin` uses your real DB unless
+`NIRVANA_DEV=1` is set.
 
 ## Secrets
 

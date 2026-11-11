@@ -7,6 +7,7 @@ mod profile;
 #[cfg(test)]
 mod test_support;
 mod ticket;
+mod tracking;
 
 use std::sync::Arc;
 

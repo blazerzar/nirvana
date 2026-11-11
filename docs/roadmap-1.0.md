@@ -177,7 +177,7 @@ logged from the start.
 - [x] Add a mise task that sets up a dev DB: a profile and jira-cloud,
       jira-dc and linear connections with credentials from Infisical
       (through the existing connect scripts).
-- [ ] Add a shared `parse_time` in `cli/time.rs`. Core rejects future times
+- [x] Add a shared `parse_time` in `cli/time.rs`. Core rejects future times
       with `DomainError::FutureTime`.
 - [ ] Add `start <KEY> [--at <time>] [--connection <name>]`. A running slot
       is stopped and the new one started in a single transaction. A ticket

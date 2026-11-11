@@ -94,6 +94,9 @@ struct StartArgs {
     /// Start time (e.g. "14:30" or "2026-05-19 14:30"). Requires ticket.
     #[arg(long, requires = "ticket")]
     at: Option<String>,
+    /// Use the ticket of this connection (omit to search all connections)
+    #[arg(long, requires = "ticket")]
+    connection: Option<String>,
 }
 
 #[derive(Args, Debug)]

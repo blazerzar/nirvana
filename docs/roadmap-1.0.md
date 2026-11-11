@@ -179,7 +179,7 @@ logged from the start.
       (through the existing connect scripts).
 - [x] Add a shared `parse_time` in `cli/time.rs`. Core rejects future times
       with `DomainError::FutureTime`.
-- [ ] Add `start <KEY> [--at <time>] [--connection <name>]`. A running slot
+- [x] Add `start <KEY> [--at <time>] [--connection <name>]`. A running slot
       is stopped and the new one started in a single transaction. A ticket
       that is not stored is loaded from the connections (`--connection`
       limits the lookup to one), `--connection` also selects among stored

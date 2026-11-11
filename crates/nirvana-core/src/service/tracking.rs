@@ -1,12 +1,149 @@
-//! Slots.
+//! Tracking.
 //!
-//! A slot is a span of time tracked on a ticket.
+//! A slot is a span of time tracked on a ticket of the active profile. A
+//! profile has at most one running slot, which has no stop time, and its slots
+//! do not overlap. Starting a slot stops the running one at the same time.
+//! Slot times cannot be in the future.
 
 use chrono::Utc;
+use nirvana_entity::{slot, ticket};
+use sea_orm::{
+    ActiveModelTrait, ConnectionTrait, DatabaseTransaction, PaginatorTrait, Set, TransactionTrait,
+};
 
-use crate::errors::DomainError;
+use crate::domain::{Slot, StartResult, TicketTarget};
+use crate::errors::{DomainError, NirvanaError};
+use crate::service::Nirvana;
+use crate::service::ticket::find_ticket;
 
-#[cfg_attr(not(test), expect(dead_code))]
+impl Nirvana {
+    /// Returns the running slot of the active profile with its ticket.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no profile is active, the config is unavailable or
+    /// a database query fails.
+    pub async fn running_slot(&self) -> Result<Option<Slot>, NirvanaError> {
+        let profile = self.find_active_profile().await?;
+        find_running_slot(&self.db, profile.id).await
+    }
+
+    /// Starts tracking the ticket `key` of the active profile at `at`, or
+    /// now, and stops the running slot at the same time. A ticket that is
+    /// not stored is loaded from the connections. `connection` selects the
+    /// ticket of the connection with that name and limits loading to it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `at` is in the future, no profile is active, the
+    /// config is unavailable, the connection does not exist, more than one
+    /// stored ticket matches, the ticket cannot be loaded, the start is not
+    /// after the start of the running slot, a backdated slot overlaps another
+    /// slot or a database query fails.
+    pub async fn start_slot(
+        &self,
+        key: &str,
+        at: Option<i64>,
+        connection: Option<&str>,
+    ) -> Result<StartResult, NirvanaError> {
+        if let Some(at) = at {
+            reject_future_time(at)?;
+        }
+        let profile = self.find_active_profile().await?;
+        let target = TicketTarget::Key {
+            key: key.to_string(),
+            connection: connection.map(str::to_string),
+        };
+        let ticket = match find_ticket(&self.db, profile.id, target).await {
+            Err(NirvanaError::Domain(DomainError::TicketNotFound(_))) => {
+                self.load_ticket(key, connection).await?
+            }
+            result => result?,
+        };
+
+        let txn = self.db.begin().await?;
+        let result = start_in_txn(&txn, profile.id, ticket, at).await?;
+        txn.commit().await?;
+        Ok(result)
+    }
+}
+
+async fn find_running_slot(
+    db: &impl ConnectionTrait,
+    profile_id: i64,
+) -> Result<Option<Slot>, NirvanaError> {
+    let Some((model, ticket)) = slot::Entity::find_running(profile_id)
+        .find_also_related(ticket::Entity)
+        .one(db)
+        .await?
+    else {
+        return Ok(None);
+    };
+    let ticket = ticket.ok_or(DomainError::TicketIdNotFound(model.ticket_id))?;
+    Ok(Some(Slot { model, ticket }))
+}
+
+/// Stops the running slot of the profile and starts a slot on `ticket` at
+/// `at`, or now. A backdated slot must not overlap other slots.
+async fn start_in_txn(
+    txn: &DatabaseTransaction,
+    profile_id: i64,
+    ticket: ticket::Model,
+    at: Option<i64>,
+) -> Result<StartResult, NirvanaError> {
+    let now = Utc::now().timestamp();
+    let started_at = at.unwrap_or(now);
+
+    let stopped = match find_running_slot(txn, profile_id).await? {
+        Some(running) => {
+            if started_at <= running.model.started_at {
+                return Err(match at {
+                    Some(_) => DomainError::StartBeforeRunningSlot,
+                    None => DomainError::RunningSlotJustStarted,
+                }
+                .into());
+            }
+            let mut model: slot::ActiveModel = running.model.into();
+            model.stopped_at = Set(Some(started_at));
+            Some(Slot {
+                model: model.update(txn).await?,
+                ticket: running.ticket,
+            })
+        }
+        None => None,
+    };
+
+    if at.is_some()
+        && slot::Entity::find_overlapping(profile_id, started_at, now)
+            .count(txn)
+            .await?
+            > 0
+    {
+        return Err(DomainError::SlotOverlap.into());
+    }
+
+    let slot = slot::ActiveModel {
+        ticket_id: Set(ticket.id),
+        profile_id: Set(profile_id),
+        started_at: Set(started_at),
+        ..Default::default()
+    }
+    .insert(txn)
+    .await?;
+
+    let mut ticket: ticket::ActiveModel = ticket.into();
+    ticket.last_worked_at = Set(started_at);
+    let ticket = ticket.update(txn).await?;
+
+    Ok(StartResult {
+        started: Slot {
+            model: slot,
+            ticket,
+        },
+        stopped,
+    })
+}
+
 fn reject_future_time(timestamp: i64) -> Result<(), DomainError> {
     if timestamp > Utc::now().timestamp() {
         return Err(DomainError::FutureTime);
@@ -16,7 +153,10 @@ fn reject_future_time(timestamp: i64) -> Result<(), DomainError> {
 
 #[cfg(test)]
 mod tests {
+    use sea_orm::EntityTrait;
+
     use super::*;
+    use crate::service::test_support::test_service;
 
     #[test]
     fn reject_future_time_accepts_past_and_present() {
@@ -32,5 +172,223 @@ mod tests {
             reject_future_time(now + 60),
             Err(DomainError::FutureTime)
         ));
+    }
+
+    /// Adds the ticket `key` to the active profile, in "Test Jira" when
+    /// `connected` is set.
+    async fn add_ticket(service: &Nirvana, key: &str, connected: bool) -> ticket::Model {
+        let connection_id = match connected {
+            true => Some(service.list_connections().await.unwrap()[0].model.id),
+            false => None,
+        };
+        ticket::ActiveModel {
+            profile_id: Set(service.find_active_profile().await.unwrap().id),
+            connection_id: Set(connection_id),
+            ticket_key: Set(key.to_string()),
+            synced_at: Set(0),
+            ..Default::default()
+        }
+        .insert(&service.db)
+        .await
+        .unwrap()
+    }
+
+    async fn add_slot(
+        service: &Nirvana,
+        ticket: &ticket::Model,
+        started_at: i64,
+        stopped_at: Option<i64>,
+    ) -> slot::Model {
+        slot::ActiveModel {
+            ticket_id: Set(ticket.id),
+            profile_id: Set(ticket.profile_id),
+            started_at: Set(started_at),
+            stopped_at: Set(stopped_at),
+            ..Default::default()
+        }
+        .insert(&service.db)
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn start_slot_stops_running_slot() {
+        let service = test_service().await;
+        let now = Utc::now().timestamp();
+        let previous = add_ticket(&service, "JIRA-1", true).await;
+        let running = add_slot(&service, &previous, now - 600, None).await;
+        add_ticket(&service, "JIRA-2", true).await;
+
+        let result = service.start_slot("JIRA-2", None, None).await.unwrap();
+
+        let Slot {
+            model: stopped,
+            ticket: stopped_ticket,
+        } = result.stopped.unwrap();
+        let started = result.started.model;
+        assert_eq!(stopped.id, running.id);
+        assert_eq!(stopped_ticket.id, previous.id);
+        assert_eq!(stopped.stopped_at, Some(started.started_at));
+        assert_eq!(started.stopped_at, None);
+        let running = slot::Entity::find_running(previous.profile_id)
+            .all(&service.db)
+            .await
+            .unwrap();
+        assert_eq!(running, [started]);
+    }
+
+    #[tokio::test]
+    async fn start_slot_uses_stored_ticket() {
+        let service = test_service().await;
+        let stored = add_ticket(&service, "JIRA-1", true).await;
+
+        let result = service.start_slot("JIRA-1", None, None).await.unwrap();
+
+        let Slot {
+            model: slot,
+            ticket,
+        } = result.started;
+        assert_eq!(slot.ticket_id, stored.id);
+        assert_eq!(ticket.id, stored.id);
+        assert!(result.stopped.is_none());
+        assert_eq!(ticket::Entity::find().count(&service.db).await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn start_slot_rejects_ambiguous_key_without_connection() {
+        let service = test_service().await;
+        let connected = add_ticket(&service, "JIRA-1", true).await;
+        add_ticket(&service, "JIRA-1", false).await;
+
+        let err = service.start_slot("JIRA-1", None, None).await.unwrap_err();
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::AmbiguousTicket(key, _)) if key == "JIRA-1"
+        ));
+
+        let result = service
+            .start_slot("JIRA-1", None, Some("Test Jira"))
+            .await
+            .unwrap();
+        assert_eq!(result.started.ticket.id, connected.id);
+    }
+
+    #[tokio::test]
+    async fn start_slot_rejects_future_time() {
+        let service = test_service().await;
+        add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+
+        let err = service
+            .start_slot("JIRA-1", Some(now + 60), None)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, NirvanaError::Domain(DomainError::FutureTime)));
+    }
+
+    #[tokio::test]
+    async fn start_slot_rejects_backdated_overlap_with_closed_slot() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        add_slot(&service, &ticket, now - 3600, Some(now - 1800)).await;
+
+        let err = service
+            .start_slot("JIRA-1", Some(now - 2700), None)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::SlotOverlap)
+        ));
+        assert_eq!(slot::Entity::find().count(&service.db).await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn start_slot_rejects_time_before_running_slot_start() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let running = add_slot(&service, &ticket, now - 600, None).await;
+
+        for at in [now - 1200, now - 600] {
+            let err = service
+                .start_slot("JIRA-1", Some(at), None)
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                err,
+                NirvanaError::Domain(DomainError::StartBeforeRunningSlot)
+            ));
+        }
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [running]);
+    }
+
+    #[tokio::test]
+    async fn start_slot_rejects_running_slot_started_in_same_second() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let running = add_slot(&service, &ticket, Utc::now().timestamp() + 60, None).await;
+
+        let err = service.start_slot("JIRA-1", None, None).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::RunningSlotJustStarted)
+        ));
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [running]);
+    }
+
+    #[tokio::test]
+    async fn start_slot_backdated_stops_running_slot_at_start() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        add_slot(&service, &ticket, now - 3600, Some(now - 1800)).await;
+        let running = add_slot(&service, &ticket, now - 1200, None).await;
+
+        let result = service
+            .start_slot("JIRA-1", Some(now - 600), None)
+            .await
+            .unwrap();
+
+        let stopped = result.stopped.unwrap().model;
+        assert_eq!(stopped.id, running.id);
+        assert_eq!(stopped.stopped_at, Some(now - 600));
+        assert_eq!(result.started.model.started_at, now - 600);
+        assert_eq!(result.started.model.stopped_at, None);
+    }
+
+    #[tokio::test]
+    async fn running_slot_returns_slot_with_ticket() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let running = add_slot(&service, &ticket, Utc::now().timestamp() - 300, None).await;
+
+        let slot = service.running_slot().await.unwrap().unwrap();
+
+        assert_eq!(slot.model, running);
+        assert_eq!(slot.ticket, ticket);
+    }
+
+    #[tokio::test]
+    async fn start_slot_updates_last_worked_at() {
+        let service = test_service().await;
+        let stored = add_ticket(&service, "JIRA-1", true).await;
+        let at = Utc::now().timestamp() - 60;
+
+        let result = service.start_slot("JIRA-1", Some(at), None).await.unwrap();
+
+        assert_eq!(result.started.ticket.last_worked_at, at);
+        let ticket = ticket::Entity::find_by_id(stored.id)
+            .one(&service.db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(ticket.last_worked_at, at);
     }
 }

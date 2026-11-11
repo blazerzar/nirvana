@@ -1,4 +1,4 @@
-use super::Change;
+use nirvana_entity::{slot, ticket};
 
 pub enum SlotSort {
     StartedAt,
@@ -6,28 +6,13 @@ pub enum SlotSort {
 }
 
 #[derive(Debug)]
-pub struct SlotCreate {
-    pub ticket_key: String,
-    pub started_at: i64,
-    pub stopped_at: i64,
-}
-
-#[derive(Debug, Default)]
-pub struct SlotEdit {
-    pub ticket_key: Option<String>,
-    pub started_at: Option<i64>,
-    pub stopped_at: Change<i64>,
+pub struct Slot {
+    pub model: slot::Model,
+    pub ticket: ticket::Model,
 }
 
 #[derive(Debug)]
-pub struct PublishResult {
-    pub published_count: usize,
-    pub failed: Vec<PublishFailure>,
-    pub timestamp: i64,
-}
-
-#[derive(Debug)]
-pub struct PublishFailure {
-    pub ticket_key: String,
-    pub error: String,
+pub struct StartResult {
+    pub started: Slot,
+    pub stopped: Option<Slot>,
 }

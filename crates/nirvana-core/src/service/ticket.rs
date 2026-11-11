@@ -27,7 +27,7 @@ impl Nirvana {
     /// broken by the most recently worked on ticket.
     ///
     /// `connection` selects all tickets, the tickets of the connection with
-    /// that name or the tickets without a connection.
+    /// that name, the tickets with a connection or the tickets without one.
     ///
     /// # Errors
     ///
@@ -48,6 +48,7 @@ impl Nirvana {
                 let connection = find_connection_in_profile(&self.db, profile.id, name).await?;
                 query.filter(ticket::COLUMN.connection_id.eq(connection.id))
             }
+            TicketConnection::Connected => query.filter(ticket::COLUMN.connection_id.is_not_null()),
             TicketConnection::Disconnected => query.filter(ticket::COLUMN.connection_id.is_null()),
         };
         let query = match sort {
@@ -240,7 +241,7 @@ impl Nirvana {
 
 /// Returns the ticket of the profile with the key and optional connection
 /// name, or with the ID, of `target`.
-async fn find_ticket(
+pub(super) async fn find_ticket(
     db: &impl ConnectionTrait,
     profile_id: i64,
     target: TicketTarget,
@@ -499,6 +500,17 @@ mod tests {
             )
             .await,
             ["JIRA-1"]
+        );
+    }
+
+    #[tokio::test]
+    async fn list_tickets_filters_connected_tickets() {
+        let service = test_service().await;
+        add_tickets(&service).await;
+
+        assert_eq!(
+            ticket_keys(&service, TicketConnection::Connected, TicketSort::default()).await,
+            ["LIN-1", "JIRA-1"]
         );
     }
 

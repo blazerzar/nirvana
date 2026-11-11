@@ -16,7 +16,7 @@ pub use credential::{Credential, SecretLocation, SecretStore};
 pub use info::AppInfo;
 pub use logs::LogReader;
 pub use profile::{ActiveProfile, Profile};
-pub use slot::{PublishFailure, PublishResult, SlotCreate, SlotEdit, SlotSort};
+pub use slot::{Slot, SlotSort, StartResult};
 pub use ticket::{TicketConnection, TicketSort, TicketTarget};
 
 #[derive(Debug, Default)]

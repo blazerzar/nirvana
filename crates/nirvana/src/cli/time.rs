@@ -11,9 +11,19 @@ pub(crate) fn format_timestamp(timestamp: i64) -> String {
         .unwrap_or_default()
 }
 
+/// Formats `seconds` as hours and minutes, e.g. `1h 5m` or `45m`.
+pub(crate) fn format_duration(seconds: i64) -> String {
+    match seconds / 60 {
+        0 => format!("{seconds}s"),
+        minutes => match minutes / 60 {
+            0 => format!("{minutes}m"),
+            hours => format!("{hours}h {}m", minutes % 60),
+        },
+    }
+}
+
 /// Parses `HH:MM` (on `today`) or `YYYY-MM-DD HH:MM` in local time into a
 /// Unix timestamp.
-#[cfg_attr(not(test), expect(dead_code))]
 pub(crate) fn parse_time(input: &str, today: NaiveDate) -> anyhow::Result<i64> {
     let input = input.trim();
     let naive = if input.contains('-') {
@@ -44,6 +54,14 @@ mod tests {
             .single()
             .unwrap()
             .timestamp()
+    }
+
+    #[test]
+    fn format_duration_shows_hours_and_minutes() {
+        assert_eq!(format_duration(32), "32s");
+        assert_eq!(format_duration(45 * 60), "45m");
+        assert_eq!(format_duration(3600), "1h 0m");
+        assert_eq!(format_duration(3600 + 5 * 60 + 30), "1h 5m");
     }
 
     #[test]

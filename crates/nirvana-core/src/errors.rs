@@ -93,6 +93,10 @@ pub enum DomainError {
     FutureTime,
     #[error("slot overlaps an existing slot")]
     SlotOverlap,
+    #[error("start time must be after the start of the running slot")]
+    StartBeforeRunningSlot,
+    #[error("running slot started less than a second ago")]
+    RunningSlotJustStarted,
 
     // config
     #[error("unknown config key '{0}', expected a section or one of: {keys}", keys = KEYS.join(", "))]

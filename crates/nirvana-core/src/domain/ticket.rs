@@ -7,6 +7,7 @@ pub enum TicketConnection {
     #[default]
     Any,
     Named(String),
+    Connected,
     Disconnected,
 }
 

@@ -190,7 +190,7 @@ logged from the start.
 - [ ] Add `resume`: starts the previous ticket while stopped.
 - [ ] Add `switch`: switches to the previous ticket while tracking, in a
       single transaction.
-- [ ] Add `list` with `--show-ids`.
+- [x] Add `list` with `--show-ids`.
 - [ ] Add `edit <ID>`: validate overlaps, published slots are read-only.
       `--stop ""` reopens the slot (one running slot per profile, no
       overlap).

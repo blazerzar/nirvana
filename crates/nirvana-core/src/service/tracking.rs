@@ -7,14 +7,18 @@
 
 use chrono::Utc;
 use nirvana_entity::{slot, ticket};
+use sea_orm::sea_query::{Expr, Order, WindowStatement};
 use sea_orm::{
-    ActiveModelTrait, ConnectionTrait, DatabaseTransaction, PaginatorTrait, Set, TransactionTrait,
+    ActiveModelTrait, ConnectionTrait, DatabaseTransaction, ExprTrait, PaginatorTrait, QueryOrder,
+    QueryTrait, Set, TransactionTrait,
 };
 
 use crate::domain::{Slot, StartResult, TicketTarget};
 use crate::errors::{DomainError, NirvanaError};
 use crate::service::Nirvana;
 use crate::service::ticket::find_ticket;
+
+const TICKET_STARTED_AT: &str = "ticket_started_at";
 
 impl Nirvana {
     /// Returns the running slot of the active profile with its ticket.
@@ -26,6 +30,45 @@ impl Nirvana {
     pub async fn running_slot(&self) -> Result<Option<Slot>, NirvanaError> {
         let profile = self.find_active_profile().await?;
         find_running_slot(&self.db, profile.id).await
+    }
+
+    /// Returns the slots of the active profile that overlap the range from
+    /// `from` to `to`, or unbounded, with their tickets, ordered by start.
+    /// With `by_ticket` the slots of a ticket are grouped, in the order of
+    /// each ticket's first slot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no profile is active, the config is unavailable or
+    /// a database query fails.
+    pub async fn list_slots(
+        &self,
+        from: i64,
+        to: Option<i64>,
+        by_ticket: bool,
+    ) -> Result<Vec<Slot>, NirvanaError> {
+        let profile = self.find_active_profile().await?;
+        let mut query =
+            slot::Entity::find_in_range(profile.id, from, to).find_also_related(ticket::Entity);
+        if by_ticket {
+            QueryTrait::query(&mut query)
+                .expr_window_as(
+                    Expr::col((slot::Entity, slot::Column::StartedAt)).min(),
+                    WindowStatement::partition_by((slot::Entity, slot::Column::TicketId)),
+                    TICKET_STARTED_AT,
+                )
+                .order_by(TICKET_STARTED_AT, Order::Asc);
+        }
+        query
+            .order_by_asc(slot::COLUMN.started_at)
+            .all(&self.db)
+            .await?
+            .into_iter()
+            .map(|(model, ticket)| {
+                let ticket = ticket.ok_or(DomainError::TicketIdNotFound(model.ticket_id))?;
+                Ok(Slot { model, ticket })
+            })
+            .collect()
     }
 
     /// Starts tracking the ticket `key` of the active profile at `at`, or
@@ -114,7 +157,7 @@ async fn start_in_txn(
     };
 
     if at.is_some()
-        && slot::Entity::find_overlapping(profile_id, started_at, now)
+        && slot::Entity::find_in_range(profile_id, started_at, None)
             .count(txn)
             .await?
             > 0
@@ -373,6 +416,81 @@ mod tests {
 
         assert_eq!(slot.model, running);
         assert_eq!(slot.ticket, ticket);
+    }
+
+    async fn listed_slot_ids(
+        service: &Nirvana,
+        from: i64,
+        to: Option<i64>,
+        by_ticket: bool,
+    ) -> Vec<i64> {
+        service
+            .list_slots(from, to, by_ticket)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|slot| slot.model.id)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn list_slots_returns_slots_overlapping_range() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        add_slot(&service, &ticket, now - 7200, Some(now - 5400)).await;
+        let crossing_start = add_slot(&service, &ticket, now - 5000, Some(now - 3000)).await;
+        let inside = add_slot(&service, &ticket, now - 2500, Some(now - 2000)).await;
+        let crossing_stop = add_slot(&service, &ticket, now - 1500, Some(now - 500)).await;
+        let running = add_slot(&service, &ticket, now - 300, None).await;
+
+        assert_eq!(
+            listed_slot_ids(&service, now - 4000, Some(now - 1000), false).await,
+            [crossing_start.id, inside.id, crossing_stop.id]
+        );
+        assert_eq!(
+            listed_slot_ids(&service, now - 4000, None, false).await,
+            [crossing_start.id, inside.id, crossing_stop.id, running.id]
+        );
+        assert_eq!(
+            listed_slot_ids(&service, now - 600, Some(now - 100), false).await,
+            [crossing_stop.id, running.id]
+        );
+    }
+
+    #[tokio::test]
+    async fn list_slots_returns_slots_with_tickets() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let slot = add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
+
+        let slots = service.list_slots(now - 3600, None, false).await.unwrap();
+
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].model, slot);
+        assert_eq!(slots[0].ticket, ticket);
+    }
+
+    #[tokio::test]
+    async fn list_slots_sorts_by_start_or_ticket() {
+        let service = test_service().await;
+        let first = add_ticket(&service, "JIRA-1", true).await;
+        let second = add_ticket(&service, "JIRA-2", true).await;
+        let now = Utc::now().timestamp();
+        let a = add_slot(&service, &second, now - 3600, Some(now - 3000)).await;
+        let b = add_slot(&service, &first, now - 2400, Some(now - 1800)).await;
+        let c = add_slot(&service, &second, now - 1200, Some(now - 600)).await;
+        let d = add_slot(&service, &first, now - 300, None).await;
+
+        assert_eq!(
+            listed_slot_ids(&service, now - 7200, None, false).await,
+            [a.id, b.id, c.id, d.id]
+        );
+        assert_eq!(
+            listed_slot_ids(&service, now - 7200, None, true).await,
+            [a.id, c.id, b.id, d.id]
+        );
     }
 
     #[tokio::test]

@@ -1,5 +1,5 @@
 use sea_orm::entity::prelude::*;
-use sea_orm::{ExprTrait, QueryTrait, SelectTwo, Set};
+use sea_orm::{ExprTrait, QueryTrait, Set};
 
 #[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
@@ -46,31 +46,10 @@ impl Entity {
             .filter(COLUMN.stopped_at.is_null())
     }
 
-    pub fn find_overlapping(profile_id: i64, from: i64, to: i64) -> Select<Self> {
+    pub fn find_in_range(profile_id: i64, from: i64, to: Option<i64>) -> Select<Self> {
         Self::find()
             .filter(COLUMN.profile_id.eq(profile_id))
-            .filter(COLUMN.started_at.lt(to))
             .filter(COLUMN.stopped_at.is_null().or(COLUMN.stopped_at.gt(from)))
-    }
-
-    pub fn find_unpublished(connection_id: i64) -> Select<Self> {
-        use super::publish_entry;
-
-        Self::find().filter(
-            Expr::exists(
-                publish_entry::Entity::find_published()
-                    .filter(publish_entry::COLUMN.connection_id.eq(connection_id))
-                    .filter(
-                        Expr::col((publish_entry::Entity, publish_entry::Column::SlotId))
-                            .equals((Entity, Column::Id)),
-                    )
-                    .into_query(),
-            )
-            .not(),
-        )
-    }
-
-    pub fn find_with_ticket() -> SelectTwo<Self, super::ticket::Entity> {
-        Self::find().find_also_related(super::ticket::Entity)
+            .apply_if(to, |query, to| query.filter(COLUMN.started_at.lt(to)))
     }
 }

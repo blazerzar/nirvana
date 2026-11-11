@@ -133,11 +133,14 @@ struct ListArgs {
     #[arg(long)]
     by_ticket: bool,
     /// Range start for overlapping slots (e.g. "14:30" or "2026-05-19 14:30"). Defaults to today 00:00.
+    #[arg(long, alias = "start")]
+    from: Option<String>,
+    /// Range end for overlapping slots (e.g. "14:30" or "2026-05-19 14:30"). Unbounded if omitted.
+    #[arg(long, alias = "stop", requires = "from")]
+    to: Option<String>,
+    /// Show slot IDs
     #[arg(long)]
-    start: Option<String>,
-    /// Range stop for overlapping slots (e.g. "14:30" or "2026-05-19 14:30"). Unbounded if omitted.
-    #[arg(long)]
-    stop: Option<String>,
+    show_ids: bool,
 }
 
 #[derive(Args, Debug)]

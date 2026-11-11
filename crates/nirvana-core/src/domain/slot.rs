@@ -1,10 +1,5 @@
 use nirvana_entity::{slot, ticket};
 
-pub enum SlotSort {
-    StartedAt,
-    TicketId,
-}
-
 #[derive(Debug)]
 pub struct Slot {
     pub model: slot::Model,

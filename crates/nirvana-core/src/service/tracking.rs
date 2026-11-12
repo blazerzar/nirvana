@@ -109,6 +109,42 @@ impl Nirvana {
         txn.commit().await?;
         Ok(result)
     }
+
+    /// Stops the running slot of the active profile at `at`, or now, and
+    /// returns it with its ticket. Returns `None` when nothing is running.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `at` is in the future, no profile is active, the
+    /// config is unavailable, the stop is not after the start of the running
+    /// slot or a database query fails.
+    pub async fn stop_slot(&self, at: Option<i64>) -> Result<Option<Slot>, NirvanaError> {
+        if let Some(at) = at {
+            reject_future_time(at)?;
+        }
+        let profile = self.find_active_profile().await?;
+        let txn = self.db.begin().await?;
+        let Some(running) = find_running_slot(&txn, profile.id).await? else {
+            return Ok(None);
+        };
+        let stopped_at = at.unwrap_or_else(|| Utc::now().timestamp());
+        if stopped_at <= running.model.started_at {
+            return Err(match at {
+                Some(_) => DomainError::InvalidTimeRange,
+                None => DomainError::RunningSlotJustStarted,
+            }
+            .into());
+        }
+
+        let mut model: slot::ActiveModel = running.model.into();
+        model.stopped_at = Set(Some(stopped_at));
+        let model = model.update(&txn).await?;
+        txn.commit().await?;
+        Ok(Some(Slot {
+            model,
+            ticket: running.ticket,
+        }))
+    }
 }
 
 async fn find_running_slot(
@@ -404,6 +440,94 @@ mod tests {
         assert_eq!(stopped.stopped_at, Some(now - 600));
         assert_eq!(result.started.model.started_at, now - 600);
         assert_eq!(result.started.model.stopped_at, None);
+    }
+
+    #[tokio::test]
+    async fn stop_slot_stops_running_slot() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let running = add_slot(&service, &ticket, now - 600, None).await;
+
+        let stopped = service.stop_slot(Some(now - 60)).await.unwrap().unwrap();
+
+        assert_eq!(stopped.model.id, running.id);
+        assert_eq!(stopped.model.stopped_at, Some(now - 60));
+        assert_eq!(stopped.ticket, ticket);
+        assert!(service.running_slot().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn stop_slot_stops_running_slot_now() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let running = add_slot(&service, &ticket, Utc::now().timestamp() - 600, None).await;
+
+        let before = Utc::now().timestamp();
+        let stopped = service.stop_slot(None).await.unwrap().unwrap();
+        let after = Utc::now().timestamp();
+
+        assert_eq!(stopped.model.id, running.id);
+        let stopped_at = stopped.model.stopped_at.unwrap();
+        assert!((before..=after).contains(&stopped_at));
+    }
+
+    #[tokio::test]
+    async fn stop_slot_rejects_running_slot_started_in_same_second() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let running = add_slot(&service, &ticket, Utc::now().timestamp() + 60, None).await;
+
+        let err = service.stop_slot(None).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::RunningSlotJustStarted)
+        ));
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [running]);
+    }
+
+    #[tokio::test]
+    async fn stop_slot_returns_none_when_not_tracking() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
+
+        assert!(service.stop_slot(None).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn stop_slot_rejects_future_time() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let running = add_slot(&service, &ticket, now - 600, None).await;
+
+        let err = service.stop_slot(Some(now + 60)).await.unwrap_err();
+
+        assert!(matches!(err, NirvanaError::Domain(DomainError::FutureTime)));
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [running]);
+    }
+
+    #[tokio::test]
+    async fn stop_slot_rejects_time_not_after_start() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let running = add_slot(&service, &ticket, now - 600, None).await;
+
+        for at in [now - 1200, now - 600] {
+            let err = service.stop_slot(Some(at)).await.unwrap_err();
+            assert!(matches!(
+                err,
+                NirvanaError::Domain(DomainError::InvalidTimeRange)
+            ));
+        }
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [running]);
     }
 
     #[tokio::test]

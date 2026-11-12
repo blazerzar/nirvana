@@ -186,7 +186,7 @@ logged from the start.
       tickets with the same key. A backdated start must not overlap closed
       or published slots. The interactive picker returns on Esc instead of
       calling `std::process::exit`.
-- [ ] Add `stop [--at <time>]`.
+- [x] Add `stop [--at <time>]`.
 - [ ] Add `resume`: starts the previous ticket while stopped.
 - [ ] Add `switch`: switches to the previous ticket while tracking, in a
       single transaction.

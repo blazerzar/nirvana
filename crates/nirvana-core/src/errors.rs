@@ -85,6 +85,8 @@ pub enum DomainError {
     // slots
     #[error("slot not found: {0}")]
     SlotNotFound(i64),
+    #[error("no slot at the given time")]
+    NoSlotAt,
     #[error("cannot edit a published slot")]
     SlotAlreadyPublished,
     #[error("stopped_at must be null or after started_at")]

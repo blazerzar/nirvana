@@ -23,6 +23,12 @@ fn elapsed(started_at: i64, stopped_at: Option<i64>, now: i64) -> i64 {
     (stopped_at.unwrap_or(now) - started_at).max(0)
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum SlotTarget {
+    Id(i64),
+    At(i64),
+}
+
 #[derive(Debug)]
 pub struct StartResult {
     pub started: Slot,

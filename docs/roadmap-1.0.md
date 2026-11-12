@@ -192,13 +192,13 @@ logged from the start.
 - [x] Add `switch [--at <time>]`: switches to the previous ticket while
       tracking, in a single transaction.
 - [x] Add `list` with `--show-ids`.
-- [ ] Add `edit (--id <ID> | --at <time>) [--ticket <KEY>]
+- [ ] Add `edit (<ID> | --at <time>) [--ticket <KEY>]
       [--connection <name>] [--start <time>]
       [--stop <time> | --duration <duration>]`: validate overlaps, published
       slots are read-only. `--stop ""` reopens the slot
       (one running slot per profile, no overlap). `--duration` sets the stop
       from the start.
-- [ ] Add `delete (--id <ID>|--at <time>)`: by ID (from `list --show-ids`) or by time (`--at`, the
+- [x] Add `delete (<ID>|--at <time>) [-y]`: by ID (from `list --show-ids`) or by time (`--at`, the
       slot active at that time), with confirmation.
 - [ ] Add `add <KEY> --start <time> (--stop <time> | --duration <duration>)
       [--connection <name>]`. The ticket is resolved like in `start`.

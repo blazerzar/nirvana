@@ -53,6 +53,13 @@ impl Entity {
             .order_by_desc(COLUMN.stopped_at)
     }
 
+    pub fn find_at(profile_id: i64, at: i64) -> Select<Self> {
+        Self::find()
+            .filter(COLUMN.profile_id.eq(profile_id))
+            .filter(COLUMN.started_at.lte(at))
+            .filter(COLUMN.stopped_at.is_null().or(COLUMN.stopped_at.gt(at)))
+    }
+
     pub fn find_in_range(profile_id: i64, from: i64, to: Option<i64>) -> Select<Self> {
         Self::find()
             .filter(COLUMN.profile_id.eq(profile_id))

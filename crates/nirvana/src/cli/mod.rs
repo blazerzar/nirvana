@@ -146,8 +146,15 @@ struct EditArgs {
 
 #[derive(Args, Debug)]
 struct DeleteArgs {
-    /// Slot ID to delete
-    slot_id: i64,
+    /// Slot ID, shown by `list --show-ids`
+    #[arg(required_unless_present = "at", conflicts_with = "at")]
+    id: Option<i64>,
+    /// Delete the slot tracked at this time (e.g. "14:30" or "2026-05-19 14:30")
+    #[arg(long)]
+    at: Option<String>,
+    /// Delete without asking
+    #[arg(short, long)]
+    yes: bool,
 }
 
 #[derive(Args, Debug)]

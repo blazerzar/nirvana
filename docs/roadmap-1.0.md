@@ -165,7 +165,7 @@ logged from the start.
 - [x] Keep tickets unique per connection.
 - [x] Add `ticket list`.
 - [x] Add `ticket load`.
-- [x] Add `ticket remove`.
+- [x] Add `ticket delete`.
 - [x] Add `ticket sync`.
 - [x] Add `nirvana profile create` - a fresh DB has no profile, so connections
       cannot be added until one is created.

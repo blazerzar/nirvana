@@ -304,18 +304,18 @@ enum Ticket {
         #[arg(long)]
         connection: Option<String>,
     },
-    /// Remove a ticket
-    Remove {
+    /// Delete a ticket
+    Delete {
         /// Ticket key (e.g. DES-1234)
         #[arg(required_unless_present = "id")]
         key: Option<String>,
-        /// Remove only the ticket of this connection
+        /// Delete only the ticket of this connection
         #[arg(long)]
         connection: Option<String>,
         /// Ticket ID, shown by `ticket list --show-ids`
         #[arg(long, conflicts_with_all = ["key", "connection"])]
         id: Option<i64>,
-        /// Also remove the ticket's slots without asking
+        /// Also delete the ticket's slots without asking
         #[arg(long)]
         with_slots: bool,
     },
@@ -482,12 +482,12 @@ pub(crate) async fn run() -> anyhow::Result<()> {
                 show_ids,
             } => ticket::list(connection, no_connection, sort, show_ids).await,
             Ticket::Load { key, connection } => ticket::load(key, connection).await,
-            Ticket::Remove {
+            Ticket::Delete {
                 key,
                 connection,
                 id,
                 with_slots,
-            } => ticket::remove(key, connection, id, with_slots).await,
+            } => ticket::delete(key, connection, id, with_slots).await,
             Ticket::Sync { key, connection } => ticket::sync(key, connection).await,
         },
         Some(Command::Credential { command }) => match command {

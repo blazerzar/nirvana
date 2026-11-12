@@ -92,7 +92,7 @@ pub(crate) async fn load(key: String, connection: Option<String>) -> anyhow::Res
     Ok(())
 }
 
-pub(crate) async fn remove(
+pub(crate) async fn delete(
     key: Option<String>,
     connection: Option<String>,
     id: Option<i64>,
@@ -106,7 +106,7 @@ pub(crate) async fn remove(
 
     let service = Nirvana::new().await?;
     let term = Term::stdout();
-    let ticket = match service.remove_ticket(target.clone(), with_slots).await {
+    let ticket = match service.delete_ticket(target.clone(), with_slots).await {
         Err(NirvanaError::Domain(DomainError::TicketHasSlots(key, slots))) => {
             let slots = if slots == 1 {
                 "1 slot".to_string()
@@ -115,25 +115,25 @@ pub(crate) async fn remove(
             };
             if !Confirm::with_theme(&theme())
                 .with_prompt(format!(
-                    "Ticket {key} has {slots}. Remove it with its slots?"
+                    "Ticket {key} has {slots}. Delete it with its slots?"
                 ))
                 .default(false)
                 .interact()?
             {
                 term.write_line(&format!(
                     "{}",
-                    style(format!("Ticket {key} was not removed")).yellow()
+                    style(format!("Ticket {key} was not deleted")).yellow()
                 ))?;
                 return Ok(());
             }
-            service.remove_ticket(target, true).await?
+            service.delete_ticket(target, true).await?
         }
         result => result?,
     };
-    info!(key = %ticket.ticket_key, id = ticket.id, "ticket removed");
+    info!(key = %ticket.ticket_key, id = ticket.id, "ticket deleted");
     term.write_line(&format!(
         "{} ticket {}",
-        style("Removed").green(),
+        style("Deleted").green(),
         style(&ticket.ticket_key).bold(),
     ))?;
 

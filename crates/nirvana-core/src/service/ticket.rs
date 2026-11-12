@@ -130,9 +130,9 @@ impl Nirvana {
         self.store_ticket(&connection, issue).await
     }
 
-    /// Removes the ticket of the active profile with the key and optional
+    /// Deletes the ticket of the active profile with the key and optional
     /// connection name, or with the ID, of `target`. A ticket with slots is
-    /// only removed with `with_slots`, which removes its slots too.
+    /// only deleted with `with_slots`, which deletes its slots too.
     ///
     /// # Errors
     ///
@@ -140,7 +140,7 @@ impl Nirvana {
     /// the connection does not exist, no ticket or more than one ticket
     /// matches, the ticket has slots and `with_slots` is not set, or a
     /// database query fails.
-    pub async fn remove_ticket(
+    pub async fn delete_ticket(
         &self,
         target: TicketTarget,
         with_slots: bool,
@@ -766,12 +766,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remove_ticket_rejects_ambiguous_key() {
+    async fn delete_ticket_rejects_ambiguous_key() {
         let service = test_service().await;
         add_duplicate_ticket(&service).await;
 
         let err = service
-            .remove_ticket(key_target("JIRA-1", None), false)
+            .delete_ticket(key_target("JIRA-1", None), false)
             .await
             .unwrap_err();
 
@@ -783,12 +783,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remove_ticket_removes_match_in_connection() {
+    async fn delete_ticket_deletes_match_in_connection() {
         let service = test_service().await;
         let disconnected = add_duplicate_ticket(&service).await;
 
         let ticket = service
-            .remove_ticket(key_target("JIRA-1", Some("Test Jira")), false)
+            .delete_ticket(key_target("JIRA-1", Some("Test Jira")), false)
             .await
             .unwrap();
 
@@ -800,12 +800,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remove_ticket_removes_ticket_by_id() {
+    async fn delete_ticket_deletes_ticket_by_id() {
         let service = test_service().await;
         let disconnected = add_duplicate_ticket(&service).await;
 
         let ticket = service
-            .remove_ticket(TicketTarget::Id(disconnected.id), false)
+            .delete_ticket(TicketTarget::Id(disconnected.id), false)
             .await
             .unwrap();
 
@@ -817,12 +817,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remove_ticket_removes_disconnected_match() {
+    async fn delete_ticket_deletes_disconnected_match() {
         let service = test_service().await;
         add_tickets(&service).await;
 
         service
-            .remove_ticket(key_target("OLD-1", None), false)
+            .delete_ticket(key_target("OLD-1", None), false)
             .await
             .unwrap();
 
@@ -833,12 +833,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remove_ticket_rejects_missing_ticket_or_connection() {
+    async fn delete_ticket_rejects_missing_ticket_or_connection() {
         let service = test_service().await;
         add_tickets(&service).await;
 
         let err = service
-            .remove_ticket(key_target("JIRA-2", None), false)
+            .delete_ticket(key_target("JIRA-2", None), false)
             .await
             .unwrap_err();
         assert!(matches!(
@@ -847,7 +847,7 @@ mod tests {
         ));
 
         let err = service
-            .remove_ticket(key_target("JIRA-1", Some("missing")), false)
+            .delete_ticket(key_target("JIRA-1", Some("missing")), false)
             .await
             .unwrap_err();
         assert!(matches!(
@@ -857,14 +857,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remove_ticket_keeps_other_profiles_tickets() {
+    async fn delete_ticket_keeps_other_profiles_tickets() {
         let mut service = test_service().await;
         let [.., other] = add_tickets(&service).await;
         service.create_profile("work".to_string()).await.unwrap();
         service.switch_profile("work").await.unwrap();
 
         let err = service
-            .remove_ticket(key_target("OLD-1", None), false)
+            .delete_ticket(key_target("OLD-1", None), false)
             .await
             .unwrap_err();
         assert!(matches!(
@@ -872,7 +872,7 @@ mod tests {
             NirvanaError::Domain(DomainError::TicketNotFound(_))
         ));
         let err = service
-            .remove_ticket(TicketTarget::Id(other.id), false)
+            .delete_ticket(TicketTarget::Id(other.id), false)
             .await
             .unwrap_err();
         assert!(matches!(
@@ -883,10 +883,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remove_ticket_removes_slots_only_with_slots() {
+    async fn delete_ticket_deletes_slots_only_with_slots() {
         let service = test_service().await;
-        let [_, kept, removed] = add_tickets(&service).await;
-        for ticket in [&kept, &removed, &removed] {
+        let [_, kept, deleted] = add_tickets(&service).await;
+        for ticket in [&kept, &deleted, &deleted] {
             slot::ActiveModel {
                 ticket_id: Set(ticket.id),
                 profile_id: Set(ticket.profile_id),
@@ -900,7 +900,7 @@ mod tests {
         }
 
         let err = service
-            .remove_ticket(key_target("OLD-1", None), false)
+            .delete_ticket(key_target("OLD-1", None), false)
             .await
             .unwrap_err();
         assert!(matches!(
@@ -910,7 +910,7 @@ mod tests {
         assert_eq!(slot::Entity::find().count(&service.db).await.unwrap(), 3);
 
         service
-            .remove_ticket(key_target("OLD-1", None), true)
+            .delete_ticket(key_target("OLD-1", None), true)
             .await
             .unwrap();
         assert_eq!(

@@ -49,6 +49,7 @@ pub(crate) async fn run(args: ListArgs) -> anyhow::Result<()> {
     let rows: Vec<(String, [String; 5])> = slots
         .into_iter()
         .map(|slot| {
+            let duration = format_duration(slot.elapsed());
             let same_ticket = args.by_ticket
                 && previous_ticket_id.replace(slot.ticket.id) == Some(slot.ticket.id);
             let (key, title) = match same_ticket {
@@ -66,9 +67,7 @@ pub(crate) async fn run(args: ListArgs) -> anyhow::Result<()> {
                     .stopped_at
                     .map(format_timestamp)
                     .unwrap_or_default(),
-                format_duration(
-                    slot.model.stopped_at.unwrap_or(now.timestamp()) - slot.model.started_at,
-                ),
+                duration,
             ];
             (slot.model.id.to_string(), row)
         })

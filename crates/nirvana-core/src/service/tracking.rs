@@ -105,7 +105,8 @@ impl Nirvana {
         };
 
         let txn = self.db.begin().await?;
-        let result = start_in_txn(&txn, profile.id, ticket, at).await?;
+        let running = find_running_slot(&txn, profile.id).await?;
+        let result = start_in_txn(&txn, profile.id, running, ticket, at).await?;
         txn.commit().await?;
         Ok(result)
     }
@@ -145,6 +146,37 @@ impl Nirvana {
             ticket: running.ticket,
         }))
     }
+
+    /// Starts tracking the ticket of the last stopped slot of the active
+    /// profile at `at`, or now, and returns the started slot with its ticket.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `at` is in the future, no profile is active, the
+    /// config is unavailable, a slot is running, there is no stopped slot, a
+    /// backdated slot overlaps another slot or a database query fails.
+    pub async fn resume_slot(&self, at: Option<i64>) -> Result<Slot, NirvanaError> {
+        if let Some(at) = at {
+            reject_future_time(at)?;
+        }
+        let profile = self.find_active_profile().await?;
+        let txn = self.db.begin().await?;
+        if find_running_slot(&txn, profile.id).await?.is_some() {
+            return Err(DomainError::AlreadyTracking.into());
+        }
+        let Some((last, ticket)) = slot::Entity::find_last_stopped(profile.id)
+            .find_also_related(ticket::Entity)
+            .one(&txn)
+            .await?
+        else {
+            return Err(DomainError::NoPreviousTicket.into());
+        };
+        let ticket = ticket.ok_or(DomainError::TicketIdNotFound(last.ticket_id))?;
+
+        let result = start_in_txn(&txn, profile.id, None, ticket, at).await?;
+        txn.commit().await?;
+        Ok(result.started)
+    }
 }
 
 async fn find_running_slot(
@@ -162,18 +194,19 @@ async fn find_running_slot(
     Ok(Some(Slot { model, ticket }))
 }
 
-/// Stops the running slot of the profile and starts a slot on `ticket` at
+/// Stops the `running` slot of the profile and starts a slot on `ticket` at
 /// `at`, or now. A backdated slot must not overlap other slots.
 async fn start_in_txn(
     txn: &DatabaseTransaction,
     profile_id: i64,
+    running: Option<Slot>,
     ticket: ticket::Model,
     at: Option<i64>,
 ) -> Result<StartResult, NirvanaError> {
     let now = Utc::now().timestamp();
     let started_at = at.unwrap_or(now);
 
-    let stopped = match find_running_slot(txn, profile_id).await? {
+    let stopped = match running {
         Some(running) => {
             if started_at <= running.model.started_at {
                 return Err(match at {
@@ -528,6 +561,120 @@ mod tests {
         }
         let slots = slot::Entity::find().all(&service.db).await.unwrap();
         assert_eq!(slots, [running]);
+    }
+
+    #[tokio::test]
+    async fn resume_slot_starts_ticket_of_last_stopped_slot() {
+        let service = test_service().await;
+        let first = add_ticket(&service, "JIRA-1", true).await;
+        let last = add_ticket(&service, "JIRA-2", true).await;
+        let now = Utc::now().timestamp();
+        add_slot(&service, &last, now - 3600, Some(now - 3000)).await;
+        add_slot(&service, &first, now - 2400, Some(now - 1800)).await;
+        add_slot(&service, &last, now - 1200, Some(now - 600)).await;
+
+        let resumed = service.resume_slot(None).await.unwrap();
+
+        assert_eq!(resumed.ticket.id, last.id);
+        assert_eq!(resumed.model.stopped_at, None);
+        let running = service.running_slot().await.unwrap().unwrap();
+        assert_eq!(running.model, resumed.model);
+    }
+
+    #[tokio::test]
+    async fn resume_slot_starts_at_time() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+
+        let resumed = service.resume_slot(Some(now - 300)).await.unwrap();
+
+        assert_eq!(resumed.ticket.id, ticket.id);
+        assert_eq!(resumed.model.started_at, now - 300);
+        assert_eq!(resumed.model.stopped_at, None);
+    }
+
+    #[tokio::test]
+    async fn resume_slot_rejects_future_time() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let stopped = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+
+        let err = service.resume_slot(Some(now + 60)).await.unwrap_err();
+
+        assert!(matches!(err, NirvanaError::Domain(DomainError::FutureTime)));
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [stopped]);
+    }
+
+    #[tokio::test]
+    async fn resume_slot_rejects_overlap_with_last_slot() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let stopped = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+
+        let err = service.resume_slot(Some(now - 900)).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::SlotOverlap)
+        ));
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [stopped]);
+    }
+
+    #[tokio::test]
+    async fn resume_slot_rejects_while_tracking() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let stopped = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+        let running = add_slot(&service, &ticket, now - 300, None).await;
+
+        let err = service.resume_slot(None).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::AlreadyTracking)
+        ));
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [stopped, running]);
+    }
+
+    #[tokio::test]
+    async fn resume_slot_rejects_without_previous_slot() {
+        let service = test_service().await;
+        add_ticket(&service, "JIRA-1", true).await;
+
+        let err = service.resume_slot(None).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::NoPreviousTicket)
+        ));
+        assert_eq!(slot::Entity::find().count(&service.db).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn resume_slot_ignores_slots_of_other_profiles() {
+        let mut service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let stopped = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+        service.create_profile("work".to_string()).await.unwrap();
+        service.switch_profile("work").await.unwrap();
+
+        let err = service.resume_slot(None).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::NoPreviousTicket)
+        ));
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [stopped]);
     }
 
     #[tokio::test]

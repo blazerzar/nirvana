@@ -187,15 +187,21 @@ logged from the start.
       or published slots. The interactive picker returns on Esc instead of
       calling `std::process::exit`.
 - [x] Add `stop [--at <time>]`.
-- [ ] Add `resume`: starts the previous ticket while stopped.
+- [x] Add `resume [--at <time>]`: starts the previous ticket while stopped.
+- [ ] Add `status`: check if we are tracking and which ticket
 - [ ] Add `switch`: switches to the previous ticket while tracking, in a
       single transaction.
 - [x] Add `list` with `--show-ids`.
-- [ ] Add `edit <ID>`: validate overlaps, published slots are read-only.
-      `--stop ""` reopens the slot (one running slot per profile, no
-      overlap).
-- [ ] Add `delete`: by ID (from `list --show-ids`) or by time (`--at`, the
+- [ ] Add `edit (--id <ID> | --at <time>) [--ticket <KEY>]
+      [--connection <name>] [--start <time>]
+      [--stop <time> | --duration <duration>]`: validate overlaps, published
+      slots are read-only. `--stop ""` reopens the slot
+      (one running slot per profile, no overlap). `--duration` sets the stop
+      from the start.
+- [ ] Add `delete (--id <ID>|--at <time>)`: by ID (from `list --show-ids`) or by time (`--at`, the
       slot active at that time), with confirmation.
+- [ ] Add `add <KEY> --start <time> (--stop <time> | --duration <duration>)
+      [--connection <name>]`. The ticket is resolved like in `start`.
 - [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
       through the public API) covering the tracking flows.
 

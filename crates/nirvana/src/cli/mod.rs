@@ -8,6 +8,7 @@ mod list;
 mod logs;
 mod profile;
 mod publish;
+mod resume;
 mod settings;
 mod start;
 mod stop;
@@ -42,6 +43,8 @@ enum Command {
     Start(StartArgs),
     /// Stop tracking time on active ticket
     Stop(StopArgs),
+    /// Resume tracking time on the previous ticket
+    Resume(ResumeArgs),
     /// Edit an existing slot
     Edit(EditArgs),
     /// Delete a slot
@@ -102,6 +105,13 @@ struct StartArgs {
 #[derive(Args, Debug)]
 struct StopArgs {
     /// Stop time (e.g. "14:30" or "2026-05-19 14:30")
+    #[arg(long)]
+    at: Option<String>,
+}
+
+#[derive(Args, Debug)]
+struct ResumeArgs {
+    /// Start time (e.g. "14:30" or "2026-05-19 14:30")
     #[arg(long)]
     at: Option<String>,
 }
@@ -426,6 +436,7 @@ pub(crate) async fn run() -> anyhow::Result<()> {
         Some(Command::Info) => info::run().await,
         Some(Command::Start(args)) => start::run(args).await,
         Some(Command::Stop(args)) => stop::run(args).await,
+        Some(Command::Resume(args)) => resume::run(args).await,
         Some(Command::Edit(args)) => edit::run(args).await,
         Some(Command::Delete(args)) => delete::run(args).await,
         Some(Command::List(args)) => list::run(args).await,

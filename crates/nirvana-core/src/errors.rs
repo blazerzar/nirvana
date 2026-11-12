@@ -97,6 +97,10 @@ pub enum DomainError {
     StartBeforeRunningSlot,
     #[error("running slot started less than a second ago")]
     RunningSlotJustStarted,
+    #[error("already tracking, use switch")]
+    AlreadyTracking,
+    #[error("no previous ticket to resume")]
+    NoPreviousTicket,
 
     // config
     #[error("unknown config key '{0}', expected a section or one of: {keys}", keys = KEYS.join(", "))]

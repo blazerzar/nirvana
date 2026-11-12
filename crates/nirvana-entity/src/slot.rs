@@ -1,5 +1,5 @@
 use sea_orm::entity::prelude::*;
-use sea_orm::{ExprTrait, QueryTrait, Set};
+use sea_orm::{ExprTrait, QueryOrder, QueryTrait, Set};
 
 #[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
@@ -44,6 +44,13 @@ impl Entity {
         Self::find()
             .filter(COLUMN.profile_id.eq(profile_id))
             .filter(COLUMN.stopped_at.is_null())
+    }
+
+    pub fn find_last_stopped(profile_id: i64) -> Select<Self> {
+        Self::find()
+            .filter(COLUMN.profile_id.eq(profile_id))
+            .filter(COLUMN.stopped_at.is_not_null())
+            .order_by_desc(COLUMN.stopped_at)
     }
 
     pub fn find_in_range(profile_id: i64, from: i64, to: Option<i64>) -> Select<Self> {

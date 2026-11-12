@@ -188,7 +188,7 @@ logged from the start.
       calling `std::process::exit`.
 - [x] Add `stop [--at <time>]`.
 - [x] Add `resume [--at <time>]`: starts the previous ticket while stopped.
-- [ ] Add `status`: check if we are tracking and which ticket
+- [x] Add `status`: check if we are tracking and which ticket
 - [ ] Add `switch`: switches to the previous ticket while tracking, in a
       single transaction.
 - [x] Add `list` with `--show-ids`.

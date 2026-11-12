@@ -11,6 +11,7 @@ mod publish;
 mod resume;
 mod settings;
 mod start;
+mod status;
 mod stop;
 mod table;
 mod ticket;
@@ -39,6 +40,8 @@ struct Cli {
 enum Command {
     /// Show system and app diagnostics
     Info,
+    /// Show whether time is being tracked and on which ticket
+    Status,
     /// Start tracking time on a ticket
     Start(StartArgs),
     /// Stop tracking time on active ticket
@@ -434,6 +437,7 @@ pub(crate) async fn run() -> anyhow::Result<()> {
 
     match cli.command {
         Some(Command::Info) => info::run().await,
+        Some(Command::Status) => status::run().await,
         Some(Command::Start(args)) => start::run(args).await,
         Some(Command::Stop(args)) => stop::run(args).await,
         Some(Command::Resume(args)) => resume::run(args).await,

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::Local;
 use console::{Term, style};
 use dialoguer::FuzzySelect;
-use nirvana_core::{Nirvana, Slot, TicketConnection, TicketSort};
+use nirvana_core::{Nirvana, Slot, StartResult, TicketConnection, TicketSort};
 use tracing::info;
 
 use crate::cli::time::{format_duration, parse_time};
@@ -25,12 +25,14 @@ pub(crate) async fn run(args: StartArgs) -> anyhow::Result<()> {
         .transpose()?;
 
     let result = service.start_slot(&key, at, connection.as_deref()).await?;
-    let Slot {
-        model: slot,
-        ticket,
-    } = result.started;
-    info!(key = %ticket.ticket_key, slot_id = slot.id, started_at = slot.started_at, "slot started");
+    let slot = &result.started;
+    info!(key = %slot.ticket.ticket_key, slot_id = slot.model.id, started_at = slot.model.started_at, "slot started");
 
+    write_start_result(&term, result)
+}
+
+/// Writes the stopped slot, if any, and the started slot of `result`.
+pub(crate) fn write_start_result(term: &Term, result: StartResult) -> anyhow::Result<()> {
     if let Some(Slot {
         model: stopped,
         ticket: stopped_ticket,
@@ -44,9 +46,15 @@ pub(crate) async fn run(args: StartArgs) -> anyhow::Result<()> {
             format_duration(stopped.stopped_at.unwrap_or_default() - stopped.started_at),
         ))?;
     }
+    write_started(term, "Started", result.started)
+}
+
+/// Writes the ticket of the started `slot`, prefixed with `label`.
+pub(crate) fn write_started(term: &Term, label: &str, slot: Slot) -> anyhow::Result<()> {
+    let ticket = slot.ticket;
     term.write_line(&format!(
         "{} ticket {} {}",
-        style("Started").green(),
+        style(label).green(),
         style(&ticket.ticket_key).bold(),
         style(ticket.title.unwrap_or_default()).dim(),
     ))?;

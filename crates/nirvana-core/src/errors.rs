@@ -99,7 +99,9 @@ pub enum DomainError {
     RunningSlotJustStarted,
     #[error("already tracking, use switch")]
     AlreadyTracking,
-    #[error("no previous ticket to resume")]
+    #[error("not tracking, use resume")]
+    NotTracking,
+    #[error("no previous ticket")]
     NoPreviousTicket,
 
     // config

@@ -189,8 +189,8 @@ logged from the start.
 - [x] Add `stop [--at <time>]`.
 - [x] Add `resume [--at <time>]`: starts the previous ticket while stopped.
 - [x] Add `status`: check if we are tracking and which ticket
-- [ ] Add `switch`: switches to the previous ticket while tracking, in a
-      single transaction.
+- [x] Add `switch [--at <time>]`: switches to the previous ticket while
+      tracking, in a single transaction.
 - [x] Add `list` with `--show-ids`.
 - [ ] Add `edit (--id <ID> | --at <time>) [--ticket <KEY>]
       [--connection <name>] [--start <time>]

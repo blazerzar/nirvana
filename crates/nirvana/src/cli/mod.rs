@@ -13,6 +13,7 @@ mod settings;
 mod start;
 mod status;
 mod stop;
+mod switch;
 mod table;
 mod ticket;
 mod time;
@@ -48,6 +49,8 @@ enum Command {
     Stop(StopArgs),
     /// Resume tracking time on the previous ticket
     Resume(ResumeArgs),
+    /// Switch tracking time to the previous ticket
+    Switch(SwitchArgs),
     /// Edit an existing slot
     Edit(EditArgs),
     /// Delete a slot
@@ -115,6 +118,13 @@ struct StopArgs {
 #[derive(Args, Debug)]
 struct ResumeArgs {
     /// Start time (e.g. "14:30" or "2026-05-19 14:30")
+    #[arg(long)]
+    at: Option<String>,
+}
+
+#[derive(Args, Debug)]
+struct SwitchArgs {
+    /// Switch time (e.g. "14:30" or "2026-05-19 14:30")
     #[arg(long)]
     at: Option<String>,
 }
@@ -441,6 +451,7 @@ pub(crate) async fn run() -> anyhow::Result<()> {
         Some(Command::Start(args)) => start::run(args).await,
         Some(Command::Stop(args)) => stop::run(args).await,
         Some(Command::Resume(args)) => resume::run(args).await,
+        Some(Command::Switch(args)) => switch::run(args).await,
         Some(Command::Edit(args)) => edit::run(args).await,
         Some(Command::Delete(args)) => delete::run(args).await,
         Some(Command::List(args)) => list::run(args).await,

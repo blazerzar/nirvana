@@ -40,6 +40,14 @@ pub(crate) fn parse_duration(input: &str) -> anyhow::Result<i64> {
     }
 }
 
+/// Returns the local date of `timestamp`.
+pub(crate) fn local_date(timestamp: i64) -> anyhow::Result<NaiveDate> {
+    Ok(DateTime::from_timestamp(timestamp, 0)
+        .context("time is out of range")?
+        .with_timezone(&Local)
+        .date_naive())
+}
+
 /// Parses `HH:MM` (on `today`) or `YYYY-MM-DD HH:MM` in local time into a
 /// Unix timestamp.
 pub(crate) fn parse_time(input: &str, today: NaiveDate) -> anyhow::Result<i64> {

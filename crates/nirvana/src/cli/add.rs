@@ -1,22 +1,16 @@
-use anyhow::{Context, bail};
-use chrono::{DateTime, Local};
+use anyhow::bail;
+use chrono::Local;
 use console::{Term, style};
 use nirvana_core::Nirvana;
 use tracing::info;
 
 use crate::cli::AddArgs;
-use crate::cli::time::{format_duration, parse_duration, parse_time};
+use crate::cli::time::{format_duration, local_date, parse_duration, parse_time};
 
 pub(crate) async fn run(args: AddArgs) -> anyhow::Result<()> {
     let started_at = parse_time(&args.start, Local::now().date_naive())?;
     let stopped_at = match (args.stop, args.duration) {
-        (Some(stop), _) => {
-            let start_date = DateTime::from_timestamp(started_at, 0)
-                .context("start time is out of range")?
-                .with_timezone(&Local)
-                .date_naive();
-            parse_time(&stop, start_date)?
-        }
+        (Some(stop), _) => parse_time(&stop, local_date(started_at)?)?,
         (None, Some(duration)) => started_at + parse_duration(&duration)?,
         (None, None) => bail!("--stop or --duration is required"),
     };

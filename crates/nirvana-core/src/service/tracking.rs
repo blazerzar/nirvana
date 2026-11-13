@@ -13,7 +13,7 @@ use sea_orm::{
     QueryOrder, QueryTrait, SelectExt, Set, TransactionTrait,
 };
 
-use crate::domain::{Slot, SlotTarget, StartResult};
+use crate::domain::{Change, Slot, SlotTarget, StartResult};
 use crate::errors::{DomainError, NirvanaError};
 use crate::service::Nirvana;
 
@@ -191,8 +191,7 @@ impl Nirvana {
 
     /// Adds a slot on the ticket `key` of the active profile from
     /// `started_at` to `stopped_at`. The ticket is resolved like in
-    /// [`Nirvana::start_slot`]. The ticket's last worked time only moves
-    /// forward.
+    /// [`Nirvana::start_slot`].
     ///
     /// # Errors
     ///
@@ -238,6 +237,85 @@ impl Nirvana {
         Ok(Slot { model, ticket })
     }
 
+    /// Edits the slot `id` of the active profile and returns it with its
+    /// ticket. `key` moves the slot to that ticket, resolved like in
+    /// [`Nirvana::start_slot`]. Clearing `stopped_at` reopens the slot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no profile is active, the config is unavailable,
+    /// the connection does not exist, more than one stored ticket matches,
+    /// the ticket cannot be loaded, the slot does not exist or is published,
+    /// a time is in the future, the stop is not after the start, another
+    /// slot is running when reopening, the slot overlaps another slot or a
+    /// database query fails.
+    pub async fn edit_slot(
+        &self,
+        id: i64,
+        key: Option<&str>,
+        connection: Option<&str>,
+        started_at: Option<i64>,
+        stopped_at: Change<i64>,
+    ) -> Result<Slot, NirvanaError> {
+        let profile = self.find_active_profile().await?;
+        let ticket = match key {
+            Some(key) => Some(
+                self.find_or_load_ticket(profile.id, key, connection)
+                    .await?,
+            ),
+            None => None,
+        };
+
+        let txn = self.db.begin().await?;
+        let Some((model, current_ticket)) = slot::Entity::find_by_id(id)
+            .filter(slot::COLUMN.profile_id.eq(profile.id))
+            .find_also_related(ticket::Entity)
+            .one(&txn)
+            .await?
+        else {
+            return Err(DomainError::SlotNotFound(id).into());
+        };
+        if is_published(&txn, id).await? {
+            return Err(DomainError::SlotAlreadyPublished.into());
+        }
+        let ticket = ticket
+            .or(current_ticket)
+            .ok_or(DomainError::TicketIdNotFound(model.ticket_id))?;
+
+        let started_at = started_at.unwrap_or(model.started_at);
+        let stopped_at = match stopped_at {
+            Change::Skip => model.stopped_at,
+            Change::Clear => None,
+            Change::Set(stopped_at) => Some(stopped_at),
+        };
+        reject_future_time(stopped_at.unwrap_or(started_at))?;
+        if stopped_at.is_some_and(|stopped_at| stopped_at <= started_at) {
+            return Err(DomainError::InvalidTimeRange.into());
+        }
+        if model.stopped_at.is_some()
+            && stopped_at.is_none()
+            && slot::Entity::find_running(profile.id).exists(&txn).await?
+        {
+            return Err(DomainError::AlreadyTracking.into());
+        }
+        if slot::Entity::find_in_range(profile.id, started_at, stopped_at)
+            .filter(slot::COLUMN.id.ne(id))
+            .exists(&txn)
+            .await?
+        {
+            return Err(DomainError::SlotOverlap.into());
+        }
+
+        let mut model: slot::ActiveModel = model.into();
+        model.ticket_id = Set(ticket.id);
+        model.started_at = Set(started_at);
+        model.stopped_at = Set(stopped_at);
+        let model = model.update(&txn).await?;
+        let ticket = mark_worked(&txn, ticket, started_at).await?;
+        txn.commit().await?;
+        Ok(Slot { model, ticket })
+    }
+
     /// Returns the slot of the active profile with the ID, or tracked at the
     /// time, of `target`, with its ticket and whether it is published to any
     /// connection.
@@ -269,10 +347,7 @@ impl Nirvana {
             .into());
         };
         let ticket = ticket.ok_or(DomainError::TicketIdNotFound(model.ticket_id))?;
-        let published = publish_entry::Entity::find_published()
-            .filter(publish_entry::COLUMN.slot_id.eq(model.id))
-            .exists(&self.db)
-            .await?;
+        let published = is_published(&self.db, model.id).await?;
         Ok((Slot { model, ticket }, published))
     }
 
@@ -309,6 +384,14 @@ async fn find_running_slot(
     };
     let ticket = ticket.ok_or(DomainError::TicketIdNotFound(model.ticket_id))?;
     Ok(Some(Slot { model, ticket }))
+}
+
+/// Returns whether the slot has an ok publish entry.
+async fn is_published(db: &impl ConnectionTrait, slot_id: i64) -> Result<bool, NirvanaError> {
+    Ok(publish_entry::Entity::find_published()
+        .filter(publish_entry::COLUMN.slot_id.eq(slot_id))
+        .exists(db)
+        .await?)
 }
 
 /// Returns the ticket of the last stopped slot of the profile, skipping the
@@ -1270,6 +1353,264 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.started.ticket.last_worked_at, now);
+    }
+
+    #[tokio::test]
+    async fn edit_slot_edits_times_and_ticket() {
+        let service = test_service().await;
+        let previous = add_ticket(&service, "JIRA-1", true).await;
+        let next = add_ticket(&service, "JIRA-2", true).await;
+        let now = Utc::now().timestamp();
+        let slot = add_slot(&service, &previous, now - 3600, Some(now - 1800)).await;
+
+        let Slot { model, ticket } = service
+            .edit_slot(
+                slot.id,
+                Some("JIRA-2"),
+                None,
+                Some(now - 1200),
+                Change::Set(now - 600),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(model.id, slot.id);
+        assert_eq!(model.ticket_id, next.id);
+        assert_eq!(model.started_at, now - 1200);
+        assert_eq!(model.stopped_at, Some(now - 600));
+        assert_eq!(ticket.id, next.id);
+        assert_eq!(ticket.last_worked_at, now - 1200);
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [model]);
+    }
+
+    #[tokio::test]
+    async fn edit_slot_keeps_fields_that_are_not_edited() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let slot = add_slot(&service, &ticket, now - 3600, Some(now - 1800)).await;
+
+        let edited = service
+            .edit_slot(slot.id, None, None, Some(now - 2400), Change::Skip)
+            .await
+            .unwrap();
+
+        assert_eq!(edited.model.ticket_id, ticket.id);
+        assert_eq!(edited.model.started_at, now - 2400);
+        assert_eq!(edited.model.stopped_at, Some(now - 1800));
+    }
+
+    #[tokio::test]
+    async fn edit_slot_rejects_published_slot() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+        add_publish_entry(&service, &ticket, &slot, Some(now)).await;
+
+        let err = service
+            .edit_slot(slot.id, None, None, Some(now - 900), Change::Skip)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::SlotAlreadyPublished)
+        ));
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [slot]);
+    }
+
+    #[tokio::test]
+    async fn edit_slot_rejects_unknown_slot_and_slot_of_other_profile() {
+        let mut service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+
+        let err = service
+            .edit_slot(slot.id + 1, None, None, None, Change::Clear)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::SlotNotFound(id)) if id == slot.id + 1
+        ));
+
+        service.create_profile("work".to_string()).await.unwrap();
+        service.switch_profile("work").await.unwrap();
+        let err = service
+            .edit_slot(slot.id, None, None, None, Change::Clear)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::SlotNotFound(id)) if id == slot.id
+        ));
+    }
+
+    #[tokio::test]
+    async fn edit_slot_rejects_invalid_and_future_range() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+
+        for stopped_at in [Change::Set(now - 1200), Change::Set(now - 1800)] {
+            let err = service
+                .edit_slot(slot.id, None, None, None, stopped_at)
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                err,
+                NirvanaError::Domain(DomainError::InvalidTimeRange)
+            ));
+        }
+        for (started_at, stopped_at) in [
+            (None, Change::Set(now + 60)),
+            (Some(now + 60), Change::Clear),
+        ] {
+            let err = service
+                .edit_slot(slot.id, None, None, started_at, stopped_at)
+                .await
+                .unwrap_err();
+            assert!(matches!(err, NirvanaError::Domain(DomainError::FutureTime)));
+        }
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [slot]);
+    }
+
+    #[tokio::test]
+    async fn edit_slot_rejects_overlap() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let first = add_slot(&service, &ticket, now - 3600, Some(now - 2400)).await;
+        let second = add_slot(&service, &ticket, now - 1800, Some(now - 1200)).await;
+        let running = add_slot(&service, &ticket, now - 600, None).await;
+
+        for (started_at, stopped_at) in [
+            (Some(now - 3000), Change::Skip),
+            (None, Change::Set(now - 300)),
+        ] {
+            let err = service
+                .edit_slot(second.id, None, None, started_at, stopped_at)
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                err,
+                NirvanaError::Domain(DomainError::SlotOverlap)
+            ));
+        }
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [first, second, running]);
+    }
+
+    #[tokio::test]
+    async fn edit_slot_moves_its_own_edges() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        add_slot(&service, &ticket, now - 3600, Some(now - 2400)).await;
+        let slot = add_slot(&service, &ticket, now - 1800, Some(now - 1200)).await;
+        add_slot(&service, &ticket, now - 600, None).await;
+
+        let edited = service
+            .edit_slot(
+                slot.id,
+                None,
+                None,
+                Some(now - 2400),
+                Change::Set(now - 600),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(edited.model.started_at, now - 2400);
+        assert_eq!(edited.model.stopped_at, Some(now - 600));
+    }
+
+    #[tokio::test]
+    async fn edit_slot_keeps_running_slot_running() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let running = add_slot(&service, &ticket, now - 600, None).await;
+
+        let edited = service
+            .edit_slot(running.id, None, None, Some(now - 1200), Change::Skip)
+            .await
+            .unwrap();
+
+        assert_eq!(edited.model.started_at, now - 1200);
+        assert_eq!(edited.model.stopped_at, None);
+        assert_eq!(
+            service.running_slot().await.unwrap().unwrap().model,
+            edited.model
+        );
+    }
+
+    #[tokio::test]
+    async fn edit_slot_reopens_slot() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+        assert!(service.running_slot().await.unwrap().is_none());
+
+        let edited = service
+            .edit_slot(slot.id, None, None, None, Change::Clear)
+            .await
+            .unwrap();
+
+        assert_eq!(edited.model.stopped_at, None);
+        assert_eq!(
+            service.running_slot().await.unwrap().unwrap().model,
+            edited.model
+        );
+    }
+
+    #[tokio::test]
+    async fn edit_slot_rejects_reopen_while_tracking() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 900)).await;
+        let running = add_slot(&service, &ticket, now - 600, None).await;
+
+        let err = service
+            .edit_slot(slot.id, None, None, None, Change::Clear)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::AlreadyTracking)
+        ));
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [slot, running]);
+    }
+
+    #[tokio::test]
+    async fn edit_slot_rejects_reopen_before_later_slot() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 900)).await;
+        let later = add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
+
+        let err = service
+            .edit_slot(slot.id, None, None, None, Change::Clear)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::SlotOverlap)
+        ));
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [slot, later]);
     }
 
     #[tokio::test]

@@ -192,7 +192,7 @@ logged from the start.
 - [x] Add `switch [--at <time>]`: switches to the previous ticket while
       tracking, in a single transaction.
 - [x] Add `list` with `--show-ids`.
-- [ ] Add `edit (<ID> | --at <time>) [--ticket <KEY>]
+- [x] Add `edit (<ID> | --at <time>) [--ticket <KEY>]
       [--connection <name>] [--start <time>]
       [--stop <time> | --duration <duration>]`: validate overlaps, published
       slots are read-only. `--stop ""` reopens the slot

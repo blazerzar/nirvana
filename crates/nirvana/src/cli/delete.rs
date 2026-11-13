@@ -1,19 +1,13 @@
-use anyhow::bail;
-use chrono::Local;
 use console::{Term, style};
 use dialoguer::Confirm;
-use nirvana_core::{Nirvana, Slot, SlotTarget};
+use nirvana_core::{Nirvana, Slot};
 use tracing::info;
 
-use crate::cli::time::{format_duration, format_timestamp, parse_time};
-use crate::cli::{DeleteArgs, theme};
+use crate::cli::time::{format_duration, format_timestamp};
+use crate::cli::{DeleteArgs, slot_target, theme};
 
 pub(crate) async fn run(args: DeleteArgs) -> anyhow::Result<()> {
-    let target = match (args.id, args.at) {
-        (Some(id), _) => SlotTarget::Id(id),
-        (None, Some(at)) => SlotTarget::At(parse_time(&at, Local::now().date_naive())?),
-        (None, None) => bail!("a slot ID or --at is required"),
-    };
+    let target = slot_target(args.id, args.at.as_deref())?;
 
     let service = Nirvana::new().await?;
     let term = Term::stdout();

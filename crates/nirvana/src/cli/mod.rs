@@ -19,12 +19,16 @@ mod table;
 mod ticket;
 mod time;
 
+use anyhow::bail;
+use chrono::Local;
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
-use clap::{Args, Parser, Subcommand};
+use clap::{ArgGroup, Args, Parser, Subcommand};
 use console::Style;
 use dialoguer::theme::ColorfulTheme;
-use nirvana_core::{Kind, SecretStore, TicketSort, selectable_stores};
+use nirvana_core::{Kind, SecretStore, SlotTarget, TicketSort, selectable_stores};
 use tracing::debug;
+
+use crate::cli::time::parse_time;
 
 #[derive(Parser)]
 #[command(
@@ -155,18 +159,34 @@ struct AddArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(group(
+    ArgGroup::new("edit")
+        .args(["ticket", "start", "stop", "duration"])
+        .required(true)
+        .multiple(true)
+))]
 struct EditArgs {
-    /// Slot ID to edit
-    slot_id: i64,
-    /// Move the slot to a different ticket key
+    /// Slot ID, shown by `list --show-ids`
+    #[arg(required_unless_present = "at", conflicts_with = "at")]
+    id: Option<i64>,
+    /// Edit the slot tracked at this time (e.g. "14:30" or "2026-05-19 14:30")
+    #[arg(long)]
+    at: Option<String>,
+    /// Move the slot to this ticket key (e.g. DES-1234)
     #[arg(long)]
     ticket: Option<String>,
-    /// Set the start time (e.g. "14:30" or "2026-05-19 14:30")
+    /// Use the ticket of this connection (omit to search all connections)
+    #[arg(long, requires = "ticket")]
+    connection: Option<String>,
+    /// Start time (e.g. "14:30" or "2026-05-19 14:30"). A time alone keeps the date.
     #[arg(long)]
     start: Option<String>,
-    /// Set or clear the stop time (use empty string to clear, reopening the slot)
-    #[arg(long)]
+    /// Stop time (e.g. "16:00" or "2026-05-19 16:00"), "" to reopen. A time alone keeps the date.
+    #[arg(long, conflicts_with = "duration")]
     stop: Option<String>,
+    /// Duration from the start (e.g. "1h 30m", "1h" or "45m")
+    #[arg(long)]
+    duration: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -458,6 +478,15 @@ fn storage_parser() -> impl TypedValueParser<Value = SecretStore> {
             .chain([hidden]),
     )
     .try_map(|s| s.parse::<SecretStore>())
+}
+
+/// Returns the slot with the ID `id`, or tracked at the time `at`.
+pub(crate) fn slot_target(id: Option<i64>, at: Option<&str>) -> anyhow::Result<SlotTarget> {
+    match (id, at) {
+        (Some(id), _) => Ok(SlotTarget::Id(id)),
+        (None, Some(at)) => Ok(SlotTarget::At(parse_time(at, Local::now().date_naive())?)),
+        (None, None) => bail!("a slot ID or --at is required"),
+    }
 }
 
 pub(crate) fn theme() -> ColorfulTheme {

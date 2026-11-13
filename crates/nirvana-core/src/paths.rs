@@ -156,7 +156,7 @@ fn not_found(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::NotFound, message)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl AppPaths {
     /// Places every directory and file in `dir`, in dev mode.
     pub(crate) fn in_dir(dir: &std::path::Path) -> Self {

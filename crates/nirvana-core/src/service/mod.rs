@@ -6,6 +6,8 @@ mod logs;
 mod profile;
 #[cfg(test)]
 mod test_support;
+#[cfg(feature = "test-support")]
+mod testing;
 mod ticket;
 mod tracking;
 
@@ -29,7 +31,10 @@ pub struct Nirvana {
 
 impl Nirvana {
     pub async fn new() -> Result<Self, NirvanaError> {
-        let paths = AppPaths::resolve()?;
+        Self::open(AppPaths::resolve()?, native_store()).await
+    }
+
+    async fn open(paths: AppPaths, keyring: StoreFactory) -> Result<Self, NirvanaError> {
         let mut config = AppConfig::load(&paths).map_err(Arc::new);
         let db = storage::open(&paths.db_file).await?;
         match &mut config {
@@ -42,7 +47,7 @@ impl Nirvana {
             paths,
             config,
             db,
-            keyring: native_store(),
+            keyring,
         })
     }
 

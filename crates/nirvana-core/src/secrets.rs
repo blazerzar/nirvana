@@ -46,7 +46,7 @@ pub(crate) fn native_store() -> StoreFactory {
     Arc::new(|| Ok(Store::new()?))
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn mock_store() -> StoreFactory {
     let store = keyring_core::mock::Store::new().unwrap();
     Arc::new(move || Ok(store.clone()))

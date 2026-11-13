@@ -215,7 +215,7 @@ impl Nirvana {
 
     /// Inserts the ticket of `connection` under the key the backend returned,
     /// or updates its title if it is already stored.
-    async fn store_ticket(
+    pub(super) async fn store_ticket(
         &self,
         connection: &Connection,
         issue: IssueInfo,

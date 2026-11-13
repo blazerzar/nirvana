@@ -2045,6 +2045,7 @@ dependencies = [
  "chrono",
  "directories",
  "keyring-core",
+ "nirvana-core",
  "nirvana-entity",
  "nirvana-migration",
  "rand 0.9.5",

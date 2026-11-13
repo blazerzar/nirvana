@@ -105,7 +105,7 @@ enum Command {
 
 #[derive(Args, Debug)]
 struct StartArgs {
-    /// Ticket key (e.g. DES-1234). Omit for interactive mode.
+    /// Ticket key (e.g. NIR-7615). Omit for interactive mode.
     ticket: Option<String>,
     /// Start time (e.g. "14:30" or "2026-05-19 14:30"). Requires ticket.
     #[arg(long, requires = "ticket")]
@@ -138,7 +138,7 @@ struct SwitchArgs {
 
 #[derive(Args, Debug)]
 struct AddArgs {
-    /// Ticket key (e.g. DES-1234)
+    /// Ticket key (e.g. NIR-7615)
     ticket: String,
     /// Start time (e.g. "14:30" or "2026-05-19 14:30")
     #[arg(long)]
@@ -172,7 +172,7 @@ struct EditArgs {
     /// Edit the slot tracked at this time (e.g. "14:30" or "2026-05-19 14:30")
     #[arg(long)]
     at: Option<String>,
-    /// Move the slot to this ticket key (e.g. DES-1234)
+    /// Move the slot to this ticket key (e.g. NIR-7615)
     #[arg(long)]
     ticket: Option<String>,
     /// Use the ticket of this connection (omit to search all connections)
@@ -360,7 +360,7 @@ enum Ticket {
     },
     /// Fetch a ticket with its title from your connections
     Load {
-        /// Ticket key (e.g. DES-1234)
+        /// Ticket key (e.g. NIR-7615)
         key: String,
         /// Fetch only from this connection (omit to search all connections)
         #[arg(long)]
@@ -368,7 +368,7 @@ enum Ticket {
     },
     /// Delete a ticket
     Delete {
-        /// Ticket key (e.g. DES-1234)
+        /// Ticket key (e.g. NIR-7615)
         #[arg(required_unless_present = "id")]
         key: Option<String>,
         /// Delete only the ticket of this connection
@@ -383,7 +383,7 @@ enum Ticket {
     },
     /// Update a ticket's title from its connection
     Sync {
-        /// Ticket key (e.g. DES-1234)
+        /// Ticket key (e.g. NIR-7615)
         key: String,
         /// Sync only the ticket of this connection
         #[arg(long)]

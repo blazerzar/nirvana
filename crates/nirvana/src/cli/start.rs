@@ -33,17 +33,13 @@ pub(crate) async fn run(args: StartArgs) -> anyhow::Result<()> {
 
 /// Writes the stopped slot, if any, and the started slot of `result`.
 pub(crate) fn write_start_result(term: &Term, result: StartResult) -> anyhow::Result<()> {
-    if let Some(Slot {
-        model: stopped,
-        ticket: stopped_ticket,
-    }) = result.stopped
-    {
+    if let Some(stopped) = result.stopped {
         term.write_line(&format!(
             "{} ticket {} {} {}",
             style("Stopped").yellow(),
-            style(&stopped_ticket.ticket_key).bold(),
-            style(stopped_ticket.title.unwrap_or_default()).dim(),
-            format_duration(stopped.stopped_at.unwrap_or_default() - stopped.started_at),
+            style(&stopped.ticket.ticket_key).bold(),
+            style(stopped.ticket.title.as_deref().unwrap_or_default()).dim(),
+            format_duration(stopped.elapsed()),
         ))?;
     }
     write_started(term, "Started", result.started)

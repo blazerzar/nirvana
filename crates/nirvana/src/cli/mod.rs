@@ -187,10 +187,10 @@ struct ListArgs {
     /// Order by ticket instead of time
     #[arg(long)]
     by_ticket: bool,
-    /// Range start for overlapping slots (e.g. "14:30" or "2026-05-19 14:30"). Defaults to today 00:00.
-    #[arg(long, alias = "start")]
+    /// Range start (e.g. "14:30" or "2026-05-19 14:30"). Lists today if omitted.
+    #[arg(long, alias = "start", requires = "to")]
     from: Option<String>,
-    /// Range end for overlapping slots (e.g. "14:30" or "2026-05-19 14:30"). Unbounded if omitted.
+    /// Range end (e.g. "14:30" or "2026-05-19 14:30")
     #[arg(long, alias = "stop", requires = "from")]
     to: Option<String>,
     /// Show slot IDs

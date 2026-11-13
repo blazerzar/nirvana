@@ -89,7 +89,7 @@ pub enum DomainError {
     NoSlotAt,
     #[error("cannot edit a published slot")]
     SlotAlreadyPublished,
-    #[error("stopped_at must be null or after started_at")]
+    #[error("stop time must be after the start time")]
     InvalidTimeRange,
     #[error("slot time cannot be in the future")]
     FutureTime,

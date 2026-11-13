@@ -9,8 +9,8 @@ use chrono::Utc;
 use nirvana_entity::{publish_entry, slot, ticket};
 use sea_orm::sea_query::{Expr, Order, WindowStatement};
 use sea_orm::{
-    ActiveModelTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, ExprTrait, PaginatorTrait,
-    QueryFilter, QueryOrder, QueryTrait, SelectExt, Set, TransactionTrait,
+    ActiveModelTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, ExprTrait, QueryFilter,
+    QueryOrder, QueryTrait, SelectExt, Set, TransactionTrait,
 };
 
 use crate::domain::{Slot, SlotTarget, StartResult};
@@ -233,14 +233,7 @@ impl Nirvana {
         }
         .insert(&txn)
         .await?;
-        let ticket = match started_at > ticket.last_worked_at {
-            true => {
-                let mut ticket: ticket::ActiveModel = ticket.into();
-                ticket.last_worked_at = Set(started_at);
-                ticket.update(&txn).await?
-            }
-            false => ticket,
-        };
+        let ticket = mark_worked(&txn, ticket, started_at).await?;
         txn.commit().await?;
         Ok(Slot { model, ticket })
     }
@@ -371,9 +364,8 @@ async fn start_in_txn(
 
     if at.is_some()
         && slot::Entity::find_in_range(profile_id, started_at, None)
-            .count(txn)
+            .exists(txn)
             .await?
-            > 0
     {
         return Err(DomainError::SlotOverlap.into());
     }
@@ -387,9 +379,7 @@ async fn start_in_txn(
     .insert(txn)
     .await?;
 
-    let mut ticket: ticket::ActiveModel = ticket.into();
-    ticket.last_worked_at = Set(started_at);
-    let ticket = ticket.update(txn).await?;
+    let ticket = mark_worked(txn, ticket, started_at).await?;
 
     Ok(StartResult {
         started: Slot {
@@ -398,6 +388,20 @@ async fn start_in_txn(
         },
         stopped,
     })
+}
+
+/// Moves the last worked time of `ticket` forward to `worked_at`.
+async fn mark_worked(
+    txn: &DatabaseTransaction,
+    ticket: ticket::Model,
+    worked_at: i64,
+) -> Result<ticket::Model, NirvanaError> {
+    if worked_at <= ticket.last_worked_at {
+        return Ok(ticket);
+    }
+    let mut ticket: ticket::ActiveModel = ticket.into();
+    ticket.last_worked_at = Set(worked_at);
+    Ok(ticket.update(txn).await?)
 }
 
 fn reject_future_time(timestamp: i64) -> Result<(), DomainError> {
@@ -409,6 +413,8 @@ fn reject_future_time(timestamp: i64) -> Result<(), DomainError> {
 
 #[cfg(test)]
 mod tests {
+    use sea_orm::PaginatorTrait;
+
     use super::*;
     use crate::service::test_support::test_service;
 
@@ -1248,6 +1254,22 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(ticket.last_worked_at, now - 600);
+    }
+
+    #[tokio::test]
+    async fn start_slot_keeps_later_last_worked_at() {
+        let service = test_service().await;
+        let now = Utc::now().timestamp();
+        let mut stored: ticket::ActiveModel = add_ticket(&service, "JIRA-1", true).await.into();
+        stored.last_worked_at = Set(now);
+        stored.update(&service.db).await.unwrap();
+
+        let result = service
+            .start_slot("JIRA-1", Some(now - 600), None)
+            .await
+            .unwrap();
+
+        assert_eq!(result.started.ticket.last_worked_at, now);
     }
 
     #[tokio::test]

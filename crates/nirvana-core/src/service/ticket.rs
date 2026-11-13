@@ -787,6 +787,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn find_ticket_ignores_key_case() {
+        let service = test_service().await;
+        let [jira, ..] = add_tickets(&service).await;
+        let profile_id = service.find_active_profile().await.unwrap().id;
+
+        let ticket = find_ticket(&service.db, profile_id, key_target("jira-1", None))
+            .await
+            .unwrap();
+
+        assert_eq!(ticket, jira);
+    }
+
+    #[tokio::test]
     async fn delete_ticket_rejects_ambiguous_key() {
         let service = test_service().await;
         add_duplicate_ticket(&service).await;

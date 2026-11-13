@@ -1,4 +1,6 @@
+use sea_orm::IntoSimpleExpr;
 use sea_orm::entity::prelude::*;
+use sea_orm::sea_query::{Expr, ExprTrait, Func};
 
 #[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
@@ -31,6 +33,9 @@ impl Entity {
     pub fn find_by_profile_key(profile_id: i64, key: &str) -> Select<Self> {
         Self::find()
             .filter(COLUMN.profile_id.eq(profile_id))
-            .filter(COLUMN.ticket_key.eq(key))
+            .filter(
+                Expr::expr(Func::lower(COLUMN.ticket_key.into_simple_expr()))
+                    .eq(key.to_lowercase()),
+            )
     }
 }

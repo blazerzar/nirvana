@@ -1,4 +1,4 @@
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime};
 
 pub(crate) fn format_timestamp(timestamp: i64) -> String {
@@ -19,6 +19,24 @@ pub(crate) fn format_duration(seconds: i64) -> String {
             0 => format!("{minutes}m"),
             hours => format!("{hours}h {}m", minutes % 60),
         },
+    }
+}
+
+/// Parses hours and minutes, e.g. `1h 30m`, `1h30m`, `1h` or `45m`, into
+/// seconds. The duration must be positive.
+pub(crate) fn parse_duration(input: &str) -> anyhow::Result<i64> {
+    let invalid = || anyhow!("invalid duration '{input}', expected e.g. 1h 30m, 1h or 45m");
+    let compact: String = input.split_whitespace().collect();
+    let (hours, rest) = compact.split_once('h').unwrap_or(("0", &compact));
+    let minutes = match rest {
+        "" => "0",
+        rest => rest.strip_suffix('m').ok_or_else(invalid)?,
+    };
+    let hours: u32 = hours.parse().map_err(|_| invalid())?;
+    let minutes: u32 = minutes.parse().map_err(|_| invalid())?;
+    match (i64::from(hours) * 60 + i64::from(minutes)) * 60 {
+        0 => Err(invalid()),
+        seconds => Ok(seconds),
     }
 }
 
@@ -62,6 +80,32 @@ mod tests {
         assert_eq!(format_duration(45 * 60), "45m");
         assert_eq!(format_duration(3600), "1h 0m");
         assert_eq!(format_duration(3600 + 5 * 60 + 30), "1h 5m");
+    }
+
+    #[test]
+    fn parse_duration_accepts_hours_and_minutes() {
+        assert_eq!(parse_duration("1h 30m").unwrap(), 5400);
+        assert_eq!(parse_duration("1h30m").unwrap(), 5400);
+        assert_eq!(parse_duration(" 2h ").unwrap(), 7200);
+        assert_eq!(parse_duration("45m").unwrap(), 2700);
+        assert_eq!(parse_duration("90m").unwrap(), 5400);
+        assert_eq!(parse_duration("1h 0m").unwrap(), 3600);
+        assert_eq!(parse_duration("0h 1m").unwrap(), 60);
+        assert_eq!(parse_duration("150h 500m").unwrap(), 570000);
+    }
+
+    #[test]
+    fn parse_duration_reads_formatted_duration() {
+        assert_eq!(parse_duration(&format_duration(3900)).unwrap(), 3900);
+    }
+
+    #[test]
+    fn parse_duration_rejects_invalid_input() {
+        for input in [
+            "", "0m", "0h 0m", "h", "m", "30", "1h30", "1.5h", "-1h", "1h -5m", "1d", "1m 1h",
+        ] {
+            assert!(parse_duration(input).is_err(), "accepted '{input}'");
+        }
     }
 
     #[test]

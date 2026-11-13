@@ -1,3 +1,4 @@
+mod add;
 mod config;
 mod connection;
 mod credential;
@@ -51,6 +52,8 @@ enum Command {
     Resume(ResumeArgs),
     /// Switch tracking time to the previous ticket
     Switch(SwitchArgs),
+    /// Add a stopped slot
+    Add(AddArgs),
     /// Edit an existing slot
     Edit(EditArgs),
     /// Delete a slot
@@ -127,6 +130,28 @@ struct SwitchArgs {
     /// Switch time (e.g. "14:30" or "2026-05-19 14:30")
     #[arg(long)]
     at: Option<String>,
+}
+
+#[derive(Args, Debug)]
+struct AddArgs {
+    /// Ticket key (e.g. DES-1234)
+    ticket: String,
+    /// Start time (e.g. "14:30" or "2026-05-19 14:30")
+    #[arg(long)]
+    start: String,
+    /// Stop time (e.g. "16:00" or "2026-05-19 16:00"). A time alone is on the start date.
+    #[arg(
+        long,
+        required_unless_present = "duration",
+        conflicts_with = "duration"
+    )]
+    stop: Option<String>,
+    /// Duration from the start (e.g. "1h 30m", "1h" or "45m")
+    #[arg(long)]
+    duration: Option<String>,
+    /// Use the ticket of this connection (omit to search all connections)
+    #[arg(long)]
+    connection: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -459,6 +484,7 @@ pub(crate) async fn run() -> anyhow::Result<()> {
         Some(Command::Stop(args)) => stop::run(args).await,
         Some(Command::Resume(args)) => resume::run(args).await,
         Some(Command::Switch(args)) => switch::run(args).await,
+        Some(Command::Add(args)) => add::run(args).await,
         Some(Command::Edit(args)) => edit::run(args).await,
         Some(Command::Delete(args)) => delete::run(args).await,
         Some(Command::List(args)) => list::run(args).await,

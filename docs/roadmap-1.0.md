@@ -200,7 +200,7 @@ logged from the start.
       from the start.
 - [x] Add `delete (<ID>|--at <time>) [-y]`: by ID (from `list --show-ids`) or by time (`--at`, the
       slot active at that time), with confirmation.
-- [ ] Add `add <KEY> --start <time> (--stop <time> | --duration <duration>)
+- [x] Add `add <KEY> --start <time> (--stop <time> | --duration <duration>)
       [--connection <name>]`. The ticket is resolved like in `start`.
 - [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
       through the public API) covering the tracking flows.

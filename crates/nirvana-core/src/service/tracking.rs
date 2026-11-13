@@ -13,10 +13,9 @@ use sea_orm::{
     QueryFilter, QueryOrder, QueryTrait, SelectExt, Set, TransactionTrait,
 };
 
-use crate::domain::{Slot, SlotTarget, StartResult, TicketTarget};
+use crate::domain::{Slot, SlotTarget, StartResult};
 use crate::errors::{DomainError, NirvanaError};
 use crate::service::Nirvana;
-use crate::service::ticket::find_ticket;
 
 const TICKET_STARTED_AT: &str = "ticket_started_at";
 
@@ -93,16 +92,9 @@ impl Nirvana {
             reject_future_time(at)?;
         }
         let profile = self.find_active_profile().await?;
-        let target = TicketTarget::Key {
-            key: key.to_string(),
-            connection: connection.map(str::to_string),
-        };
-        let ticket = match find_ticket(&self.db, profile.id, target).await {
-            Err(NirvanaError::Domain(DomainError::TicketNotFound(_))) => {
-                self.load_ticket(key, connection).await?
-            }
-            result => result?,
-        };
+        let ticket = self
+            .find_or_load_ticket(profile.id, key, connection)
+            .await?;
 
         let txn = self.db.begin().await?;
         let running = find_running_slot(&txn, profile.id).await?;
@@ -195,6 +187,62 @@ impl Nirvana {
         let result = start_in_txn(&txn, profile.id, Some(running), ticket, at).await?;
         txn.commit().await?;
         Ok(result)
+    }
+
+    /// Adds a slot on the ticket `key` of the active profile from
+    /// `started_at` to `stopped_at`. The ticket is resolved like in
+    /// [`Nirvana::start_slot`]. The ticket's last worked time only moves
+    /// forward.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `stopped_at` is in the future or not after
+    /// `started_at`, no profile is active, the config is unavailable, the
+    /// connection does not exist, more than one stored ticket matches, the
+    /// ticket cannot be loaded, the slot overlaps another slot or a database
+    /// query fails.
+    pub async fn add_slot(
+        &self,
+        key: &str,
+        started_at: i64,
+        stopped_at: i64,
+        connection: Option<&str>,
+    ) -> Result<Slot, NirvanaError> {
+        reject_future_time(stopped_at)?;
+        if stopped_at <= started_at {
+            return Err(DomainError::InvalidTimeRange.into());
+        }
+        let profile = self.find_active_profile().await?;
+        let ticket = self
+            .find_or_load_ticket(profile.id, key, connection)
+            .await?;
+
+        let txn = self.db.begin().await?;
+        if slot::Entity::find_in_range(profile.id, started_at, Some(stopped_at))
+            .exists(&txn)
+            .await?
+        {
+            return Err(DomainError::SlotOverlap.into());
+        }
+        let model = slot::ActiveModel {
+            ticket_id: Set(ticket.id),
+            profile_id: Set(profile.id),
+            started_at: Set(started_at),
+            stopped_at: Set(Some(stopped_at)),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await?;
+        let ticket = match started_at > ticket.last_worked_at {
+            true => {
+                let mut ticket: ticket::ActiveModel = ticket.into();
+                ticket.last_worked_at = Set(started_at);
+                ticket.update(&txn).await?
+            }
+            false => ticket,
+        };
+        txn.commit().await?;
+        Ok(Slot { model, ticket })
     }
 
     /// Returns the slot of the active profile with the ID, or tracked at the
@@ -1038,6 +1086,168 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(ticket.last_worked_at, at);
+    }
+
+    #[tokio::test]
+    async fn add_slot_adds_closed_slot() {
+        let service = test_service().await;
+        let stored = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+
+        let Slot { model, ticket } = service
+            .add_slot("JIRA-1", now - 3600, now - 1800, None)
+            .await
+            .unwrap();
+
+        assert_eq!(model.ticket_id, stored.id);
+        assert_eq!(model.started_at, now - 3600);
+        assert_eq!(model.stopped_at, Some(now - 1800));
+        assert_eq!(ticket.last_worked_at, now - 3600);
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [model]);
+    }
+
+    #[tokio::test]
+    async fn add_slot_rejects_overlap_with_closed_slot() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let closed = add_slot(&service, &ticket, now - 3600, Some(now - 1800)).await;
+
+        for (started_at, stopped_at) in [
+            (now - 4000, now - 3000),
+            (now - 3000, now - 2000),
+            (now - 2000, now - 1000),
+            (now - 4000, now - 1000),
+        ] {
+            let err = service
+                .add_slot("JIRA-1", started_at, stopped_at, None)
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                err,
+                NirvanaError::Domain(DomainError::SlotOverlap)
+            ));
+        }
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [closed]);
+    }
+
+    #[tokio::test]
+    async fn add_slot_rejects_overlap_with_running_slot() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let running = add_slot(&service, &ticket, now - 1800, None).await;
+
+        let err = service
+            .add_slot("JIRA-1", now - 900, now - 600, None)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::SlotOverlap)
+        ));
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [running]);
+    }
+
+    #[tokio::test]
+    async fn add_slot_accepts_adjacent_slots() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        add_slot(&service, &ticket, now - 3600, Some(now - 2400)).await;
+        add_slot(&service, &ticket, now - 1200, None).await;
+
+        service
+            .add_slot("JIRA-1", now - 2400, now - 1200, None)
+            .await
+            .unwrap();
+
+        assert_eq!(slot::Entity::find().count(&service.db).await.unwrap(), 3);
+    }
+
+    #[tokio::test]
+    async fn add_slot_rejects_future_stop() {
+        let service = test_service().await;
+        add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+
+        let err = service
+            .add_slot("JIRA-1", now - 600, now + 60, None)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, NirvanaError::Domain(DomainError::FutureTime)));
+        assert_eq!(slot::Entity::find().count(&service.db).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn add_slot_rejects_stop_not_after_start() {
+        let service = test_service().await;
+        add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+
+        for stopped_at in [now - 1200, now - 600] {
+            let err = service
+                .add_slot("JIRA-1", now - 600, stopped_at, None)
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                err,
+                NirvanaError::Domain(DomainError::InvalidTimeRange)
+            ));
+        }
+        assert_eq!(slot::Entity::find().count(&service.db).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn add_slot_rejects_ambiguous_key_without_connection() {
+        let service = test_service().await;
+        let connected = add_ticket(&service, "JIRA-1", true).await;
+        add_ticket(&service, "JIRA-1", false).await;
+        let now = Utc::now().timestamp();
+
+        let err = service
+            .add_slot("JIRA-1", now - 600, now - 300, None)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::AmbiguousTicket(key, _)) if key == "JIRA-1"
+        ));
+
+        let slot = service
+            .add_slot("JIRA-1", now - 600, now - 300, Some("Test Jira"))
+            .await
+            .unwrap();
+        assert_eq!(slot.ticket.id, connected.id);
+    }
+
+    #[tokio::test]
+    async fn add_slot_keeps_later_last_worked_at() {
+        let service = test_service().await;
+        add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        service
+            .add_slot("JIRA-1", now - 600, now - 300, None)
+            .await
+            .unwrap();
+
+        let slot = service
+            .add_slot("JIRA-1", now - 3600, now - 1800, None)
+            .await
+            .unwrap();
+
+        assert_eq!(slot.ticket.last_worked_at, now - 600);
+        let ticket = ticket::Entity::find_by_id(slot.ticket.id)
+            .one(&service.db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(ticket.last_worked_at, now - 600);
     }
 
     #[tokio::test]

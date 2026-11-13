@@ -237,6 +237,27 @@ impl Nirvana {
             .exec_with_returning(&self.db)
             .await?)
     }
+
+    /// Returns the stored ticket `key` of the profile, or loads it from the
+    /// connections when it is not stored. `connection` selects the ticket of
+    /// the connection with that name and limits loading to it.
+    pub(super) async fn find_or_load_ticket(
+        &self,
+        profile_id: i64,
+        key: &str,
+        connection: Option<&str>,
+    ) -> Result<ticket::Model, NirvanaError> {
+        let target = TicketTarget::Key {
+            key: key.to_string(),
+            connection: connection.map(str::to_string),
+        };
+        match find_ticket(&self.db, profile_id, target).await {
+            Err(NirvanaError::Domain(DomainError::TicketNotFound(_))) => {
+                self.load_ticket(key, connection).await
+            }
+            result => result,
+        }
+    }
 }
 
 /// Returns the ticket of the profile with the key and optional connection

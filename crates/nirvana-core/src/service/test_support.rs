@@ -1,4 +1,5 @@
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 use nirvana_entity::credential::SecretStore;
 use nirvana_entity::profile;
@@ -10,7 +11,7 @@ use crate::domain::{ConnectionData, Kind};
 use crate::paths::AppPaths;
 use crate::secrets::mock_store;
 use crate::service::Nirvana;
-use crate::storage;
+use crate::{integration, storage};
 
 pub(super) struct TestService {
     service: Nirvana,
@@ -35,11 +36,13 @@ pub(super) async fn test_service() -> TestService {
     let dir = tempfile::tempdir().unwrap();
     let paths = AppPaths::in_dir(dir.path());
     let db = storage::open(&paths.db_file).await.unwrap();
+    let http = integration::http_client().map_err(Arc::new);
     let mut service = Nirvana {
         paths,
         config: Ok(AppConfig::default()),
         db,
         keyring: mock_store(),
+        http,
     };
     profile::ActiveModel {
         name: Set("test".to_string()),

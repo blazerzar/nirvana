@@ -312,14 +312,15 @@ impl Nirvana {
     ///
     /// Returns an error if no profile is active, the config is unavailable,
     /// the connection does not exist, a Jira Cloud connection has no
-    /// identity, the token cannot be read, the backend cannot be reached or
-    /// rejects the token, or a database query fails.
+    /// identity, the token cannot be read, the HTTP client is unavailable,
+    /// the backend cannot be reached or rejects the token, or a database
+    /// query fails.
     pub async fn test_connection(&self, name: &str) -> Result<(), NirvanaError> {
         let connection = self.get_connection(name).await?;
 
         debug!(%name, kind = %connection.kind, "testing connection");
         let token = read_credential(&self.keyring, connection.model.id, &self.db).await?;
-        Integration::new(&connection, token)?
+        Integration::new(&connection, self.http()?, token)?
             .test_connection()
             .await?;
         Ok(())

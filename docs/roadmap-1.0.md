@@ -117,7 +117,7 @@ logged from the start.
 - [x] Add config migration tests: 0.1 flat, 0.2 and 0.3.0-alpha sectioned
       config.toml fixtures migrate correctly (active connection dropped,
       machine settings kept, missing sections get defaults).
-- [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
+- [x] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
       through the public API) opening a 0.3.0-alpha data dir (fixture DB and
       config.toml): the active profile resolves, and the migrated
       connections, tickets and slots (incl. the running one) are usable.
@@ -156,7 +156,7 @@ logged from the start.
       no `{0}` in `#[from]` variants (config, I/O, DB, keyring), lowercase
       CLI messages (`connection '{query}' not found`).
 - [x] Check there is correct and sufficient logging.
-- [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
+- [x] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
       through the public API) covering the profile and connection flows.
 
 ## Settings, logs and config CLI
@@ -218,25 +218,32 @@ logged from the start.
 - [x] Add Linear integration - GraphQL, ticket title only. The connection
       host is the workspace URL (`linear.app/<workspace>`), used for issue
       URLs, and the API endpoint is constant.
-- [ ] Build HTTP clients with `reqwest::Client::builder()` (timeout set on the
+- [x] Build HTTP clients with `reqwest::Client::builder()` (timeout set on the
       client instead of per request).
 
 ## Publishing
 
-- [ ] Make sure publishing works.
-- [ ] Publish to every connection with publish enabled, squash per ticket per
-      day when enabled.
-- [ ] Store ID of the worklog / comment, nirvana marker to avoid duplicates on
-      retry.
+- [ ] Add `linear_settings` (`publish`, `squash`, both off by default) with
+      migration, entity and `settings get/set` support, created when a
+      Linear connection is added.
+- [ ] Reimplement publishing: a slot is published to its ticket's
+      connection when that connection has `publish` enabled. Jira as
+      worklogs, Linear as comments.
+- [ ] Squash per ticket per local day when `squash` is enabled.
 - [ ] No rounding - Jira rejects worklogs under 60 s, such entry fails with
       error and stays unpublished.
-- [ ] Partial publish state (published to some targets) derived from publish
-      entries, retry is just publish again (see the implementation guide).
-- [ ] Get publishing ready in CLI (--target).
-- [ ] Make sure we are able to publish from any range (today, all).
-- [ ] Need error checking for each log.
-- [ ] Fix error messages of the errors publishing returns (decision 21):
-      no `{0}` in `IntegrationError::Network`.
+- [ ] Per log errors stored in publish entries.
+- [ ] Derive slot publish state from publish entries and connection
+      settings: local only, unpublished, failed, published, partial (see
+      the implementation guide).
+- [ ] Show the publish state of each slot in `list` as a marker (published,
+      partial, error), returned by core with the slots.
+- [ ] Maybe add a command that shows one slot fully (publish state per
+      target with errors).
+- [ ] CLI: `publish [--target <name>] [--start <time>] [--stop <time>]
+      [--retry]`, any range (today by default, all). Only unpublished slots
+      are sent, failed ones only with `--retry`.
+- [ ] Fix error messages of the errors publishing returns (decision 21).
 
 ## E2E tests
 
@@ -246,8 +253,16 @@ logged from the start.
       picker, available in all builds.
 - [ ] Add e2e tests for nirvana: run the built release binary in CI, with
       tokens from GitHub secrets through the `env` secret store.
+- [ ] Allow an explicit `http://` scheme in the Jira host (https stays the
+      default) and keep it through host normalization, so a local mock
+      server can be used as the host.
+- [ ] Read the Linear API URL from `NIRVANA_LINEAR_API_URL`, defaulting to
+      the constant endpoint.
 - [ ] Add tests for `ticket load` and `ticket sync` using mocks, for Linear
-      and Jira.
+      and Jira. Core integration tests pass the mock URL in directly,
+      `assert_cmd` tests set it through the connection host and the
+      environment. Use httpmock (sync API fits `assert_cmd`) as a
+      dev-dependency.
 
 ## Nirvana API
 

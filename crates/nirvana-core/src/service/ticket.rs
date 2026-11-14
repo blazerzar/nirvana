@@ -86,9 +86,9 @@ impl Nirvana {
     /// # Errors
     ///
     /// Returns an error if no profile is active, the config is unavailable,
-    /// the connection does not exist, no connection finds the ticket, more
-    /// than one connection finds it, a connection fails and none finds the
-    /// ticket, or a database query fails.
+    /// the HTTP client is unavailable, the connection does not exist, no
+    /// connection finds the ticket, more than one connection finds it, a
+    /// connection fails and none finds the ticket, or a database query fails.
     pub async fn load_ticket(
         &self,
         key: &str,
@@ -100,11 +100,12 @@ impl Nirvana {
         };
 
         debug!(%key, connections = connections.len(), "loading ticket");
+        let client = self.http()?;
         let mut fetches = JoinSet::new();
         for (index, connection) in connections.into_iter().enumerate() {
             let integration =
                 match read_credential(&self.keyring, connection.model.id, &self.db).await {
-                    Ok(token) => Integration::new(&connection, token).map_err(NirvanaError::from),
+                    Ok(token) => Integration::new(&connection, client.clone(), token),
                     Err(NirvanaError::Db(e)) => return Err(NirvanaError::Db(e)),
                     Err(e) => Err(e),
                 };
@@ -176,7 +177,8 @@ impl Nirvana {
     /// Returns an error if no profile is active, the config is unavailable,
     /// the connection does not exist, no ticket or more than one ticket
     /// matches, the ticket has no connection, the credential cannot be read,
-    /// fetching the ticket fails or a database query fails.
+    /// the HTTP client is unavailable, fetching the ticket fails or a
+    /// database query fails.
     pub async fn sync_ticket(
         &self,
         key: &str,
@@ -195,7 +197,7 @@ impl Nirvana {
 
         debug!(key = %ticket.ticket_key, connection = %connection.model.name, "syncing ticket");
         let token = read_credential(&self.keyring, connection.model.id, &self.db).await?;
-        let issue = Integration::new(&connection, token)?
+        let issue = Integration::new(&connection, self.http()?, token)?
             .fetch_issue(&ticket.ticket_key)
             .await?;
         self.update_title(ticket, issue.title).await

@@ -9,7 +9,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use tracing::debug;
 
-use crate::integration::{IntegrationError, IssueInfo, TIMEOUT};
+use crate::integration::{IntegrationError, IssueInfo};
 
 pub(crate) enum JiraAuth {
     Basic { email: String, token: SecretString },
@@ -34,11 +34,11 @@ struct IssueFields {
 }
 
 impl JiraIntegration {
-    pub(crate) fn new(api_url: Url, auth: JiraAuth) -> Self {
+    pub(crate) fn new(client: reqwest::Client, api_url: Url, auth: JiraAuth) -> Self {
         Self {
             api_url,
             auth,
-            client: reqwest::Client::new(),
+            client,
         }
     }
 
@@ -95,7 +95,7 @@ impl JiraIntegration {
     }
 
     fn request(&self, method: Method, url: Url) -> RequestBuilder {
-        let request = self.client.request(method, url).timeout(TIMEOUT);
+        let request = self.client.request(method, url);
         match &self.auth {
             JiraAuth::Basic { email, token } => {
                 request.basic_auth(email, Some(token.expose_secret()))
@@ -128,6 +128,7 @@ mod tests {
     #[test]
     fn url_encodes_ticket_key() {
         let jira = JiraIntegration::new(
+            reqwest::Client::new(),
             Url::parse("https://jira.example.com/rest/api/2").unwrap(),
             JiraAuth::Bearer("token".into()),
         );

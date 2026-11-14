@@ -1,6 +1,9 @@
 use anyhow::anyhow;
 use console::{Term, style};
-use nirvana_core::{JiraSettings, JiraSettingsEdit, Nirvana, Settings, SettingsEdit};
+use nirvana_core::{
+    JiraSettings, JiraSettingsEdit, LinearSettings, LinearSettingsEdit, Nirvana, Settings,
+    SettingsEdit,
+};
 use tracing::info;
 
 use crate::cli::table::{self, Column};
@@ -19,14 +22,6 @@ pub(crate) async fn get(connection: String, key: Option<String>) -> anyhow::Resu
             .find(|(name, _)| *name == key)
             .ok_or_else(|| unknown_setting(&connection, &settings, &key))?;
         term.write_line(&value.to_string())?;
-        return Ok(());
-    }
-
-    if values.is_empty() {
-        term.write_line(&format!(
-            "{}",
-            style(format!("Connection {connection} has no settings")).yellow()
-        ))?;
         return Ok(());
     }
 
@@ -54,19 +49,32 @@ pub(crate) async fn set(connection: String, key: String, value: String) -> anyho
     Ok(())
 }
 
-struct JiraSetting {
+struct Setting<S, E> {
     key: &'static str,
-    value: fn(&JiraSettings) -> bool,
-    field: fn(&mut JiraSettingsEdit) -> &mut Option<bool>,
+    value: fn(&S) -> bool,
+    field: fn(&mut E) -> &mut Option<bool>,
 }
 
-const JIRA_SETTINGS: [JiraSetting; 2] = [
-    JiraSetting {
+const JIRA_SETTINGS: [Setting<JiraSettings, JiraSettingsEdit>; 2] = [
+    Setting {
         key: "publish",
         value: |settings| settings.publish,
         field: |edit| &mut edit.publish,
     },
-    JiraSetting {
+    Setting {
+        key: "squash",
+        value: |settings| settings.squash,
+        field: |edit| &mut edit.squash,
+    },
+];
+
+const LINEAR_SETTINGS: [Setting<LinearSettings, LinearSettingsEdit>; 2] = [
+    Setting {
+        key: "publish",
+        value: |settings| settings.publish,
+        field: |edit| &mut edit.publish,
+    },
+    Setting {
         key: "squash",
         value: |settings| settings.squash,
         field: |edit| &mut edit.squash,
@@ -75,12 +83,16 @@ const JIRA_SETTINGS: [JiraSetting; 2] = [
 
 fn values(settings: &Settings) -> Vec<(&'static str, bool)> {
     match settings {
-        Settings::Jira(settings) => JIRA_SETTINGS
-            .iter()
-            .map(|setting| (setting.key, (setting.value)(settings)))
-            .collect(),
-        Settings::Linear => Vec::new(),
+        Settings::Jira(settings) => values_of(&JIRA_SETTINGS, settings),
+        Settings::Linear(settings) => values_of(&LINEAR_SETTINGS, settings),
     }
+}
+
+fn values_of<S, E>(table: &[Setting<S, E>], settings: &S) -> Vec<(&'static str, bool)> {
+    table
+        .iter()
+        .map(|setting| (setting.key, (setting.value)(settings)))
+        .collect()
 }
 
 fn settings_edit(
@@ -89,25 +101,28 @@ fn settings_edit(
     key: &str,
     value: &str,
 ) -> anyhow::Result<SettingsEdit> {
-    let setting = match settings {
-        Settings::Jira(_) => JIRA_SETTINGS.iter().find(|setting| setting.key == key),
-        Settings::Linear => None,
+    if !values(settings).iter().any(|(name, _)| *name == key) {
+        return Err(unknown_setting(connection, settings, key));
     }
-    .ok_or_else(|| unknown_setting(connection, settings, key))?;
-    let mut edit = JiraSettingsEdit::default();
-    *(setting.field)(&mut edit) = Some(
-        value
-            .parse()
-            .map_err(|_| anyhow!("setting '{key}' must be true or false"))?,
-    );
-    Ok(SettingsEdit::Jira(edit))
+    let value = value
+        .parse()
+        .map_err(|_| anyhow!("setting '{key}' must be true or false"))?;
+    match settings {
+        Settings::Jira(_) => edit_of(&JIRA_SETTINGS, key, value).map(SettingsEdit::Jira),
+        Settings::Linear(_) => edit_of(&LINEAR_SETTINGS, key, value).map(SettingsEdit::Linear),
+    }
+    .ok_or_else(|| unknown_setting(connection, settings, key))
+}
+
+fn edit_of<S, E: Default>(table: &[Setting<S, E>], key: &str, value: bool) -> Option<E> {
+    let setting = table.iter().find(|setting| setting.key == key)?;
+    let mut edit = E::default();
+    *(setting.field)(&mut edit) = Some(value);
+    Some(edit)
 }
 
 fn unknown_setting(connection: &str, settings: &Settings, key: &str) -> anyhow::Error {
     let keys: Vec<&str> = values(settings).into_iter().map(|(key, _)| key).collect();
-    if keys.is_empty() {
-        return anyhow!("connection '{connection}' has no settings");
-    }
     anyhow!(
         "unknown setting '{key}' for connection '{connection}', expected one of: {}",
         keys.join(", ")
@@ -145,7 +160,7 @@ mod tests {
 
     #[test]
     fn settings_edit_rejects_unknown_setting() {
-        let error = settings_edit("jira", &jira(), "foo", "true").unwrap_err();
+        let error = settings_edit("jira", &jira(), "foo", "yes").unwrap_err();
 
         assert_eq!(
             error.to_string(),
@@ -161,9 +176,25 @@ mod tests {
     }
 
     #[test]
-    fn settings_edit_rejects_connection_without_settings() {
-        let error = settings_edit("linear", &Settings::Linear, "publish", "true").unwrap_err();
+    fn settings_edit_sets_only_the_given_linear_setting() {
+        let linear = Settings::Linear(LinearSettings {
+            publish: false,
+            squash: false,
+        });
 
-        assert_eq!(error.to_string(), "connection 'linear' has no settings");
+        assert!(matches!(
+            settings_edit("linear", &linear, "publish", "true").unwrap(),
+            SettingsEdit::Linear(LinearSettingsEdit {
+                publish: Some(true),
+                squash: None,
+            })
+        ));
+        assert!(matches!(
+            settings_edit("linear", &linear, "squash", "true").unwrap(),
+            SettingsEdit::Linear(LinearSettingsEdit {
+                publish: None,
+                squash: Some(true),
+            })
+        ));
     }
 }

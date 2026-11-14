@@ -2,7 +2,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use nirvana_entity::credential::SecretStore;
-use nirvana_entity::{connection, jira_settings};
+use nirvana_entity::{connection, jira_settings, linear_settings};
 use secrecy::SecretString;
 
 use crate::errors::DomainError;
@@ -34,7 +34,14 @@ impl Connection {
                     .ok_or(DomainError::MissingConnectionSettings(model.id))?
                     .into(),
             ),
-            Kind::Linear => Settings::Linear,
+            Kind::Linear => Settings::Linear(
+                model
+                    .linear_settings
+                    .take()
+                    .map(linear_settings::Model::from)
+                    .ok_or(DomainError::MissingConnectionSettings(model.id))?
+                    .into(),
+            ),
         };
         Ok(Self {
             model: model.into(),
@@ -102,7 +109,7 @@ impl FromStr for Kind {
 #[derive(Debug)]
 pub enum Settings {
     Jira(JiraSettings),
-    Linear,
+    Linear(LinearSettings),
 }
 
 #[derive(Debug)]
@@ -121,12 +128,34 @@ impl From<jira_settings::Model> for JiraSettings {
 }
 
 #[derive(Debug)]
+pub struct LinearSettings {
+    pub publish: bool,
+    pub squash: bool,
+}
+
+impl From<linear_settings::Model> for LinearSettings {
+    fn from(model: linear_settings::Model) -> Self {
+        Self {
+            publish: model.publish,
+            squash: model.squash,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum SettingsEdit {
     Jira(JiraSettingsEdit),
+    Linear(LinearSettingsEdit),
 }
 
 #[derive(Debug, Default)]
 pub struct JiraSettingsEdit {
+    pub publish: Option<bool>,
+    pub squash: Option<bool>,
+}
+
+#[derive(Debug, Default)]
+pub struct LinearSettingsEdit {
     pub publish: Option<bool>,
     pub squash: Option<bool>,
 }
@@ -199,7 +228,10 @@ mod tests {
                     profile_id: 1,
                 },
                 kind,
-                settings: Settings::Linear,
+                settings: Settings::Linear(LinearSettings {
+                    publish: false,
+                    squash: false,
+                }),
                 secret_store: SecretStore::Plaintext,
             };
             assert_eq!(connection.issue_url("ENG-1"), url);

@@ -9,8 +9,8 @@ mod ticket;
 
 pub use config::ConfigEntry;
 pub use connection::{
-    Connection, ConnectionData, ConnectionEdit, JiraSettings, JiraSettingsEdit, Kind, Settings,
-    SettingsEdit,
+    Connection, ConnectionData, ConnectionEdit, JiraSettings, JiraSettingsEdit, Kind,
+    LinearSettings, LinearSettingsEdit, Settings, SettingsEdit,
 };
 pub use credential::{Credential, SecretLocation, SecretStore};
 pub use info::AppInfo;

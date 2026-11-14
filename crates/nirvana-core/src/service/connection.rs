@@ -6,7 +6,9 @@
 //! scheme or trailing slash.
 
 use nirvana_entity::connection::Entity as ConnectionEntity;
-use nirvana_entity::{connection, credential, jira_settings, publish_entry, slot, ticket};
+use nirvana_entity::{
+    connection, credential, jira_settings, linear_settings, publish_entry, slot, ticket,
+};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait, ModelTrait,
@@ -178,7 +180,26 @@ impl Nirvana {
                 settings.update(&self.db).await?;
                 Ok(())
             }
-            (Kind::Linear, _) => Err(DomainError::UnexpectedSettings(kind).into()),
+            (Kind::Linear, SettingsEdit::Linear(edit)) => {
+                let mut settings: linear_settings::ActiveModel =
+                    linear_settings::Entity::find_by_id(connection.id)
+                        .one(&self.db)
+                        .await?
+                        .ok_or(DomainError::MissingConnectionSettings(connection.id))?
+                        .into();
+                if let Some(publish) = edit.publish {
+                    settings.publish = Set(publish);
+                }
+                if let Some(squash) = edit.squash {
+                    settings.squash = Set(squash);
+                }
+                settings.update(&self.db).await?;
+                Ok(())
+            }
+            (Kind::JiraCloud | Kind::JiraDc, SettingsEdit::Linear(_))
+            | (Kind::Linear, SettingsEdit::Jira(_)) => {
+                Err(DomainError::UnexpectedSettings(kind).into())
+            }
         }
     }
 
@@ -206,6 +227,7 @@ impl Nirvana {
         let connection = ConnectionEntity::load()
             .with(credential::Entity)
             .with(jira_settings::Entity)
+            .with(linear_settings::Entity)
             .filter(connection::COLUMN.profile_id.eq(profile.id))
             .filter(connection::COLUMN.name.eq(name))
             .one(&self.db)
@@ -218,6 +240,7 @@ impl Nirvana {
         let connection = ConnectionEntity::load()
             .with(credential::Entity)
             .with(jira_settings::Entity)
+            .with(linear_settings::Entity)
             .filter(connection::COLUMN.id.eq(id))
             .one(&self.db)
             .await?
@@ -232,6 +255,7 @@ impl Nirvana {
         Ok(ConnectionEntity::load()
             .with(credential::Entity)
             .with(jira_settings::Entity)
+            .with(linear_settings::Entity)
             .filter(connection::COLUMN.profile_id.eq(profile_id))
             .order_by_asc(connection::COLUMN.id)
             .all(&self.db)
@@ -361,7 +385,15 @@ async fn insert_connection(
             .await?
             .into(),
         ),
-        Kind::Linear => Settings::Linear,
+        Kind::Linear => Settings::Linear(
+            linear_settings::ActiveModel {
+                connection_id: Set(model.id),
+                ..Default::default()
+            }
+            .insert(&txn)
+            .await?
+            .into(),
+        ),
     };
     txn.commit().await?;
     Ok(Connection {
@@ -385,7 +417,7 @@ mod tests {
     use secrecy::ExposeSecret;
 
     use super::*;
-    use crate::domain::JiraSettingsEdit;
+    use crate::domain::{JiraSettingsEdit, LinearSettings, LinearSettingsEdit};
     use crate::secrets::read_credential;
     use crate::service::test_support::{keyring_passwords, test_service};
 
@@ -596,7 +628,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn add_connection_adds_linear_without_settings() {
+    async fn add_connection_adds_linear_with_default_settings() {
         let service = test_service().await;
 
         let added = service
@@ -610,7 +642,13 @@ mod tests {
 
         assert_eq!(added.kind, Kind::Linear);
         assert_eq!(added.model.identity, None);
-        assert!(matches!(added.settings, Settings::Linear));
+        assert!(matches!(
+            added.settings,
+            Settings::Linear(LinearSettings {
+                publish: false,
+                squash: false
+            })
+        ));
         assert!(
             jira_settings::Entity::find_by_id(added.model.id)
                 .one(&service.db)
@@ -619,7 +657,13 @@ mod tests {
                 .is_none()
         );
         let loaded = service.active_profile().await.unwrap().connections;
-        assert!(matches!(loaded[1].settings, Settings::Linear));
+        assert!(matches!(
+            loaded[1].settings,
+            Settings::Linear(LinearSettings {
+                publish: false,
+                squash: false
+            })
+        ));
     }
 
     async fn connection_names(service: &Nirvana) -> Vec<String> {
@@ -874,7 +918,28 @@ mod tests {
     async fn jira_settings_of(service: &Nirvana, name: &str) -> (bool, bool) {
         match service.get_connection(name).await.unwrap().settings {
             Settings::Jira(settings) => (settings.publish, settings.squash),
-            Settings::Linear => panic!("expected jira settings"),
+            Settings::Linear(_) => panic!("expected jira settings"),
+        }
+    }
+
+    async fn add_linear(service: &Nirvana) -> i64 {
+        service
+            .add_connection(ConnectionData {
+                kind: Kind::Linear,
+                identity: None,
+                secret_store: SecretStore::Plaintext,
+                ..keyring_data("Linear")
+            })
+            .await
+            .unwrap()
+            .model
+            .id
+    }
+
+    async fn linear_settings_of(service: &Nirvana, name: &str) -> (bool, bool) {
+        match service.get_connection(name).await.unwrap().settings {
+            Settings::Linear(settings) => (settings.publish, settings.squash),
+            Settings::Jira(_) => panic!("expected linear settings"),
         }
     }
 
@@ -903,17 +968,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn edit_connection_settings_rejects_linear() {
+    async fn edit_connection_settings_changes_linear_settings() {
         let service = test_service().await;
+        add_linear(&service).await;
+
         service
-            .add_connection(ConnectionData {
-                kind: Kind::Linear,
-                identity: None,
-                secret_store: SecretStore::Plaintext,
-                ..keyring_data("Linear")
-            })
+            .edit_connection_settings(
+                "Linear",
+                SettingsEdit::Linear(LinearSettingsEdit {
+                    publish: Some(true),
+                    squash: None,
+                }),
+            )
             .await
             .unwrap();
+
+        assert_eq!(linear_settings_of(&service, "Linear").await, (true, false));
+    }
+
+    #[tokio::test]
+    async fn edit_connection_settings_rejects_settings_of_other_kind() {
+        let service = test_service().await;
+        add_linear(&service).await;
 
         let err = service
             .edit_connection_settings("Linear", jira_settings_edit(Some(false), None))
@@ -1189,6 +1265,22 @@ mod tests {
         assert_eq!(
             publish_entries(&service).await,
             [(history.kept_slot, history.kept_connection)]
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_connection_deletes_linear_settings() {
+        let service = test_service().await;
+        let id = add_linear(&service).await;
+
+        service.delete_connection("Linear", false).await.unwrap();
+
+        assert!(
+            linear_settings::Entity::find_by_id(id)
+                .one(&service.db)
+                .await
+                .unwrap()
+                .is_none()
         );
     }
 

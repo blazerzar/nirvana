@@ -43,6 +43,22 @@ impl MigrationTrait for Migration {
             .to_owned();
         manager.exec_stmt(stmt).await?;
 
+        let stmt = Table::create()
+            .table("linear_settings")
+            .col(integer("connection_id"))
+            .col(boolean("publish").default(false))
+            .col(boolean("squash").default(false))
+            .primary_key(Index::create().col("connection_id"))
+            .foreign_key(
+                ForeignKey::create()
+                    .from("linear_settings", "connection_id")
+                    .to("connections", "id")
+                    .on_delete(ForeignKeyAction::Cascade),
+            )
+            .to_owned();
+        manager.create_table(stmt).await?;
+        debug!("created linear_settings table");
+
         Ok(())
     }
 }

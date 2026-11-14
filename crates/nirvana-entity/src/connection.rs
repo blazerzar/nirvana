@@ -26,6 +26,8 @@ pub struct Model {
     pub credential: HasOne<super::credential::Entity>,
     #[sea_orm(has_one)]
     pub jira_settings: HasOne<super::jira_settings::Entity>,
+    #[sea_orm(has_one)]
+    pub linear_settings: HasOne<super::linear_settings::Entity>,
     #[sea_orm(has_many)]
     pub tickets: HasMany<super::ticket::Entity>,
 }

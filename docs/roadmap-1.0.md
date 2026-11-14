@@ -223,7 +223,7 @@ logged from the start.
 
 ## Publishing
 
-- [ ] Add `linear_settings` (`publish`, `squash`, both off by default) with
+- [x] Add `linear_settings` (`publish`, `squash`, both off by default) with
       migration, entity and `settings get/set` support, created when a
       Linear connection is added.
 - [ ] Reimplement publishing: a slot is published to its ticket's

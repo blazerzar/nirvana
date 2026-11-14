@@ -88,7 +88,8 @@ pub(crate) async fn sqlite_version(db: &DatabaseConnection) -> Result<String, Db
 mod tests {
     use nirvana_entity::prelude::*;
     use nirvana_entity::{
-        connection, credential, jira_settings, profile, publish_entry, slot, ticket,
+        connection, credential, jira_settings, linear_settings, profile, publish_entry, slot,
+        ticket,
     };
     use sea_orm::ActiveValue::{NotSet, Set};
     use sea_orm::{ActiveModelTrait, DbBackend, EntityTrait, PaginatorTrait, Statement};
@@ -543,6 +544,9 @@ mod tests {
                 &"jira_settings|connection_id|connections|id|NO ACTION|CASCADE".to_string()
             )
         );
+        assert!(migrated_schema.contains(
+            &"linear_settings|connection_id|connections|id|NO ACTION|CASCADE".to_string()
+        ));
         assert!(
             migrated_schema
                 .contains(&"publish_entries|slot_id|slots|id|NO ACTION|CASCADE".to_string())
@@ -685,6 +689,46 @@ mod tests {
             .unwrap();
 
         assert_eq!(JiraSettings::find().count(&db).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn linear_settings_default_and_cascade_on_delete() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = open(&dir.path().join("nirvana.db")).await.unwrap();
+        let profile = profile::ActiveModel {
+            name: Set("default".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let connection = connection::ActiveModel {
+            name: Set("work".to_string()),
+            kind: Set("linear".to_string()),
+            host: Set("host".to_string()),
+            identity: Set(None),
+            profile_id: Set(profile.id),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let settings = linear_settings::ActiveModel {
+            connection_id: Set(connection.id),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        assert!(!settings.publish);
+        assert!(!settings.squash);
+
+        Connection::delete_by_id(connection.id)
+            .exec(&db)
+            .await
+            .unwrap();
+
+        assert_eq!(LinearSettings::find().count(&db).await.unwrap(), 0);
     }
 
     #[tokio::test]

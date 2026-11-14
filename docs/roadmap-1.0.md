@@ -259,23 +259,16 @@ logged from the start.
 
 - [ ] Refactor test helpers (factories) for unit tests.
 - [ ] Add linear connection to test service.
-- [ ] Add the `env` secret store for CLI integration tests: the credentials
+- [ ] Add the `env` secret store for e2e tests: the credentials
       row holds the name of the environment variable with the token, which
       must start with `NIRVANA_`. Hidden from `--help` and the interactive
       picker, available in all builds.
-- [ ] Add e2e tests for nirvana: run the built release binary in CI, with
-      tokens from GitHub secrets through the `env` secret store.
-- [ ] Allow an explicit `http://` scheme in the Jira host (https stays the
-      default) and keep it through host normalization, so a local mock
-      server can be used as the host.
-- [ ] Read the Linear API URL from `NIRVANA_LINEAR_API_URL`, defaulting to
-      the constant endpoint.
-- [ ] Add tests for `ticket load` and `ticket sync` using mocks, for Linear
-      and Jira. Core integration tests pass the mock URL in directly,
-      `assert_cmd` tests set it through the connection host and the
-      environment. Use wiremock as a dev-dependency. Its mock servers need
-      a tokio runtime (`#[tokio::test]`) but run on their own thread, so
-      blocking `assert_cmd` calls inside the test work.
+- [ ] Add e2e tests for nirvana: run the built release binary in CI against
+      the real Jira and Linear APIs, with tokens from GitHub secrets through
+      the `env` secret store.
+- [ ] Add core integration tests for `ticket load` and `ticket sync` using
+      mocks, for Linear and Jira. They pass the mock URL in directly. Use
+      wiremock as a dev-dependency.
 
 ## Nirvana API
 

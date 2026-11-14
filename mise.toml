@@ -58,12 +58,11 @@ run = "cargo test -p nirvana-core native_keyring -- --ignored --test-threads=1"
 description = "Run tests with coverage and write HTML and LCOV reports to target/llvm-cov"
 depends = ["setup-coverage"]
 tools = { "aqua:taiki-e/cargo-llvm-cov" = "0.9.1" }
-env = { COVERAGE_IGNORE = "crates/nirvana-(entity|migration)/" }
 run = [
   "cargo +$NIGHTLY_TOOLCHAIN llvm-cov --workspace --locked --no-report",
-  "cargo +$NIGHTLY_TOOLCHAIN llvm-cov report --ignore-filename-regex \"$COVERAGE_IGNORE\"",
-  "cargo +$NIGHTLY_TOOLCHAIN llvm-cov report --html --ignore-filename-regex \"$COVERAGE_IGNORE\"",
-  "cargo +$NIGHTLY_TOOLCHAIN llvm-cov report --lcov --output-path target/llvm-cov/lcov.info --ignore-filename-regex \"$COVERAGE_IGNORE\"",
+  "cargo +$NIGHTLY_TOOLCHAIN llvm-cov report",
+  "cargo +$NIGHTLY_TOOLCHAIN llvm-cov report --html",
+  "cargo +$NIGHTLY_TOOLCHAIN llvm-cov report --lcov --output-path target/llvm-cov/lcov.info",
 ]
 
 [tasks.check]

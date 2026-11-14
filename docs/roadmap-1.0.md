@@ -156,7 +156,7 @@ logged from the start.
       no `{0}` in `#[from]` variants (config, I/O, DB, keyring), lowercase
       CLI messages (`connection '{query}' not found`).
 - [x] Check there is correct and sufficient logging.
-- [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
+- [x] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
       through the public API) covering the profile and connection flows.
 
 ## Settings, logs and config CLI

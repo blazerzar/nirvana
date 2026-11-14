@@ -117,7 +117,7 @@ logged from the start.
 - [x] Add config migration tests: 0.1 flat, 0.2 and 0.3.0-alpha sectioned
       config.toml fixtures migrate correctly (active connection dropped,
       machine settings kept, missing sections get defaults).
-- [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
+- [x] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
       through the public API) opening a 0.3.0-alpha data dir (fixture DB and
       config.toml): the active profile resolves, and the migrated
       connections, tickets and slots (incl. the running one) are usable.

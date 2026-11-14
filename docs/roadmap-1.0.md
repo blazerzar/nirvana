@@ -246,8 +246,16 @@ logged from the start.
       picker, available in all builds.
 - [ ] Add e2e tests for nirvana: run the built release binary in CI, with
       tokens from GitHub secrets through the `env` secret store.
+- [ ] Allow an explicit `http://` scheme in the Jira host (https stays the
+      default) and keep it through host normalization, so a local mock
+      server can be used as the host.
+- [ ] Read the Linear API URL from `NIRVANA_LINEAR_API_URL`, defaulting to
+      the constant endpoint.
 - [ ] Add tests for `ticket load` and `ticket sync` using mocks, for Linear
-      and Jira.
+      and Jira. Core integration tests pass the mock URL in directly,
+      `assert_cmd` tests set it through the connection host and the
+      environment. Use httpmock (sync API fits `assert_cmd`) as a
+      dev-dependency.
 
 ## Nirvana API
 

@@ -42,6 +42,7 @@ const KEYRING_SERVICE: &str = "nirvana";
 pub(crate) type StoreFactory =
     Arc<dyn Fn() -> keyring_core::Result<Arc<CredentialStore>> + Send + Sync>;
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub(crate) fn native_store() -> StoreFactory {
     Arc::new(|| Ok(Store::new()?))
 }

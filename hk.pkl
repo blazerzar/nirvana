@@ -10,14 +10,14 @@ local formatters = new Mapping<String, Step> {
   ["pkl-format"] = Builtins.pkl_format
   ["cargo-fmt"] = (Builtins.cargo_fmt) {
     check {
-      command = "cargo +$RUSTFMT_TOOLCHAIN fmt --check --manifest-path {{workspace_indicator}}"
+      command = "cargo +$NIGHTLY_TOOLCHAIN fmt --check --manifest-path {{workspace_indicator}}"
     }
     check_list_files {
       command =
-        "cargo +$RUSTFMT_TOOLCHAIN fmt --check --manifest-path {{workspace_indicator}} -- --files-with-diff"
+        "cargo +$NIGHTLY_TOOLCHAIN fmt --check --manifest-path {{workspace_indicator}} -- --files-with-diff"
     }
     fix {
-      command = "cargo +$RUSTFMT_TOOLCHAIN fmt --manifest-path {{workspace_indicator}}"
+      command = "cargo +$NIGHTLY_TOOLCHAIN fmt --manifest-path {{workspace_indicator}}"
     }
   }
 }

@@ -38,8 +38,9 @@ Tool versions are pinned in `mise.toml` (`mise install`). Git hooks run through
 | Install git hooks | `mise run setup` |
 | Run all checks | `mise run lint` |
 | Fix formatting | `mise run fix` |
+| Test coverage (HTML in `target/llvm-cov/html`) | `mise run coverage` |
 
-- Formatting: `cargo +$RUSTFMT_TOOLCHAIN fmt` (Rust, pinned nightly rustfmt
+- Formatting: `cargo +$NIGHTLY_TOOLCHAIN fmt` (Rust, pinned nightly rustfmt
   for import grouping, installed by `mise run setup`), dprint (TOML, YAML,
   JSON, shell scripts through shfmt, `dprint.json`), `pkl format` (Pkl).
   Indentation and line endings follow `.editorconfig`.

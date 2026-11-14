@@ -223,20 +223,27 @@ logged from the start.
 
 ## Publishing
 
-- [ ] Make sure publishing works.
-- [ ] Publish to every connection with publish enabled, squash per ticket per
-      day when enabled.
-- [ ] Store ID of the worklog / comment, nirvana marker to avoid duplicates on
-      retry.
+- [ ] Add `linear_settings` (`publish`, `squash`, both off by default) with
+      migration, entity and `settings get/set` support, created when a
+      Linear connection is added.
+- [ ] Reimplement publishing: a slot is published to its ticket's
+      connection when that connection has `publish` enabled. Jira as
+      worklogs, Linear as comments.
+- [ ] Squash per ticket per local day when `squash` is enabled.
 - [ ] No rounding - Jira rejects worklogs under 60 s, such entry fails with
       error and stays unpublished.
-- [ ] Partial publish state (published to some targets) derived from publish
-      entries, retry is just publish again (see the implementation guide).
-- [ ] Get publishing ready in CLI (--target).
-- [ ] Make sure we are able to publish from any range (today, all).
-- [ ] Need error checking for each log.
-- [ ] Fix error messages of the errors publishing returns (decision 21):
-      no `{0}` in `IntegrationError::Network`.
+- [ ] Per log errors stored in publish entries.
+- [ ] Derive slot publish state from publish entries and connection
+      settings: local only, unpublished, failed, published, partial (see
+      the implementation guide).
+- [ ] Show the publish state of each slot in `list` as a marker (published,
+      partial, error), returned by core with the slots.
+- [ ] Maybe add a command that shows one slot fully (publish state per
+      target with errors).
+- [ ] CLI: `publish [--target <name>] [--start <time>] [--stop <time>]
+      [--retry]`, any range (today by default, all). Only unpublished slots
+      are sent, failed ones only with `--retry`.
+- [ ] Fix error messages of the errors publishing returns (decision 21).
 
 ## E2E tests
 

@@ -59,11 +59,12 @@ worklogs.
 | 20 | **`connections.identity` is nullable.** It holds the Jira Cloud email, used for basic auth. Jira DC authenticates with the PAT alone, so it has no identity and the CLI does not ask for a username. The profiles migration, which already rebuilds `connections`, creates `identity` as nullable and sets it to NULL for `jira-dc` rows. | A username that is never used for auth is not semantically an identity. |
 | 21 | **Errors: `thiserror` in `nirvana-core`, `anyhow::Result` in the `nirvana` CLI.** `main` prints the whole chain with `{e:#}`, so a `#[from]` variant does not repeat its source with `{0}` in its message (or is `#[error(transparent)]`). Domain rules and their errors (future times, missing active connection) live in core, not in the CLI. CLI errors are fixed command by command, when that command is reworked. | The CLI only displays errors and never matches on them. A source printed in the message and again by the chain shows up several times. Rules in core apply to every frontend. |
 | 22 | **Deleting a connection** deletes its credential, settings and publish entries (the worklogs stay in the backend) and removes its keyring entry. The caller chooses whether its tickets are deleted with their slots or kept with `connection_id` NULL. `connection list` shows each connection's secret store. Tokens are updated and moved between secret stores with the `credential` command. `credential list` shows where each token is stored (the store and the keyring account) and never reveals a token. | A connection can be removed without losing local history, and stale publish entries do not block the delete. |
-| 23 | **Settings CLI**: `settings get --connection <name> [<key>]` shows all settings of the connection as a table, or one value, and `settings set --connection <name> <key> <value>` changes one. Keys are the settings of the connection's kind (Jira: `publish`, `squash`). Core takes a `SettingsEdit` with one variant per settings table and rejects a variant that does not match the connection's kind. | One command for every kind of setting. Profile settings will be selected by leaving out `--connection`. |
+| 23 | **Settings CLI**: `settings get --connection <name> [<key>]` shows all settings of the connection as a table, or one value, and `settings set --connection <name> <key> <value>` changes one. Keys are the settings of the connection's kind (Jira and Linear: `publish`, `squash`). Core takes a `SettingsEdit` with one variant per settings table and rejects a variant that does not match the connection's kind. | One command for every kind of setting. Profile settings will be selected by leaving out `--connection`. |
 | 24 | **Config CLI**: `config get [<section>|<section.key>] [--show-unset] [--show-default]` shows the set keys of the whole config or a section as a table with their defaults (value empty if not set), or one value (its default with `--show-default`), `config set <section.key> <value>` changes one and `config unset <section.key>` removes it from `config.toml`, restoring its default. `core.profile` cannot be unset. The default of `log.level` is shown as `info` (`trace` in dev mode). A key is set if saving writes it (non-default or already in `config.toml`). The value is read as TOML, or as a string if it is not valid TOML. `core.profile` switches the active profile. `Nirvana::get_config`, `Nirvana::set_config` and `Nirvana::unset_config` live in core, and `set_config` and `unset_config` save on every change, so the GUI can use them too. | One key-based API for every frontend. |
 | 25 | **`ticket load <KEY> [--connection <name>]`** fetches the ticket from all connections that support ingress (currently all of them, Jira and Linear), queried concurrently, and stores it. If more than one connection finds the ticket, it fails with an ambiguity error. `--connection` limits the lookup to one connection. Connections that fail (unreadable token, auth, network) are skipped when exactly one connection finds the ticket. When none finds it, the first failure is returned, or "ticket not found" if every connection answered that it does not exist. Loading a stored ticket updates its title and `synced_at`. | `--connection` is needed to load a ticket whose key exists in more than one connection. |
 | 26 | **`ticket sync <KEY> [--connection <name>]`** syncs one stored ticket, found by key like `ticket delete` finds it, from the ticket's own connection. It updates only `title` and `synced_at`, by ticket id, so a key returned by the backend never adds a row. It fails when no ticket or more than one ticket matches, or the ticket has no connection. | Unlike `ticket load`, it never queries other connections and never inserts a ticket. |
 | 27 | **Tracking commands.** `start <KEY>` stops the running slot and starts the new one in one transaction. `switch` (no argument) switches to the previous ticket while tracking. `resume` (no argument) starts the previous ticket while stopped. `start --connection <name>` limits loading a ticket that is not stored to one connection and selects among stored tickets with the same key. Offline mode is not supported: starting on a ticket that cannot be loaded fails. `edit` takes a slot ID or a time (`--at`), like `delete`. `edit --stop ""` reopens a slot, checked against the one running slot rule and overlaps. `edit --start` and `edit --stop` times without a date keep the slot's start and stop dates (a running slot's stop takes the start date). `edit --duration` sets the stop from `--start`, or from the slot's current start. `edit --connection` requires `--ticket`. `delete` asks for confirmation and takes a slot ID (from `list --show-ids`) or a time (`--at`), which deletes the slot active at that time. `add <KEY>` adds a stopped slot with the ticket resolved like in `start`. It must not overlap any slot, including the running one. Tracking commands only move a ticket's `last_worked_at` forward. In `add`, a `--stop` time without a date is on the start date. | |
+| 28 | **Publishing.** A slot is published to its ticket's connection when that connection has `publish` enabled: Jira as worklogs, Linear as comments. Every connection kind has `publish` and `squash` settings, so publishing can be turned off (e.g. clients that switch to local storage). Linear defaults to both off. No markers and no remote IDs are stored, so Jira and Linear publishing is not idempotent. Only the Portal is (upserts by slot uuid). `publish` sends only unpublished slots, and failed ones are retried explicitly. | A retry to Jira or Linear can post a duplicate, so it is never done implicitly. |
 
 ## 4. Current codebase (0.3.0-alpha) - what exists
 
@@ -110,8 +111,9 @@ credentials(connection_id, secret_store {plaintext, keyring, env},
             -- env: the environment variable name
 jira_settings(connection_id, publish bool default true,
               squash bool default false)
+linear_settings(connection_id, publish bool default false,
+                squash bool default false)
             -- one settings table per connection kind
-            -- linear has no settings table yet
 tickets(id, profile_id, connection_id NULL, ticket_key, title,
         last_worked_at, synced_at)   -- NULL = source connection deleted
             -- unique (connection_id, ticket_key)
@@ -201,7 +203,7 @@ decisions here (rounding, single active connection, …).
 - A Jira or Linear connection is required (ticket names + descriptions).
 - No rounding anywhere.
 - Publishing is a per-connection setting. Each connection kind has its own
-  settings (Jira: `publish`, `squash`).
+  settings (Jira and Linear: `publish`, `squash`).
   Nirvana server publishing has its own toggle + url in web settings.
 - Default port **5167**.
 - Linear has no worklogs, so time is posted as a comment on the issue.
@@ -297,7 +299,7 @@ decisions here (rounding, single active connection, …).
   token · cloud / PAT · server), base url, email/username, token. Linear
   fields: name, personal API key (the workspace and user are detected from
   the key). Connection settings toggles (default: Jira publish on, Linear
-  publish off with squash on). Test, then save. The note says "tokens and
+  publish and squash off). Test, then save. The note says "tokens and
   keys are stored in your OS keyring, never in the database".
 - **New profile modal**: name (any case, unique) and "start with" (default
   settings / copy settings from <active>).
@@ -381,16 +383,29 @@ Desktop: `s` start (switch while tracking), `x` stop, `r` resume, `w` switch
 back, `p` publish, `v` overview, `o` open web, `,` settings, `esc` cancel /
 done, `↵` confirm. Global: ⌃⌥S start/switch, ⌃⌥X stop, ⌃⌥O open web.
 
-## 7. Analysis: partially published slots
+## 7. Analysis: slot publish state
 
-**Model.** A slot is published per *target*. A target is each profile
-connection with `publish = true`, plus the Portal when enabled. The slot's
-state is **derived** from `publish_entries`, never stored:
+**Model.** A slot is published per *target*. A target is the slot's ticket
+connection when it has `publish = true`, plus the Portal when enabled. The
+slot's state is **derived**, never stored. It comes from `publish_entries`
+first, and from the current connection settings only when the slot has no
+entries:
 
-- **unpublished**: no ok entry.
-- **partial**: at least one ok entry, but some target that was in scope **at
-  publish time** is still pending or failed.
-- **published**: every target in scope at publish time is ok.
+| Entries of the slot | State |
+|---|---|
+| none, the ticket has no connection or its connection has `publish = false` | **local only** |
+| none, the connection has `publish = true` | **unpublished** |
+| no ok entry, at least one failed or pending | **failed** |
+| every entry ok | **published** |
+| some ok, some failed or pending | **partial** |
+
+- A pending entry (both NULL) left after an interrupted publish counts as
+  failed, because the backend may have received it.
+- Entries win over settings: turning `publish` off later keeps published
+  slots published and read-only. Only slots without entries become local
+  only.
+- Partial needs more than one target per slot, so it is only possible once
+  the Portal is added. Today a slot has one target, its ticket's connection.
 
 When a publish starts, the in-scope targets are snapshotted as `pending`
 entries. Turning on a new target later (e.g. the Portal) therefore doesn't
@@ -405,7 +420,7 @@ separate, explicit action ("send history to nirvana server").
   and the publish button count partial slots as pending
   (`publish · 2 retry`).
 - Week grid block: published styling with a statusWarning left border.
-- Edit drawer: a per-target list, e.g. `✓ acme · Jira worklog 10423` and
+- Edit drawer: a per-target list, e.g. `✓ acme · Jira` and
   `× nirvana server · unreachable`. A slot becomes **read-only as soon as any
   external target is ok**. Deleting a published slot is allowed, and the
   frontend warns before it.
@@ -414,21 +429,18 @@ separate, explicit action ("send history to nirvana server").
   modal warns before publishing ("nirvana server unreachable: these logs stay
   partial") and still allows publishing to the rest.
 
-**Publishing again.** Publish is idempotent per (slot, target): it only sends
-what has no ok entry for that target. Retrying is just "publish" again. CLI:
-`nirvana publish [--target <name>]`.
+**Publishing again.** `publish` only sends unpublished slots. Failed slots
+(and the missing targets of partial slots) are sent only with `--retry`.
+CLI: `nirvana publish [--target <name>] [--retry]`.
 
-- Jira: store the worklog id. Add a `[nirvana:<slot ids>]` marker to the
-  comment. On retry after a timeout or unknown result, list the issue's
-  worklogs and match the marker before posting again (to avoid duplicates).
-- Linear: store the comment id. Use the same marker approach.
+- Jira and Linear: no markers and no remote IDs are stored, so a retry after
+  a timeout or unknown result can post a duplicate. Retries stay manual.
 - Portal: send raw slots keyed by `slots.uuid`, and the Portal upserts on it.
   Retries, and even later edits, are safe. Optionally, the desktop retries
   Portal-only failures in the background once the health check recovers.
-  Jira/Linear retries stay manual.
 - Squash + retry: rebuild the entry from that ticket and day's slots that
   have no ok entry for that target. Slots added to an already-published day
-  create a new worklog. Never merge them into an existing one.
+  create a new worklog or comment. Never merge them into an existing one.
 
 ## 8. Analysis: Portal stack (Leptos vs Phoenix)
 

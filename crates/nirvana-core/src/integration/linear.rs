@@ -12,7 +12,7 @@ use serde::de::DeserializeOwned;
 use serde_json::json;
 use tracing::debug;
 
-use crate::integration::{IntegrationError, IssueInfo, TIMEOUT};
+use crate::integration::{IntegrationError, IssueInfo};
 
 const API_URL: &str = "https://api.linear.app/graphql";
 
@@ -52,11 +52,8 @@ struct Issue {
 }
 
 impl LinearIntegration {
-    pub(crate) fn new(token: SecretString) -> Self {
-        Self {
-            token,
-            client: reqwest::Client::new(),
-        }
+    pub(crate) fn new(client: reqwest::Client, token: SecretString) -> Self {
+        Self { token, client }
     }
 
     pub(crate) async fn test_connection(&self) -> Result<(), IntegrationError> {
@@ -97,7 +94,6 @@ impl LinearIntegration {
             .post(API_URL)
             .header(AUTHORIZATION, self.token.expose_secret())
             .json(&json!({ "query": query, "variables": variables }))
-            .timeout(TIMEOUT)
             .send()
             .await?;
         debug!(status = %response.status(), "linear response");

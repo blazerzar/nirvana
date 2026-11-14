@@ -18,6 +18,7 @@ use tracing::warn;
 
 use crate::config::{AppConfig, ConfigError};
 use crate::errors::NirvanaError;
+use crate::integration::{self, IntegrationError};
 use crate::paths::AppPaths;
 use crate::secrets::{StoreFactory, native_store};
 use crate::storage;
@@ -27,6 +28,7 @@ pub struct Nirvana {
     config: Result<AppConfig, Arc<ConfigError>>,
     db: DatabaseConnection,
     keyring: StoreFactory,
+    http: Result<reqwest::Client, Arc<reqwest::Error>>,
 }
 
 impl Nirvana {
@@ -43,16 +45,24 @@ impl Nirvana {
             }
             Err(e) => warn!("config unavailable: {e}"),
         }
+        let http = integration::http_client().map_err(Arc::new);
         Ok(Self {
             paths,
             config,
             db,
             keyring,
+            http,
         })
     }
 
     fn config(&self) -> Result<&AppConfig, NirvanaError> {
         self.config.as_ref().map_err(|e| e.clone().into())
+    }
+
+    fn http(&self) -> Result<reqwest::Client, IntegrationError> {
+        self.http
+            .clone()
+            .map_err(IntegrationError::ClientUnavailable)
     }
 
     fn config_mut(&mut self) -> Result<&mut AppConfig, NirvanaError> {

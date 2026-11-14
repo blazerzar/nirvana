@@ -218,7 +218,7 @@ logged from the start.
 - [x] Add Linear integration - GraphQL, ticket title only. The connection
       host is the workspace URL (`linear.app/<workspace>`), used for issue
       URLs, and the API endpoint is constant.
-- [ ] Build HTTP clients with `reqwest::Client::builder()` (timeout set on the
+- [x] Build HTTP clients with `reqwest::Client::builder()` (timeout set on the
       client instead of per request).
 
 ## Publishing

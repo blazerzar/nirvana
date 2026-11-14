@@ -5,7 +5,7 @@
 //! an issue title. Publishing is backend-specific and called on the variant.
 //! Issue URLs need no client and are built by [`Connection::issue_url`].
 
-#![expect(dead_code)]
+#![cfg_attr(not(test), expect(dead_code))]
 
 pub(crate) mod jira;
 pub(crate) mod linear;
@@ -13,8 +13,10 @@ pub(crate) mod linear;
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use jira::{JiraAuth, JiraIntegration};
 use linear::LinearIntegration;
+use reqwest::Url;
 use secrecy::SecretString;
 use thiserror::Error;
 
@@ -35,12 +37,18 @@ pub enum IntegrationError {
     Auth(String),
     #[error("API error: {0}")]
     Api(String),
+    #[error("invalid timestamp: {0}")]
+    InvalidTimestamp(i64),
 }
 
 #[derive(Debug)]
 pub(crate) struct IssueInfo {
     pub key: String,
     pub title: String,
+}
+
+fn utc(timestamp: i64) -> Result<DateTime<Utc>, IntegrationError> {
+    DateTime::from_timestamp(timestamp, 0).ok_or(IntegrationError::InvalidTimestamp(timestamp))
 }
 
 pub(crate) fn http_client() -> Result<reqwest::Client, reqwest::Error> {
@@ -60,7 +68,7 @@ impl Integration {
     ) -> Result<Self, NirvanaError> {
         let host = &connection.model.host;
         let jira_url = || {
-            reqwest::Url::parse(&format!("https://{host}/rest/api/2"))
+            Url::parse(&format!("https://{host}/rest/api/2"))
                 .map_err(|_| DomainError::InvalidHost(host.clone()))
         };
         let integration = match connection.kind {
@@ -81,7 +89,11 @@ impl Integration {
                 jira_url()?,
                 JiraAuth::Bearer(token),
             )),
-            Kind::Linear => Self::Linear(LinearIntegration::new(client, token)),
+            Kind::Linear => Self::Linear(LinearIntegration::new(
+                client,
+                Url::parse(linear::API_URL).expect("Linear API URL is valid"),
+                token,
+            )),
         };
         Ok(integration)
     }

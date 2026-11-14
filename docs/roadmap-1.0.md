@@ -228,22 +228,27 @@ logged from the start.
       Linear connection is added.
 - [ ] Reimplement publishing: a slot is published to its ticket's
       connection when that connection has `publish` enabled. Jira as
-      worklogs, Linear as comments.
-- [ ] Squash per ticket per local day when `squash` is enabled.
-- [ ] No rounding - Jira rejects worklogs under 60 s, such entry fails with
-      error and stays unpublished.
-- [ ] Per log errors stored in publish entries.
-- [ ] Derive slot publish state from publish entries and connection
-      settings: local only, unpublished, failed, published, partial (see
-      the implementation guide).
+      worklogs, Linear as comments (`Worklog <start>-<stop> (<duration>)`).
+- [ ] Squash per ticket per local day when `squash` is enabled. A slot
+      belongs to the day it started on. The worklog or comment starts at
+      the earliest slot start of the day and lasts the summed duration.
+- [ ] No rounding - Jira rejects worklogs under 60 s, so such entry fails
+      a local check with error and stays unpublished.
+- [ ] Per log errors stored in publish entries. A publish claims its slots
+      first (pending entries inserted with on conflict do nothing, failed
+      entries reset to pending on retry) and sends only the claimed ones,
+      so concurrent publishes do not post duplicates.
+- [ ] CLI: `publish [--target <name>] [--start <time>] [--stop <time>]
+      [--all] [--retry]`, today by default. Slots overlapping the range are
+      selected, like in `list`. Only unpublished slots are sent, failed ones
+      only with `--retry`.
+- [ ] Fix error messages of the errors publishing returns (decision 21).
+- [ ] Derive slot publish state from publish entries: unpublished, failed,
+      published (see the implementation guide).
 - [ ] Show the publish state of each slot in `list` as a marker (published,
-      partial, error), returned by core with the slots.
+      error), returned by core with the slots.
 - [ ] Maybe add a command that shows one slot fully (publish state per
       target with errors).
-- [ ] CLI: `publish [--target <name>] [--start <time>] [--stop <time>]
-      [--retry]`, any range (today by default, all). Only unpublished slots
-      are sent, failed ones only with `--retry`.
-- [ ] Fix error messages of the errors publishing returns (decision 21).
 
 ## E2E tests
 
@@ -261,8 +266,9 @@ logged from the start.
 - [ ] Add tests for `ticket load` and `ticket sync` using mocks, for Linear
       and Jira. Core integration tests pass the mock URL in directly,
       `assert_cmd` tests set it through the connection host and the
-      environment. Use httpmock (sync API fits `assert_cmd`) as a
-      dev-dependency.
+      environment. Use wiremock as a dev-dependency. Its mock servers need
+      a tokio runtime (`#[tokio::test]`) but run on their own thread, so
+      blocking `assert_cmd` calls inside the test work.
 
 ## Nirvana API
 
@@ -347,6 +353,8 @@ We start building a standalone application for storing worklogs. This will be
 a big project that will tie everything together:
 
 - [ ] Possible to store Linear worklogs.
+- [ ] Add the partial publish state (published to some targets, see the
+      implementation guide).
 - [ ] Admin is able to manage users, see their logs, create and download reports.
 - [ ] Users can tag special days (vacations, sick).
 - [ ] Users can create templates for sending monthly emails to staff.

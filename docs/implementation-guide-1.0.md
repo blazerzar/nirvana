@@ -64,7 +64,7 @@ worklogs.
 | 25 | **`ticket load <KEY> [--connection <name>]`** fetches the ticket from all connections that support ingress (currently all of them, Jira and Linear), queried concurrently, and stores it. If more than one connection finds the ticket, it fails with an ambiguity error. `--connection` limits the lookup to one connection. Connections that fail (unreadable token, auth, network) are skipped when exactly one connection finds the ticket. When none finds it, the first failure is returned, or "ticket not found" if every connection answered that it does not exist. Loading a stored ticket updates its title and `synced_at`. | `--connection` is needed to load a ticket whose key exists in more than one connection. |
 | 26 | **`ticket sync <KEY> [--connection <name>]`** syncs one stored ticket, found by key like `ticket delete` finds it, from the ticket's own connection. It updates only `title` and `synced_at`, by ticket id, so a key returned by the backend never adds a row. It fails when no ticket or more than one ticket matches, or the ticket has no connection. | Unlike `ticket load`, it never queries other connections and never inserts a ticket. |
 | 27 | **Tracking commands.** `start <KEY>` stops the running slot and starts the new one in one transaction. `switch` (no argument) switches to the previous ticket while tracking. `resume` (no argument) starts the previous ticket while stopped. `start --connection <name>` limits loading a ticket that is not stored to one connection and selects among stored tickets with the same key. Offline mode is not supported: starting on a ticket that cannot be loaded fails. `edit` takes a slot ID or a time (`--at`), like `delete`. `edit --stop ""` reopens a slot, checked against the one running slot rule and overlaps. `edit --start` and `edit --stop` times without a date keep the slot's start and stop dates (a running slot's stop takes the start date). `edit --duration` sets the stop from `--start`, or from the slot's current start. `edit --connection` requires `--ticket`. `delete` asks for confirmation and takes a slot ID (from `list --show-ids`) or a time (`--at`), which deletes the slot active at that time. `add <KEY>` adds a stopped slot with the ticket resolved like in `start`. It must not overlap any slot, including the running one. Tracking commands only move a ticket's `last_worked_at` forward. In `add`, a `--stop` time without a date is on the start date. | |
-| 28 | **Publishing.** A slot is published to its ticket's connection when that connection has `publish` enabled: Jira as worklogs, Linear as comments. Every connection kind has `publish` and `squash` settings, so publishing can be turned off (e.g. clients that switch to local storage). Linear defaults to both off. No markers and no remote IDs are stored, so Jira and Linear publishing is not idempotent. Only the Portal is (upserts by slot uuid). `publish` sends only unpublished slots, and failed ones are retried explicitly. | A retry to Jira or Linear can post a duplicate, so it is never done implicitly. |
+| 28 | **Publishing.** A slot is published to its ticket's connection when that connection has `publish` enabled: Jira as worklogs, Linear as comments. Every connection kind has `publish` and `squash` settings, so publishing can be turned off (e.g. clients that switch to local storage). Linear defaults to both off. No markers and no remote IDs are stored, so Jira and Linear publishing is not idempotent. Only the Portal is (upserts by slot uuid). `publish` sends only unpublished slots, and failed ones are retried explicitly. A Linear comment reads `Worklog <start>-<stop> (<duration>)`. A squashed worklog or comment starts at the earliest slot start of the day it groups and lasts the summed duration. A slot belongs to the day it started on. A publish claims its slots by inserting pending entries (on conflict do nothing) or resetting failed ones to pending on retry, and sends only the claimed ones. Worklogs under 60 s fail a local check for Jira. `publish` selects slots overlapping the range, like `list`, today by default, all with `--all`. | A retry to Jira or Linear can post a duplicate, so it is never done implicitly. |
 
 ## 4. Current codebase (0.3.0-alpha) - what exists
 
@@ -387,25 +387,26 @@ done, `↵` confirm. Global: ⌃⌥S start/switch, ⌃⌥X stop, ⌃⌥O open we
 
 **Model.** A slot is published per *target*. A target is the slot's ticket
 connection when it has `publish = true`, plus the Portal when enabled. The
-slot's state is **derived**, never stored. It comes from `publish_entries`
-first, and from the current connection settings only when the slot has no
-entries:
+slot's state is **derived** from `publish_entries`, never stored:
 
 | Entries of the slot | State |
 |---|---|
-| none, the ticket has no connection or its connection has `publish = false` | **local only** |
-| none, the connection has `publish = true` | **unpublished** |
+| none | **unpublished** |
 | no ok entry, at least one failed or pending | **failed** |
 | every entry ok | **published** |
-| some ok, some failed or pending | **partial** |
+| some ok, some failed or pending | **partial** (Portal stage) |
 
 - A pending entry (both NULL) left after an interrupted publish counts as
   failed, because the backend may have received it.
-- Entries win over settings: turning `publish` off later keeps published
-  slots published and read-only. Only slots without entries become local
-  only.
-- Partial needs more than one target per slot, so it is only possible once
-  the Portal is added. Today a slot has one target, its ticket's connection.
+- Whether an unpublished slot is sent depends on its connection's `publish`
+  setting at publish time, not on its state. Unpublished counts (footer,
+  publish button, week header) come from the same selection publish uses,
+  so slots of connections with `publish = false` are not counted.
+- Turning `publish` off later keeps published slots published and
+  read-only.
+- Partial needs more than one target per slot, so it is added with the
+  Portal. Until then a slot has one target, its ticket's connection, and
+  the state is unpublished, failed or published.
 
 When a publish starts, the in-scope targets are snapshotted as `pending`
 entries. Turning on a new target later (e.g. the Portal) therefore doesn't

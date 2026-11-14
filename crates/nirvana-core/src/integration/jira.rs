@@ -9,7 +9,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use tracing::debug;
 
-use crate::integration::{IntegrationError, IssueInfo};
+use crate::integration::{IntegrationError, IssueInfo, utc};
 
 pub(crate) enum JiraAuth {
     Basic { email: String, token: SecretString },
@@ -71,9 +71,7 @@ impl JiraIntegration {
         started_at: i64,
         seconds: i64,
     ) -> Result<(), IntegrationError> {
-        let started = chrono::DateTime::from_timestamp(started_at, 0)
-            .unwrap()
-            .format("%Y-%m-%dT%H:%M:%S.000%z");
+        let started = utc(started_at)?.format("%Y-%m-%dT%H:%M:%S.000%z");
 
         let body = serde_json::json!({
             "timeSpentSeconds": seconds,
@@ -123,14 +121,95 @@ fn check_status(
 
 #[cfg(test)]
 mod tests {
+    use wiremock::matchers::{basic_auth, bearer_token, body_json, method, path};
+    use wiremock::{Match, Mock, MockServer, ResponseTemplate};
+
     use super::*;
+
+    fn jira(server: &MockServer, auth: JiraAuth) -> JiraIntegration {
+        JiraIntegration::new(
+            reqwest::Client::new(),
+            Url::parse(&format!("{}/rest/api/2", server.uri())).unwrap(),
+            auth,
+        )
+    }
+
+    fn bearer() -> JiraAuth {
+        JiraAuth::Bearer("token".into())
+    }
+
+    async fn assert_publish_slot_posts_worklog(auth: JiraAuth, auth_matcher: impl Match + 'static) {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/rest/api/2/issue/KAR-1/worklog"))
+            .and(auth_matcher)
+            .and(body_json(serde_json::json!({
+                "timeSpentSeconds": 5400,
+                "started": "2026-11-14T09:00:00.000+0000",
+            })))
+            .respond_with(ResponseTemplate::new(201))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        jira(&server, auth)
+            .publish_slot("KAR-1", 1_794_646_800, 5400)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn publish_slot_posts_worklog_to_cloud() {
+        assert_publish_slot_posts_worklog(
+            JiraAuth::Basic {
+                email: "me@example.com".to_string(),
+                token: "token".into(),
+            },
+            basic_auth("me@example.com", "token"),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn publish_slot_posts_worklog_to_dc() {
+        assert_publish_slot_posts_worklog(bearer(), bearer_token("token")).await;
+    }
+
+    #[tokio::test]
+    async fn publish_slot_to_missing_issue_fails() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+
+        let err = jira(&server, bearer())
+            .publish_slot("KAR-1", 1_794_646_800, 5400)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, IntegrationError::TicketNotFound(key) if key == "KAR-1"));
+    }
+
+    #[tokio::test]
+    async fn publish_slot_rejects_invalid_timestamp() {
+        let server = MockServer::start().await;
+
+        let err = jira(&server, bearer())
+            .publish_slot("KAR-1", i64::MAX, 5400)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, IntegrationError::InvalidTimestamp(i64::MAX)));
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
 
     #[test]
     fn url_encodes_ticket_key() {
         let jira = JiraIntegration::new(
             reqwest::Client::new(),
             Url::parse("https://jira.example.com/rest/api/2").unwrap(),
-            JiraAuth::Bearer("token".into()),
+            bearer(),
         );
 
         for (key, path) in [

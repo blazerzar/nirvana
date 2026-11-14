@@ -220,12 +220,21 @@ struct ListArgs {
 
 #[derive(Args, Debug)]
 struct PublishArgs {
+    /// Publish only to this connection (omit to publish to all connections)
+    #[arg(long)]
+    target: Option<String>,
     /// Range start (e.g. "14:30" or "2026-05-19 14:30"). Defaults to today 00:00.
     #[arg(long)]
     start: Option<String>,
     /// Range stop (e.g. "14:30" or "2026-05-19 14:30"). Unbounded if omitted.
     #[arg(long)]
     stop: Option<String>,
+    /// Publish all slots
+    #[arg(long, conflicts_with_all = ["start", "stop"])]
+    all: bool,
+    /// Also publish slots that failed or got stuck publishing
+    #[arg(long)]
+    retry: bool,
 }
 
 #[derive(Subcommand)]

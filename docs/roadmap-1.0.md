@@ -238,7 +238,7 @@ logged from the start.
       first (pending entries inserted with on conflict do nothing, failed
       entries reset to pending on retry) and sends only the claimed ones,
       so concurrent publishes do not post duplicates.
-- [ ] CLI: `publish [--target <name>] [--start <time>] [--stop <time>]
+- [x] CLI: `publish [--target <name>] [--start <time>] [--stop <time>]
       [--all] [--retry]`, today by default. Slots overlapping the range are
       selected, like in `list`. Only unpublished slots are sent, failed ones
       only with `--retry`.

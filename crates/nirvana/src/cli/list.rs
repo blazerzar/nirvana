@@ -1,11 +1,10 @@
-use anyhow::Context;
-use chrono::{Local, NaiveTime};
+use chrono::Local;
 use console::{Alignment, Term, style};
 use nirvana_core::Nirvana;
 
 use crate::cli::ListArgs;
 use crate::cli::table::{self, Column};
-use crate::cli::time::{format_duration, format_timestamp, parse_time};
+use crate::cli::time::{format_duration, format_timestamp, parse_time, today_start};
 
 const COLUMNS: [Column; 5] = [
     Column::new("KEY"),
@@ -25,15 +24,10 @@ const COLUMNS_WITH_ID: [Column; 6] = [
 ];
 
 pub(crate) async fn run(args: ListArgs) -> anyhow::Result<()> {
-    let now = Local::now();
-    let today = now.date_naive();
+    let today = Local::now().date_naive();
     let from = match args.from {
         Some(from) => parse_time(&from, today)?,
-        None => now
-            .with_time(NaiveTime::MIN)
-            .earliest()
-            .context("today 00:00 does not exist in the local time zone")?
-            .timestamp(),
+        None => today_start()?,
     };
     let to = args.to.map(|to| parse_time(&to, today)).transpose()?;
 

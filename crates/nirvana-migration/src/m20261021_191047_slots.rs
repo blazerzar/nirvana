@@ -16,8 +16,9 @@ impl MigrationTrait for Migration {
     /// https://sqlite.org/lang_altertable.html#otheralter, and drops `note`.
     /// `profile_id` comes from the slot's ticket and replaces `connection_id`,
     /// which must match the ticket's. Moves `published_at` into a new
-    /// `publish_entries` table with one row per published slot, then drops it
-    /// with the `slots_unpublished` index. Allows one running slot per profile.
+    /// `publish_entries` table with one row per published slot, claimed when
+    /// it was published, then drops it with the `slots_unpublished` index.
+    /// Allows one running slot per profile.
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
 
@@ -75,6 +76,7 @@ impl MigrationTrait for Migration {
             .col(integer("connection_id"))
             .col(integer_null("published_at"))
             .col(text_null("error"))
+            .col(integer("claimed_at"))
             .primary_key(Index::create().col("slot_id").col("connection_id"))
             .foreign_key(
                 ForeignKey::create()
@@ -129,13 +131,13 @@ impl MigrationTrait for Migration {
         debug!("copied {} slots to slots_new with uuids", rows.len());
 
         let select = Query::select()
-            .columns(["id", "connection_id", "published_at"])
+            .columns(["id", "connection_id", "published_at", "published_at"])
             .from("slots")
             .and_where(Expr::col("published_at").is_not_null())
             .to_owned();
         let stmt = Query::insert()
             .into_table("publish_entries")
-            .columns(["slot_id", "connection_id", "published_at"])
+            .columns(["slot_id", "connection_id", "published_at", "claimed_at"])
             .select_from(select)
             .map_err(|e| DbErr::Migration(e.to_string()))?
             .to_owned();

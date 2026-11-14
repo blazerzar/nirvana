@@ -196,8 +196,9 @@ impl Nirvana {
         let connection = self.find_connection(connection_id).await?;
 
         debug!(key = %ticket.ticket_key, connection = %connection.model.name, "syncing ticket");
-        let token = read_credential(&self.keyring, connection.model.id, &self.db).await?;
-        let issue = Integration::new(&connection, self.http()?, token)?
+        let issue = self
+            .integration(&connection)
+            .await?
             .fetch_issue(&ticket.ticket_key)
             .await?;
         self.update_title(ticket, issue.title).await

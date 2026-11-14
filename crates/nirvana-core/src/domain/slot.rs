@@ -35,6 +35,18 @@ pub struct StartResult {
     pub stopped: Option<Slot>,
 }
 
+#[derive(Debug, Default)]
+pub struct PublishResult {
+    pub published: Vec<Slot>,
+    pub failed: Vec<PublishFailure>,
+}
+
+#[derive(Debug)]
+pub struct PublishFailure {
+    pub slot: Slot,
+    pub error: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

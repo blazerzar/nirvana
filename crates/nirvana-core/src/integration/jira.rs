@@ -11,6 +11,9 @@ use tracing::debug;
 
 use crate::integration::{IntegrationError, IssueInfo, utc};
 
+pub(crate) const MIN_WORKLOG_SECONDS: i64 = 60;
+const MAX_ERROR_BODY_CHARS: usize = 300;
+
 pub(crate) enum JiraAuth {
     Basic { email: String, token: SecretString },
     Bearer(SecretString),
@@ -47,7 +50,7 @@ impl JiraIntegration {
             .request(Method::GET, self.url(&["myself"]))
             .send()
             .await?;
-        check_status(response, None)?;
+        check_status(response, None).await?;
         Ok(())
     }
 
@@ -58,7 +61,10 @@ impl JiraIntegration {
         let mut url = self.url(&["issue", ticket_key]);
         url.set_query(Some("fields=summary"));
         let response = self.request(Method::GET, url).send().await?;
-        let issue: Issue = check_status(response, Some(ticket_key))?.json().await?;
+        let issue: Issue = check_status(response, Some(ticket_key))
+            .await?
+            .json()
+            .await?;
         Ok(IssueInfo {
             key: issue.key,
             title: issue.fields.summary,
@@ -71,6 +77,9 @@ impl JiraIntegration {
         started_at: i64,
         seconds: i64,
     ) -> Result<(), IntegrationError> {
+        if seconds < MIN_WORKLOG_SECONDS {
+            return Err(IntegrationError::WorklogTooShort(seconds));
+        }
         let started = utc(started_at)?.format("%Y-%m-%dT%H:%M:%S.000%z");
 
         let body = serde_json::json!({
@@ -80,7 +89,7 @@ impl JiraIntegration {
 
         let url = self.url(&["issue", ticket_key, "worklog"]);
         let response = self.request(Method::POST, url).json(&body).send().await?;
-        check_status(response, Some(ticket_key))?;
+        check_status(response, Some(ticket_key)).await?;
         Ok(())
     }
 
@@ -103,19 +112,35 @@ impl JiraIntegration {
     }
 }
 
-fn check_status(
+async fn check_status(
     response: Response,
     ticket_key: Option<&str>,
 ) -> Result<Response, IntegrationError> {
-    debug!(url = %response.url(), status = %response.status(), "jira response");
-    match (response.status(), ticket_key) {
+    let status = response.status();
+    debug!(url = %response.url(), %status, "jira response");
+    match (status, ticket_key) {
         (StatusCode::NOT_FOUND, Some(key)) => {
             Err(IntegrationError::TicketNotFound(key.to_string()))
         }
-        (status @ (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN), _) => {
+        (StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN, _) => {
             Err(IntegrationError::Auth(status.to_string()))
         }
-        _ => Ok(response.error_for_status()?),
+        _ if status.is_client_error() || status.is_server_error() => {
+            let body = response.text().await?;
+            Err(IntegrationError::Api(format!(
+                "{status}: {}",
+                truncate(body.trim())
+            )))
+        }
+        _ => Ok(response),
+    }
+}
+
+/// Cuts `body` to [`MAX_ERROR_BODY_CHARS`], marking the cut with `…`.
+fn truncate(body: &str) -> String {
+    match body.char_indices().nth(MAX_ERROR_BODY_CHARS) {
+        Some((end, _)) => format!("{}…", &body[..end]),
+        None => body.to_string(),
     }
 }
 
@@ -192,6 +217,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn publish_slot_keeps_response_body_of_rejected_worklog() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(400)
+                    .set_body_string(r#"{"errors":{"timeLogged":"invalid"}}"#),
+            )
+            .mount(&server)
+            .await;
+
+        let err = jira(&server, bearer())
+            .publish_slot("KAR-1", 1_794_646_800, 5400)
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            r#"API error: 400 Bad Request: {"errors":{"timeLogged":"invalid"}}"#
+        );
+    }
+
+    #[tokio::test]
+    async fn publish_slot_rejects_worklog_under_a_minute() {
+        let server = MockServer::start().await;
+
+        let err = jira(&server, bearer())
+            .publish_slot("KAR-1", 1_794_646_800, 59)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, IntegrationError::WorklogTooShort(59)));
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn publish_slot_rejects_invalid_timestamp() {
         let server = MockServer::start().await;
 
@@ -202,6 +262,16 @@ mod tests {
 
         assert!(matches!(err, IntegrationError::InvalidTimestamp(i64::MAX)));
         assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[test]
+    fn truncate_cuts_long_body() {
+        assert_eq!(truncate("short"), "short");
+        let long = "é".repeat(MAX_ERROR_BODY_CHARS + 1);
+        assert_eq!(
+            truncate(&long),
+            format!("{}…", "é".repeat(MAX_ERROR_BODY_CHARS))
+        );
     }
 
     #[test]

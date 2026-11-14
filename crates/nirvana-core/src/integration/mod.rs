@@ -1,11 +1,9 @@
 //! Clients for the backends behind connections.
 //!
 //! An [`Integration`] is built from a [`Connection`] and its token, with one
-//! variant per backend. Every integration can test its connection and fetch
-//! an issue title. Publishing is backend-specific and called on the variant.
-//! Issue URLs need no client and are built by [`Connection::issue_url`].
-
-#![cfg_attr(not(test), expect(dead_code))]
+//! variant per backend. Every integration can test its connection, fetch an
+//! issue title and publish time. Issue URLs need no client and are built by
+//! [`Connection::issue_url`].
 
 pub(crate) mod jira;
 pub(crate) mod linear;
@@ -39,6 +37,8 @@ pub enum IntegrationError {
     Api(String),
     #[error("invalid timestamp: {0}")]
     InvalidTimestamp(i64),
+    #[error("worklog of {0} s is under the {min} s Jira accepts", min = jira::MIN_WORKLOG_SECONDS)]
+    WorklogTooShort(i64),
 }
 
 #[derive(Debug)]
@@ -109,6 +109,18 @@ impl Integration {
         match self {
             Self::Jira(j) => j.fetch_issue(ticket_key).await,
             Self::Linear(l) => l.fetch_issue(ticket_key).await,
+        }
+    }
+
+    pub async fn publish_slot(
+        &self,
+        ticket_key: &str,
+        started_at: i64,
+        seconds: i64,
+    ) -> Result<(), IntegrationError> {
+        match self {
+            Self::Jira(j) => j.publish_slot(ticket_key, started_at, seconds).await,
+            Self::Linear(l) => l.publish_slot(ticket_key, started_at, seconds).await,
         }
     }
 }

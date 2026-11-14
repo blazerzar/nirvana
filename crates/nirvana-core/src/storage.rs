@@ -588,13 +588,14 @@ mod tests {
         let entries = text_rows(
             &db,
             "select slot_id || '|' || connection_id || '|' || published_at || '|'
-                 || coalesce(error, 'null')
+                 || coalesce(error, 'null') || '|' || claimed_at
              from main.publish_entries order by slot_id",
         )
         .await;
         let published = text_rows(
             &db,
-            "select id || '|' || connection_id || '|' || published_at || '|null'
+            "select id || '|' || connection_id || '|' || published_at || '|null|'
+                 || published_at
              from old.slots where published_at is not null order by id",
         )
         .await;
@@ -793,6 +794,7 @@ mod tests {
             connection_id: Set(connection.id),
             published_at: Set(Some(200)),
             error: Set(None),
+            claimed_at: Set(200),
         }
         .insert(&db)
         .await

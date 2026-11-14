@@ -226,15 +226,15 @@ logged from the start.
 - [x] Add `linear_settings` (`publish`, `squash`, both off by default) with
       migration, entity and `settings get/set` support, created when a
       Linear connection is added.
-- [ ] Reimplement publishing: a slot is published to its ticket's
+- [x] Reimplement publishing: a slot is published to its ticket's
       connection when that connection has `publish` enabled. Jira as
       worklogs, Linear as comments (`Worklog <start>-<stop> (<duration>)`).
 - [ ] Squash per ticket per local day when `squash` is enabled. A slot
       belongs to the day it started on. The worklog or comment starts at
       the earliest slot start of the day and lasts the summed duration.
-- [ ] No rounding - Jira rejects worklogs under 60 s, so such entry fails
+- [x] No rounding - Jira rejects worklogs under 60 s, so such entry fails
       a local check with error and stays unpublished.
-- [ ] Per log errors stored in publish entries. A publish claims its slots
+- [x] Per log errors stored in publish entries. A publish claims its slots
       first (pending entries inserted with on conflict do nothing, failed
       entries reset to pending on retry) and sends only the claimed ones,
       so concurrent publishes do not post duplicates.
@@ -242,16 +242,23 @@ logged from the start.
       [--all] [--retry]`, today by default. Slots overlapping the range are
       selected, like in `list`. Only unpublished slots are sent, failed ones
       only with `--retry`.
-- [ ] Fix error messages of the errors publishing returns (decision 21).
+- [x] Fix error messages of the errors publishing returns (decision 21).
 - [ ] Derive slot publish state from publish entries: unpublished, failed,
       published (see the implementation guide).
 - [ ] Show the publish state of each slot in `list` as a marker (published,
       error), returned by core with the slots.
 - [ ] Maybe add a command that shows one slot fully (publish state per
       target with errors).
+- [ ] Read the slots to publish inside the claim transaction, so a slot
+      edited or deleted between the read and the claim is not sent with
+      stale data and does not fail the whole publish.
+- [ ] Claim slots in chunks, so `publish --all` with thousands of
+      unpublished slots stays under SQLite's bound variable limit.
 
 ## E2E tests
 
+- [ ] Refactor test helpers (factories) for unit tests.
+- [ ] Add linear connection to test service.
 - [ ] Add the `env` secret store for CLI integration tests: the credentials
       row holds the name of the environment variable with the token, which
       must start with `NIRVANA_`. Hidden from `--help` and the interactive

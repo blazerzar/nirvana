@@ -112,6 +112,15 @@ pub enum Settings {
     Linear(LinearSettings),
 }
 
+impl Settings {
+    pub fn publish(&self) -> bool {
+        match self {
+            Self::Jira(settings) => settings.publish,
+            Self::Linear(settings) => settings.publish,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct JiraSettings {
     pub publish: bool,

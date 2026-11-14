@@ -4,6 +4,7 @@ mod credential;
 mod info;
 mod logs;
 mod profile;
+mod publish;
 #[cfg(test)]
 mod test_support;
 #[cfg(feature = "test-support")]
@@ -17,10 +18,11 @@ use sea_orm::DatabaseConnection;
 use tracing::warn;
 
 use crate::config::{AppConfig, ConfigError};
+use crate::domain::Connection;
 use crate::errors::NirvanaError;
-use crate::integration::{self, IntegrationError};
+use crate::integration::{self, Integration, IntegrationError};
 use crate::paths::AppPaths;
-use crate::secrets::{StoreFactory, native_store};
+use crate::secrets::{StoreFactory, native_store, read_credential};
 use crate::storage;
 
 pub struct Nirvana {
@@ -63,6 +65,12 @@ impl Nirvana {
         self.http
             .clone()
             .map_err(IntegrationError::ClientUnavailable)
+    }
+
+    /// Reads the token of `connection` and builds its integration.
+    async fn integration(&self, connection: &Connection) -> Result<Integration, NirvanaError> {
+        let token = read_credential(&self.keyring, connection.model.id, &self.db).await?;
+        Integration::new(connection, self.http()?, token)
     }
 
     fn config_mut(&mut self) -> Result<&mut AppConfig, NirvanaError> {

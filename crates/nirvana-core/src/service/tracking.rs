@@ -245,8 +245,9 @@ impl Nirvana {
     ///
     /// Returns an error if no profile is active, the config is unavailable,
     /// the connection does not exist, more than one stored ticket matches,
-    /// the ticket cannot be loaded, the slot does not exist or is published,
-    /// a time is in the future, the stop is not after the start, another
+    /// the ticket cannot be loaded, the slot does not exist, is published or
+    /// is being published, the ticket changes on a slot that failed to
+    /// publish, a time is in the future, the stop is not after the start, another
     /// slot is running when reopening, the slot overlaps another slot or a
     /// database query fails.
     pub async fn edit_slot(
@@ -275,8 +276,22 @@ impl Nirvana {
         else {
             return Err(DomainError::SlotNotFound(id).into());
         };
-        if is_published(&txn, id).await? {
+        let entries = publish_entry::Entity::find()
+            .filter(publish_entry::COLUMN.slot_id.eq(id))
+            .all(&txn)
+            .await?;
+        if entries.iter().any(|entry| entry.published_at.is_some()) {
             return Err(DomainError::SlotAlreadyPublished.into());
+        }
+        if entries.iter().any(|entry| entry.error.is_none()) {
+            return Err(DomainError::SlotBeingPublished.into());
+        }
+        if !entries.is_empty()
+            && ticket
+                .as_ref()
+                .is_some_and(|ticket| ticket.id != model.ticket_id)
+        {
+            return Err(DomainError::SlotTicketLocked.into());
         }
         let ticket = ticket
             .or(current_ticket)
@@ -356,17 +371,28 @@ impl Nirvana {
     /// # Errors
     ///
     /// Returns an error if no profile is active, the config is unavailable,
-    /// the slot does not exist or a database query fails.
+    /// the slot is being published, does not exist or a database query fails.
     pub async fn delete_slot(&self, id: i64) -> Result<(), NirvanaError> {
         let profile = self.find_active_profile().await?;
+        let txn = self.db.begin().await?;
+        if publish_entry::Entity::find()
+            .filter(publish_entry::COLUMN.slot_id.eq(id))
+            .filter(publish_entry::COLUMN.published_at.is_null())
+            .filter(publish_entry::COLUMN.error.is_null())
+            .exists(&txn)
+            .await?
+        {
+            return Err(DomainError::SlotBeingPublished.into());
+        }
         let result = slot::Entity::delete_many()
             .filter(slot::COLUMN.id.eq(id))
             .filter(slot::COLUMN.profile_id.eq(profile.id))
-            .exec(&self.db)
+            .exec(&txn)
             .await?;
         if result.rows_affected == 0 {
             return Err(DomainError::SlotNotFound(id).into());
         }
+        txn.commit().await?;
         Ok(())
     }
 }
@@ -559,12 +585,14 @@ mod tests {
         ticket: &ticket::Model,
         slot: &slot::Model,
         published_at: Option<i64>,
+        error: Option<&str>,
     ) -> publish_entry::Model {
         publish_entry::ActiveModel {
             slot_id: Set(slot.id),
             connection_id: Set(ticket.connection_id.unwrap()),
             published_at: Set(published_at),
-            error: Set(None),
+            error: Set(error.map(str::to_string)),
+            claimed_at: Set(0),
         }
         .insert(&service.db)
         .await
@@ -1402,12 +1430,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn edit_slot_rejects_slot_being_published() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+        add_publish_entry(&service, &ticket, &slot, None, None).await;
+
+        let err = service
+            .edit_slot(slot.id, None, None, Some(now - 900), Change::Skip)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::SlotBeingPublished)
+        ));
+    }
+
+    #[tokio::test]
+    async fn edit_slot_keeps_ticket_of_failed_slot() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        add_ticket(&service, "JIRA-2", true).await;
+        let now = Utc::now().timestamp();
+        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+        add_publish_entry(&service, &ticket, &slot, None, Some("error")).await;
+
+        let err = service
+            .edit_slot(slot.id, Some("JIRA-2"), None, None, Change::Skip)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::SlotTicketLocked)
+        ));
+
+        let edited = service
+            .edit_slot(slot.id, Some("JIRA-1"), None, Some(now - 900), Change::Skip)
+            .await
+            .unwrap();
+        assert_eq!(edited.model.ticket_id, ticket.id);
+        assert_eq!(edited.model.started_at, now - 900);
+    }
+
+    #[tokio::test]
     async fn edit_slot_rejects_published_slot() {
         let service = test_service().await;
         let ticket = add_ticket(&service, "JIRA-1", true).await;
         let now = Utc::now().timestamp();
         let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
-        add_publish_entry(&service, &ticket, &slot, Some(now)).await;
+        add_publish_entry(&service, &ticket, &slot, Some(now), None).await;
 
         let err = service
             .edit_slot(slot.id, None, None, Some(now - 900), Change::Skip)
@@ -1702,8 +1775,8 @@ mod tests {
         let now = Utc::now().timestamp();
         let published = add_slot(&service, &ticket, now - 1200, Some(now - 900)).await;
         let failed = add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
-        add_publish_entry(&service, &ticket, &published, Some(now)).await;
-        add_publish_entry(&service, &ticket, &failed, None).await;
+        add_publish_entry(&service, &ticket, &published, Some(now), None).await;
+        add_publish_entry(&service, &ticket, &failed, None, Some("error")).await;
 
         let (_, is_published) = service
             .get_slot(SlotTarget::Id(published.id))
@@ -1712,6 +1785,24 @@ mod tests {
         assert!(is_published);
         let (_, is_published) = service.get_slot(SlotTarget::Id(failed.id)).await.unwrap();
         assert!(!is_published);
+    }
+
+    #[tokio::test]
+    async fn delete_slot_rejects_slot_being_published() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+        add_publish_entry(&service, &ticket, &slot, None, None).await;
+
+        let err = service.delete_slot(slot.id).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::SlotBeingPublished)
+        ));
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert_eq!(slots, [slot]);
     }
 
     #[tokio::test]
@@ -1751,8 +1842,8 @@ mod tests {
         let now = Utc::now().timestamp();
         let deleted = add_slot(&service, &ticket, now - 1200, Some(now - 900)).await;
         let kept = add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
-        add_publish_entry(&service, &ticket, &deleted, Some(now)).await;
-        let kept_entry = add_publish_entry(&service, &ticket, &kept, Some(now)).await;
+        add_publish_entry(&service, &ticket, &deleted, Some(now), None).await;
+        let kept_entry = add_publish_entry(&service, &ticket, &kept, Some(now), None).await;
 
         service.delete_slot(deleted.id).await.unwrap();
 

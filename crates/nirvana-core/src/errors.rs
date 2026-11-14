@@ -67,6 +67,8 @@ pub enum DomainError {
     // publishing
     #[error("publishing is disabled for connection '{0}'")]
     PublishDisabled(String),
+    #[error("publish entry of slot {0} not found")]
+    PublishEntryNotFound(i64),
 
     // tickets
     #[error("ticket not found: {0}")]
@@ -89,6 +91,10 @@ pub enum DomainError {
     NoSlotAt,
     #[error("cannot edit a published slot")]
     SlotAlreadyPublished,
+    #[error("cannot edit a slot that is being published")]
+    SlotBeingPublished,
+    #[error("cannot change the ticket of a slot that failed to publish")]
+    SlotTicketLocked,
     #[error("stop time must be after the start time")]
     InvalidTimeRange,
     #[error("slot time cannot be in the future")]

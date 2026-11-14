@@ -20,8 +20,7 @@ use crate::domain::{
     Connection, ConnectionData, ConnectionEdit, Kind, SecretStore, Settings, SettingsEdit,
 };
 use crate::errors::{DomainError, NirvanaError};
-use crate::integration::Integration;
-use crate::secrets::{delete_from_keychain, read_credential, store_secret};
+use crate::secrets::{delete_from_keychain, store_secret};
 use crate::service::Nirvana;
 
 impl Nirvana {
@@ -343,8 +342,8 @@ impl Nirvana {
         let connection = self.get_connection(name).await?;
 
         debug!(%name, kind = %connection.kind, "testing connection");
-        let token = read_credential(&self.keyring, connection.model.id, &self.db).await?;
-        Integration::new(&connection, self.http()?, token)?
+        self.integration(&connection)
+            .await?
             .test_connection()
             .await?;
         Ok(())
@@ -1173,6 +1172,7 @@ mod tests {
                 connection_id: Set(connection_id),
                 published_at: Set(Some(60)),
                 error: Set(None),
+                claimed_at: Set(60),
             }
             .insert(&service.db)
             .await

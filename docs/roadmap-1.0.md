@@ -117,6 +117,10 @@ logged from the start.
 - [x] Add config migration tests: 0.1 flat, 0.2 and 0.3.0-alpha sectioned
       config.toml fixtures migrate correctly (active connection dropped,
       machine settings kept, missing sections get defaults).
+- [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
+      through the public API) opening a 0.3.0-alpha data dir (fixture DB and
+      config.toml): the active profile resolves, and the migrated
+      connections, tickets and slots (incl. the running one) are usable.
 
 ## Keychain
 
@@ -152,6 +156,8 @@ logged from the start.
       no `{0}` in `#[from]` variants (config, I/O, DB, keyring), lowercase
       CLI messages (`connection '{query}' not found`).
 - [x] Check there is correct and sufficient logging.
+- [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
+      through the public API) covering the profile and connection flows.
 
 ## Settings, logs and config CLI
 
@@ -202,7 +208,7 @@ logged from the start.
       slot active at that time), with confirmation.
 - [x] Add `add <KEY> --start <time> (--stop <time> | --duration <duration>)
       [--connection <name>]`. The ticket is resolved like in `start`.
-- [ ] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
+- [x] Add integration tests for nirvana-core (`crates/nirvana-core/tests/`,
       through the public API) covering the tracking flows.
 
 ## Linear

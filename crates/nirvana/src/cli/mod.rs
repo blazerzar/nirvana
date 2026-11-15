@@ -208,9 +208,9 @@ struct ListArgs {
     #[arg(long)]
     by_ticket: bool,
     /// Range start (e.g. "14:30" or "2026-05-19 14:30"). Lists today if omitted.
-    #[arg(long, alias = "start", requires = "to")]
+    #[arg(long, alias = "start")]
     from: Option<String>,
-    /// Range end (e.g. "14:30" or "2026-05-19 14:30")
+    /// Range end (e.g. "14:30" or "2026-05-19 14:30"). Unbounded if omitted.
     #[arg(long, alias = "stop", requires = "from")]
     to: Option<String>,
     /// Show slot IDs

@@ -154,9 +154,19 @@ fn parse_value(value: &str) -> toml::Value {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
     use super::*;
     use crate::config::{LogLevel, Theme};
-    use crate::service::test_support::test_service;
+    use crate::service::test_service::TestService;
+
+    fn append_default_theme(service: &TestService) {
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&service.paths.config_file)
+            .unwrap();
+        writeln!(file, "\n[gui]\ntheme = \"system\"").unwrap();
+    }
 
     fn entry(key: &'static str, value: Option<&str>, default: Option<&str>) -> ConfigEntry {
         ConfigEntry {
@@ -168,7 +178,8 @@ mod tests {
 
     #[tokio::test]
     async fn get_config_returns_all_keys_with_values_and_defaults() {
-        let service = test_service().await;
+        let mut service = TestService::new(&[]).await;
+        service.set_config("idle.enabled", "false").await.unwrap();
 
         assert_eq!(
             service.get_config(None).unwrap(),
@@ -185,7 +196,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_config_selects_section_or_key() {
-        let service = test_service().await;
+        let service = TestService::new(&[]).await;
 
         let keys = |key| -> Vec<&str> {
             service
@@ -205,7 +216,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_config_rejects_unknown_key() {
-        let service = test_service().await;
+        let service = TestService::new(&[]).await;
 
         for key in ["foo", "idle.foo", "schema_version", ""] {
             let err = service.get_config(Some(key)).unwrap_err();
@@ -218,12 +229,8 @@ mod tests {
 
     #[tokio::test]
     async fn get_config_shows_default_value_present_in_file() {
-        let service = test_service().await;
-        std::fs::write(
-            &service.paths.config_file,
-            "schema_version = 2\n\n[gui]\ntheme = \"system\"",
-        )
-        .unwrap();
+        let service = TestService::new(&[]).await;
+        append_default_theme(&service);
 
         assert_eq!(
             service.get_config(Some("gui.theme")).unwrap(),
@@ -233,7 +240,7 @@ mod tests {
 
     #[tokio::test]
     async fn set_config_parses_value_for_key_and_saves() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
 
         service.set_config("gui.theme", "dark").await.unwrap();
         service
@@ -256,7 +263,8 @@ mod tests {
 
     #[tokio::test]
     async fn set_config_rejects_invalid_value() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
+        let content = std::fs::read_to_string(&service.paths.config_file).unwrap();
 
         for (key, value) in [
             ("gui.theme", "blue"),
@@ -269,12 +277,15 @@ mod tests {
                 "{key}: {err}"
             );
         }
-        assert!(!service.paths.config_file.exists());
+        assert_eq!(
+            std::fs::read_to_string(&service.paths.config_file).unwrap(),
+            content
+        );
     }
 
     #[tokio::test]
     async fn set_config_rejects_unknown_key() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
 
         for key in ["idle", "idle.foo", "schema_version"] {
             let err = service.set_config(key, "1").await.unwrap_err();
@@ -287,7 +298,8 @@ mod tests {
 
     #[tokio::test]
     async fn set_config_keeps_config_when_save_fails() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
+        std::fs::remove_file(&service.paths.config_file).unwrap();
         std::fs::create_dir(&service.paths.config_file).unwrap();
 
         service.set_config("gui.theme", "dark").await.unwrap_err();
@@ -297,7 +309,7 @@ mod tests {
 
     #[tokio::test]
     async fn unset_config_removes_key_and_restores_default() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
         service.set_config("gui.theme", "dark").await.unwrap();
         service.set_config("log.level", "debug").await.unwrap();
 
@@ -315,12 +327,8 @@ mod tests {
 
     #[tokio::test]
     async fn unset_config_removes_default_value_present_in_file() {
-        let mut service = test_service().await;
-        std::fs::write(
-            &service.paths.config_file,
-            "schema_version = 2\n\n[gui]\ntheme = \"system\"",
-        )
-        .unwrap();
+        let mut service = TestService::new(&[]).await;
+        append_default_theme(&service);
 
         service.unset_config("gui.theme").unwrap();
 
@@ -332,7 +340,7 @@ mod tests {
 
     #[tokio::test]
     async fn unset_config_rejects_unknown_and_profile_key() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
 
         for key in ["idle", "idle.foo", "schema_version"] {
             let err = service.unset_config(key).unwrap_err();
@@ -350,7 +358,7 @@ mod tests {
 
     #[tokio::test]
     async fn set_config_profile_switches_to_existing_profile() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
         service.create_profile("work".to_string()).await.unwrap();
 
         service.set_config(PROFILE_KEY, "work").await.unwrap();

@@ -6,6 +6,7 @@
 //! since Linear reports it as a generic input error. Linear has no worklogs,
 //! so time is published as a comment on the issue.
 
+use chrono::Local;
 use reqwest::Url;
 use reqwest::header::AUTHORIZATION;
 use secrecy::{ExposeSecret, SecretString};
@@ -104,9 +105,11 @@ impl LinearIntegration {
         seconds: i64,
     ) -> Result<(), IntegrationError> {
         let body = format!(
-            "Logged {}, started {}",
+            "Logged {}, started {}.",
             format_duration(seconds),
-            utc(started_at)?.format("%Y-%m-%d %H:%M UTC"),
+            utc(started_at)?
+                .with_timezone(&Local)
+                .format("%Y-%m-%d %H:%M %:z"),
         );
         let data: CommentCreateData = self
             .query(
@@ -170,6 +173,7 @@ fn format_duration(seconds: i64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use chrono::TimeZone;
     use wiremock::matchers::{body_partial_json, header, method};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -186,12 +190,13 @@ mod tests {
     #[tokio::test]
     async fn publish_slot_creates_comment() {
         let server = MockServer::start().await;
+        let started = Local.with_ymd_and_hms(2026, 11, 14, 9, 0, 0).unwrap();
         Mock::given(method("POST"))
             .and(header("authorization", "token"))
             .and(body_partial_json(json!({
                 "variables": {
                     "issueId": "NIR-1",
-                    "body": "Logged 1h 30m 5s, started 2026-11-14 09:00 UTC",
+                    "body": format!("Logged 1h 30m 5s, started 2026-11-14 09:00 {}.", started.format("%:z")),
                 },
             })))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -202,7 +207,7 @@ mod tests {
             .await;
 
         linear(&server)
-            .publish_slot("NIR-1", 1_794_646_800, 5405)
+            .publish_slot("NIR-1", started.timestamp(), 5405)
             .await
             .unwrap();
     }

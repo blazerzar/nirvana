@@ -79,3 +79,25 @@ impl Nirvana {
         self.config.as_mut().map_err(|e| e.clone().into())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::secrets::mock_store;
+
+    #[tokio::test]
+    async fn open_with_invalid_config_keeps_database_available() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::in_dir(dir.path());
+        std::fs::create_dir_all(&paths.config_dir).unwrap();
+        std::fs::write(&paths.config_file, "not toml").unwrap();
+
+        let service = Nirvana::open(paths, mock_store()).await.unwrap();
+
+        assert!(matches!(
+            service.config(),
+            Err(NirvanaError::ConfigUnavailable(_))
+        ));
+        service.list_profiles().await.unwrap();
+    }
+}

@@ -161,7 +161,6 @@ logged from the start.
 
 ## Settings, logs and config CLI
 
-- [ ] Add commands for reading and setting profile settings.
 - [x] Add commands for reading and setting connection settings.
 - [x] Add commands for reading and clearing logs.
 - [x] Add commands for reading, setting and unsetting config.
@@ -251,12 +250,6 @@ logged from the start.
       ago) after a confirmation.
 - [x] Add a `show` command that shows one slot fully (publish state per
       target with errors).
-- [ ] Read the slots to publish inside the claim transaction, so a slot
-      edited or deleted between the read and the claim is not sent with
-      stale data and does not fail the whole publish.
-- [ ] Stay under SQLite's bound variable limit with thousands of slots:
-      claim slots in chunks in `publish --all`, and load the publish
-      entries of `list` without binding every slot ID.
 
 ## E2E tests
 
@@ -311,6 +304,12 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [ ] Analyze design if we should put it in nirvana or core.
 - [ ] Axum server bound to 127.0.0.1, Host and Origin checks, never return tokens.
 - [ ] Default port 5167, configurable.
+- [ ] Publishing: read the slots to publish inside the claim transaction,
+      so a slot edited or deleted between the read and the claim is not
+      sent with stale data and does not fail the whole publish.
+- [ ] Publishing: stay under SQLite's bound variable limit with thousands
+      of slots: claim slots in chunks in `publish --all`, and load the
+      publish entries of `list` without binding every slot ID.
 
 ## GUI
 
@@ -338,6 +337,7 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [ ] Start building screens: setup, week, month, edit drawer, profiles and
       connections, add connection, new profile, settings.
 - [ ] Responsive layouts (below 1200 px and 720 px).
+- [ ] Add commands for reading and setting profile settings.
 
 ## CICD
 

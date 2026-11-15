@@ -380,6 +380,7 @@ impl Nirvana {
     }
 
     /// Deletes the slot `id` of the active profile with its publish entries.
+    /// A slot with only stuck pending entries can be deleted.
     ///
     /// # Errors
     ///
@@ -391,6 +392,7 @@ impl Nirvana {
         if publish_entry::Entity::find()
             .filter(publish_entry::COLUMN.slot_id.eq(id))
             .filter(publish_entry::Entity::pending())
+            .filter(publish_entry::COLUMN.claimed_at.gte(stuck_before()))
             .exists(&txn)
             .await?
         {
@@ -1850,6 +1852,30 @@ mod tests {
         ));
         let slots = slot::Entity::find().all(&service.db).await.unwrap();
         assert_eq!(slots, [slot]);
+    }
+
+    #[tokio::test]
+    async fn delete_slot_deletes_stuck_slot() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+        let mut entry: publish_entry::ActiveModel =
+            add_publish_entry(&service, &ticket, &slot, None, None)
+                .await
+                .into();
+        entry.claimed_at = Set(stuck_before() - 1);
+        entry.update(&service.db).await.unwrap();
+
+        service.delete_slot(slot.id).await.unwrap();
+
+        let slots = slot::Entity::find().all(&service.db).await.unwrap();
+        assert!(slots.is_empty());
+        let entries = publish_entry::Entity::find()
+            .all(&service.db)
+            .await
+            .unwrap();
+        assert!(entries.is_empty());
     }
 
     #[tokio::test]

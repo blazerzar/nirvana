@@ -247,7 +247,7 @@ logged from the start.
       failed, published (see the implementation guide).
 - [x] Show the publish state of each slot in `list` as a marker (published,
       pending, error), returned by core with the slots.
-- [ ] Allow deleting a stuck slot (pending entry claimed more than 60 s
+- [x] Allow deleting a stuck slot (pending entry claimed more than 60 s
       ago) after a confirmation.
 - [ ] Maybe add a command that shows one slot fully (publish state per
       target with errors).

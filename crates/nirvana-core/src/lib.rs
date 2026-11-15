@@ -5,6 +5,8 @@ mod domain;
 mod errors;
 mod integration;
 mod logging;
+#[cfg(feature = "test-support")]
+pub mod mock;
 mod paths;
 mod secrets;
 mod service;

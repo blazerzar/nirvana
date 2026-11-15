@@ -4,8 +4,7 @@
 //! in-memory keyring and the active profile "test". It seeds connections,
 //! tickets and slots, and mocks the Jira and Linear APIs.
 //!
-//! All connections share one mock server. Jira and Linear requests differ by
-//! path, so a Jira and a Linear connection can be mocked side by side, but two
+//! All connections share one mock server (see [`crate::mock`]), so two
 //! connections of the same kind get the same responses.
 
 use std::ops::{Deref, DerefMut};
@@ -13,16 +12,15 @@ use std::ops::{Deref, DerefMut};
 use nirvana_entity::credential::SecretStore;
 use nirvana_entity::{publish_entry, slot, ticket};
 use sea_orm::{ActiveModelTrait, Set};
-use serde_json::json;
 use tempfile::TempDir;
-use wiremock::matchers::{body_partial_json, body_string_contains, method, path};
-use wiremock::{Mock, MockBuilder, MockServer, ResponseTemplate};
+use wiremock::MockServer;
 
 use crate::domain::{
     Connection, ConnectionData, ConnectionEdit, JiraSettingsEdit, Kind, LinearSettingsEdit,
     SettingsEdit, TicketConnection, TicketSort,
 };
 use crate::errors::NirvanaError;
+use crate::mock;
 use crate::paths::AppPaths;
 use crate::secrets::{KEYRING_SERVICE, mock_store};
 use crate::service::Nirvana;
@@ -116,7 +114,7 @@ impl TestService {
     /// and points the connections of the active profile to it.
     pub(super) async fn start_mock(&mut self) {
         let mock = MockServer::start().await;
-        mount_missing_issues(&mock).await;
+        mock::mount_missing_issues(&mock).await;
         for connection in self.list_connections().await.unwrap() {
             self.edit_connection(
                 &connection.model.name,
@@ -279,57 +277,26 @@ impl TestService {
             .collect()
     }
 
-    /// Mocks the ticket `key` with `title`. The ticket must be requested at
-    /// least once.
+    /// Mocks the ticket `key` with `title` in the API of the current
+    /// connection's kind. The ticket must be requested at least once.
     pub(super) async fn mock_issue(&self, key: &str, title: &str) {
-        let mock = self.mock.as_ref().expect("mocks need start_mock");
         let connection = self
             .current_connection
             .expect("mocks need a current connection");
         let kind = self.connection_data(connection).kind;
-        let response = match kind {
-            Kind::Linear => ResponseTemplate::new(200).set_body_json(json!({
-                "data": { "issue": { "identifier": key, "title": title } },
-            })),
-            Kind::JiraCloud | Kind::JiraDc => ResponseTemplate::new(200).set_body_json(json!({
-                "key": key,
-                "fields": { "summary": title },
-            })),
-        };
-        issue_request(kind, key)
-            .respond_with(response)
-            .expect(1..)
-            .mount(mock)
-            .await;
+        mock::mock_issue(self.mock_server(), kind, key, title).await;
     }
 
     /// Mocks a Jira worklog of `seconds` on the ticket `key`. One such
     /// worklog is expected.
     pub(super) async fn mock_worklog(&self, key: &str, seconds: i64) {
-        Mock::given(method("POST"))
-            .and(path(format!("/rest/api/2/issue/{key}/worklog")))
-            .and(body_partial_json(json!({ "timeSpentSeconds": seconds })))
-            .respond_with(ResponseTemplate::new(201))
-            .expect(1)
-            .mount(self.mock_server())
-            .await;
+        mock::mock_worklog(self.mock_server(), key, seconds).await;
     }
 
     /// Mocks a Linear comment on the ticket `key` that logs `duration`, such
     /// as "1h 5m". One such comment is expected.
     pub(super) async fn mock_comment(&self, key: &str, duration: &str) {
-        Mock::given(method("POST"))
-            .and(path("/graphql"))
-            .and(body_partial_json(
-                json!({ "variables": { "issueId": key } }),
-            ))
-            .and(body_string_contains(format!("Logged {duration},")))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "data": { "commentCreate": { "success": true } },
-            })))
-            .expect(1)
-            .mount(self.mock_server())
-            .await;
+        mock::mock_comment(self.mock_server(), key, duration).await;
     }
 
     fn mock_server(&self) -> &MockServer {
@@ -373,34 +340,6 @@ impl TestService {
     pub(super) fn clear_keyring(&self) {
         for entry in self.keyring_entries() {
             entry.delete_credential().unwrap();
-        }
-    }
-}
-
-/// Answers Linear issue requests that are not mocked with "not found". Jira
-/// gets a 404 for them from the mock server.
-async fn mount_missing_issues(server: &MockServer) {
-    Mock::given(method("POST"))
-        .and(path("/graphql"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "data": null,
-            "errors": [{
-                "message": "Entity not found: Issue",
-                "extensions": { "code": "INVALID_INPUT" },
-            }],
-        })))
-        .with_priority(u8::MAX)
-        .mount(server)
-        .await;
-}
-
-fn issue_request(kind: Kind, key: &str) -> MockBuilder {
-    match kind {
-        Kind::Linear => Mock::given(method("POST"))
-            .and(path("/graphql"))
-            .and(body_partial_json(json!({ "variables": { "id": key } }))),
-        Kind::JiraCloud | Kind::JiraDc => {
-            Mock::given(method("GET")).and(path(format!("/rest/api/2/issue/{key}")))
         }
     }
 }

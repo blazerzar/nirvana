@@ -408,6 +408,10 @@ slot's state is **derived** from `publish_entries`, never stored:
 - The CLI `list` has a PUBLISHED column that marks published slots with
   `✓`, pending with `○` and failed with `×`. Unpublished slots get no
   marker.
+- The CLI `show` takes a slot ID or a time (`--at`), like `delete`, and
+  shows the slot with a row per target: connection, state (pending,
+  published, failed or stuck), publish time and error, cut to 50
+  characters. `--show-errors` lists the full errors under the table.
 - Whether an unpublished slot is sent depends on its connection's `publish`
   setting at publish time, not on its state. Unpublished counts (footer,
   publish button, week header) come from the same selection publish uses,

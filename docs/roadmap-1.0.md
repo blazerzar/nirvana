@@ -249,7 +249,7 @@ logged from the start.
       pending, error), returned by core with the slots.
 - [x] Allow deleting a stuck slot (pending entry claimed more than 60 s
       ago) after a confirmation.
-- [ ] Maybe add a command that shows one slot fully (publish state per
+- [x] Add a `show` command that shows one slot fully (publish state per
       target with errors).
 - [ ] Read the slots to publish inside the claim transaction, so a slot
       edited or deleted between the read and the claim is not sent with

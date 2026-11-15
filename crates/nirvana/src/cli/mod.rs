@@ -11,6 +11,7 @@ mod profile;
 mod publish;
 mod resume;
 mod settings;
+mod show;
 mod start;
 mod status;
 mod stop;
@@ -64,6 +65,8 @@ enum Command {
     Delete(DeleteArgs),
     /// List slots
     List(ListArgs),
+    /// Show a slot with its publish state per connection
+    Show(ShowArgs),
     /// Publish slots to backend
     Publish(PublishArgs),
     /// Manage tickets
@@ -216,6 +219,19 @@ struct ListArgs {
     /// Show slot IDs
     #[arg(long)]
     show_ids: bool,
+}
+
+#[derive(Args, Debug)]
+struct ShowArgs {
+    /// Slot ID, shown by `list --show-ids`
+    #[arg(required_unless_present = "at", conflicts_with = "at")]
+    id: Option<i64>,
+    /// Show the slot tracked at this time (e.g. "14:30" or "2026-05-19 14:30")
+    #[arg(long)]
+    at: Option<String>,
+    /// List the full errors under the table
+    #[arg(long)]
+    show_errors: bool,
 }
 
 #[derive(Args, Debug)]
@@ -526,6 +542,7 @@ pub(crate) async fn run() -> anyhow::Result<()> {
         Some(Command::Edit(args)) => edit::run(args).await,
         Some(Command::Delete(args)) => delete::run(args).await,
         Some(Command::List(args)) => list::run(args).await,
+        Some(Command::Show(args)) => show::run(args).await,
         Some(Command::Publish(args)) => publish::run(args).await,
         Some(Command::Profile { command }) => match command {
             Profile::List => profile::list().await,

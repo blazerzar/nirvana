@@ -1,5 +1,5 @@
 use chrono::Utc;
-use nirvana_entity::{publish_entry, slot, ticket};
+use nirvana_entity::{connection, publish_entry, slot, ticket};
 
 #[derive(Debug)]
 pub struct Slot {
@@ -48,6 +48,37 @@ impl PublishState {
             Self::Failed
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TargetState {
+    Pending,
+    Stuck,
+    Failed,
+    Published,
+}
+
+impl TargetState {
+    /// Derives the state of a target from its publish entry. A pending entry
+    /// claimed before `stuck_before` is stuck.
+    pub fn from_entry(entry: &publish_entry::Model, stuck_before: i64) -> Self {
+        if entry.published_at.is_some() {
+            Self::Published
+        } else if entry.error.is_some() {
+            Self::Failed
+        } else if entry.is_stuck(stuck_before) {
+            Self::Stuck
+        } else {
+            Self::Pending
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct PublishTarget {
+    pub entry: publish_entry::Model,
+    pub connection: connection::Model,
+    pub state: TargetState,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -149,5 +180,17 @@ mod tests {
             PublishState::from_entries(&entries, 1000),
             PublishState::Published
         );
+    }
+
+    #[test]
+    fn target_states_follow_entry() {
+        for (entry, expected) in [
+            (entry(None, None, 1000), TargetState::Pending),
+            (entry(None, None, 999), TargetState::Stuck),
+            (entry(None, Some("error"), 999), TargetState::Failed),
+            (entry(Some(1000), None, 999), TargetState::Published),
+        ] {
+            assert_eq!(TargetState::from_entry(&entry, 1000), expected);
+        }
     }
 }

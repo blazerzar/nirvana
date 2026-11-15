@@ -6,14 +6,16 @@
 //! Slot times cannot be in the future.
 
 use chrono::Utc;
-use nirvana_entity::{publish_entry, slot, ticket};
+use nirvana_entity::{connection, publish_entry, slot, ticket};
 use sea_orm::sea_query::{Expr, Order, WindowStatement};
 use sea_orm::{
     ActiveModelTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, ExprTrait, LoaderTrait,
     ModelTrait, QueryFilter, QueryOrder, QueryTrait, SelectExt, Set, TransactionTrait,
 };
 
-use crate::domain::{Change, PublishState, Slot, SlotTarget, StartResult};
+use crate::domain::{
+    Change, PublishState, PublishTarget, Slot, SlotTarget, StartResult, TargetState,
+};
 use crate::errors::{DomainError, NirvanaError};
 use crate::service::Nirvana;
 use crate::service::publish::stuck_before;
@@ -349,34 +351,47 @@ impl Nirvana {
     /// Returns an error if the time is in the future, no profile is active,
     /// the config is unavailable, no slot matches or a database query fails.
     pub async fn get_slot(&self, target: SlotTarget) -> Result<(Slot, PublishState), NirvanaError> {
-        if let SlotTarget::At(at) = target {
-            reject_future_time(at)?;
-        }
         let profile = self.find_active_profile().await?;
-        let query = match target {
-            SlotTarget::Id(id) => {
-                slot::Entity::find_by_id(id).filter(slot::COLUMN.profile_id.eq(profile.id))
-            }
-            SlotTarget::At(at) => slot::Entity::find_at(profile.id, at),
-        };
-        let Some((model, ticket)) = query
-            .find_also_related(ticket::Entity)
-            .one(&self.db)
-            .await?
-        else {
-            return Err(match target {
-                SlotTarget::Id(id) => DomainError::SlotNotFound(id),
-                SlotTarget::At(_) => DomainError::NoSlotAt,
-            }
-            .into());
-        };
-        let ticket = ticket.ok_or(DomainError::TicketIdNotFound(model.ticket_id))?;
-        let entries = model
+        let slot = find_slot(&self.db, profile.id, target).await?;
+        let entries = slot
+            .model
             .find_related(publish_entry::Entity)
             .all(&self.db)
             .await?;
         let state = PublishState::from_entries(&entries, stuck_before());
-        Ok((Slot { model, ticket }, state))
+        Ok((slot, state))
+    }
+
+    /// Returns the slot of the active profile with the ID, or tracked at the
+    /// time, of `target`, with its ticket and publish targets ordered by
+    /// connection name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the time is in the future, no profile is active,
+    /// the config is unavailable, no slot matches or a database query fails.
+    pub async fn get_slot_targets(
+        &self,
+        target: SlotTarget,
+    ) -> Result<(Slot, Vec<PublishTarget>), NirvanaError> {
+        let profile = self.find_active_profile().await?;
+        let slot = find_slot(&self.db, profile.id, target).await?;
+        let stuck_before = stuck_before();
+        let targets = slot
+            .model
+            .find_related(publish_entry::Entity)
+            .find_both_related(connection::Entity)
+            .order_by_asc(connection::COLUMN.name)
+            .all(&self.db)
+            .await?
+            .into_iter()
+            .map(|(entry, connection)| PublishTarget {
+                state: TargetState::from_entry(&entry, stuck_before),
+                entry,
+                connection,
+            })
+            .collect();
+        Ok((slot, targets))
     }
 
     /// Deletes the slot `id` of the active profile with its publish entries.
@@ -409,6 +424,33 @@ impl Nirvana {
         txn.commit().await?;
         Ok(())
     }
+}
+
+/// Returns the slot of the profile `profile_id` with the ID, or tracked at
+/// the time, of `target`, with its ticket.
+async fn find_slot(
+    db: &impl ConnectionTrait,
+    profile_id: i64,
+    target: SlotTarget,
+) -> Result<Slot, NirvanaError> {
+    if let SlotTarget::At(at) = target {
+        reject_future_time(at)?;
+    }
+    let query = match target {
+        SlotTarget::Id(id) => {
+            slot::Entity::find_by_id(id).filter(slot::COLUMN.profile_id.eq(profile_id))
+        }
+        SlotTarget::At(at) => slot::Entity::find_at(profile_id, at),
+    };
+    let Some((model, ticket)) = query.find_also_related(ticket::Entity).one(db).await? else {
+        return Err(match target {
+            SlotTarget::Id(id) => DomainError::SlotNotFound(id),
+            SlotTarget::At(_) => DomainError::NoSlotAt,
+        }
+        .into());
+    };
+    let ticket = ticket.ok_or(DomainError::TicketIdNotFound(model.ticket_id))?;
+    Ok(Slot { model, ticket })
 }
 
 async fn find_running_slot(
@@ -531,6 +573,7 @@ mod tests {
     use sea_orm::PaginatorTrait;
 
     use super::*;
+    use crate::domain::{ConnectionData, Kind, SecretStore};
     use crate::service::test_support::test_service;
 
     #[test]
@@ -1834,6 +1877,77 @@ mod tests {
             let (_, state) = service.get_slot(SlotTarget::Id(slot.id)).await.unwrap();
             assert_eq!(state, expected);
         }
+    }
+
+    #[tokio::test]
+    async fn get_slot_targets_returns_entries_of_slot_with_states() {
+        let service = test_service().await;
+        let linear = service
+            .add_connection(ConnectionData {
+                name: "A Linear".to_string(),
+                kind: Kind::Linear,
+                host: "linear.app/test".to_string(),
+                identity: None,
+                secret_store: SecretStore::Plaintext,
+                token: "token".into(),
+            })
+            .await
+            .unwrap();
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 900)).await;
+        let other = add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
+        add_publish_entry(&service, &ticket, &slot, Some(now), None).await;
+        add_publish_entry(&service, &ticket, &other, None, Some("error")).await;
+        publish_entry::ActiveModel {
+            slot_id: Set(slot.id),
+            connection_id: Set(linear.model.id),
+            published_at: Set(None),
+            error: Set(None),
+            claimed_at: Set(stuck_before() - 1),
+        }
+        .insert(&service.db)
+        .await
+        .unwrap();
+
+        let (found, targets) = service
+            .get_slot_targets(SlotTarget::Id(slot.id))
+            .await
+            .unwrap();
+
+        assert_eq!(found.model, slot);
+        let targets: Vec<_> = targets
+            .iter()
+            .map(|target| (target.connection.name.as_str(), target.state))
+            .collect();
+        assert_eq!(
+            targets,
+            [
+                ("A Linear", TargetState::Stuck),
+                ("Test Jira", TargetState::Published),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn get_slot_targets_rejects_slot_of_other_profile() {
+        let mut service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+        add_publish_entry(&service, &ticket, &slot, Some(now), None).await;
+        service.create_profile("work".to_string()).await.unwrap();
+        service.switch_profile("work").await.unwrap();
+
+        let err = service
+            .get_slot_targets(SlotTarget::Id(slot.id))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            NirvanaError::Domain(DomainError::SlotNotFound(id)) if id == slot.id
+        ));
     }
 
     #[tokio::test]

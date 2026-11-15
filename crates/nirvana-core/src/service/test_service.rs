@@ -248,14 +248,14 @@ impl TestService {
     pub(super) async fn seed_publish_entry(
         &self,
         slot: &slot::Model,
-        connection_id: i64,
+        connection: TestConnection,
         published_at: Option<i64>,
         error: Option<&str>,
         claimed_at: i64,
     ) -> publish_entry::Model {
         publish_entry::ActiveModel {
             slot_id: Set(slot.id),
-            connection_id: Set(connection_id),
+            connection_id: Set(self.connection(connection).await.model.id),
             published_at: Set(published_at),
             error: Set(error.map(str::to_string)),
             claimed_at: Set(claimed_at),

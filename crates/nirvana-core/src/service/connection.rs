@@ -1110,13 +1110,13 @@ mod tests {
         let kept_ticket = service.seed_ticket("KEEP-1", "Kept", 0, 0).await;
         let kept_slot = service.seed_slot(&kept_ticket, 0, Some(60)).await;
 
-        for (slot, connection_id) in [
-            (&deleted_slot, deleted_connection),
-            (&kept_slot, kept_connection),
-            (&kept_slot, deleted_connection),
+        for (slot, connection) in [
+            (&deleted_slot, Jira),
+            (&kept_slot, Linear),
+            (&kept_slot, Jira),
         ] {
             service
-                .seed_publish_entry(slot, connection_id, Some(60), None, 60)
+                .seed_publish_entry(slot, connection, Some(60), None, 60)
                 .await;
         }
 

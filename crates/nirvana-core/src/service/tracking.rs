@@ -573,8 +573,8 @@ mod tests {
     use sea_orm::PaginatorTrait;
 
     use super::*;
-    use crate::domain::{ConnectionData, Kind, SecretStore};
-    use crate::service::test_support::test_service;
+    use crate::service::test_service::TestConnection::{Jira, Linear};
+    use crate::service::test_service::TestService;
 
     #[test]
     fn reject_future_time_accepts_past_and_present() {
@@ -592,72 +592,25 @@ mod tests {
         ));
     }
 
-    /// Adds the ticket `key` to the active profile, in "Test Jira" when
-    /// `connected` is set.
-    async fn add_ticket(service: &Nirvana, key: &str, connected: bool) -> ticket::Model {
-        let connection_id = match connected {
-            true => Some(service.list_connections().await.unwrap()[0].model.id),
-            false => None,
-        };
-        ticket::ActiveModel {
-            profile_id: Set(service.find_active_profile().await.unwrap().id),
-            connection_id: Set(connection_id),
-            ticket_key: Set(key.to_string()),
-            title: Set(String::new()),
-            synced_at: Set(0),
-            ..Default::default()
-        }
-        .insert(&service.db)
-        .await
-        .unwrap()
-    }
-
-    async fn add_slot(
-        service: &Nirvana,
-        ticket: &ticket::Model,
-        started_at: i64,
-        stopped_at: Option<i64>,
-    ) -> slot::Model {
-        slot::ActiveModel {
-            ticket_id: Set(ticket.id),
-            profile_id: Set(ticket.profile_id),
-            started_at: Set(started_at),
-            stopped_at: Set(stopped_at),
-            ..Default::default()
-        }
-        .insert(&service.db)
-        .await
-        .unwrap()
-    }
-
-    async fn add_publish_entry(
-        service: &Nirvana,
-        ticket: &ticket::Model,
-        slot: &slot::Model,
-        published_at: Option<i64>,
-        error: Option<&str>,
-    ) -> publish_entry::Model {
-        publish_entry::ActiveModel {
-            slot_id: Set(slot.id),
-            connection_id: Set(ticket.connection_id.unwrap()),
-            published_at: Set(published_at),
-            error: Set(error.map(str::to_string)),
-            claimed_at: Set(Utc::now().timestamp()),
-        }
-        .insert(&service.db)
-        .await
-        .unwrap()
+    /// Returns a service with the connection "Test Linear" and its tickets
+    /// "NIR-1" and "NIR-2".
+    async fn setup() -> (TestService, [ticket::Model; 2]) {
+        let mut service = TestService::new(&[Linear]).await;
+        service.use_connection(Some(Linear));
+        let tickets = [
+            service.seed_ticket("NIR-1", "Add export", 0, 0).await,
+            service.seed_ticket("NIR-2", "Fix login", 0, 0).await,
+        ];
+        (service, tickets)
     }
 
     #[tokio::test]
     async fn start_slot_stops_running_slot() {
-        let service = test_service().await;
+        let (service, [previous, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let previous = add_ticket(&service, "JIRA-1", true).await;
-        let running = add_slot(&service, &previous, now - 600, None).await;
-        add_ticket(&service, "JIRA-2", true).await;
+        let running = service.seed_slot(&previous, now - 600, None).await;
 
-        let result = service.start_slot("JIRA-2", None, None).await.unwrap();
+        let result = service.start_slot("NIR-2", None, None).await.unwrap();
 
         let Slot {
             model: stopped,
@@ -677,10 +630,10 @@ mod tests {
 
     #[tokio::test]
     async fn start_slot_uses_stored_ticket() {
-        let service = test_service().await;
-        let stored = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [stored, _]) = setup().await;
+        let tickets = ticket::Entity::find().count(&service.db).await.unwrap();
 
-        let result = service.start_slot("JIRA-1", None, None).await.unwrap();
+        let result = service.start_slot("NIR-1", None, None).await.unwrap();
 
         let Slot {
             model: slot,
@@ -689,23 +642,26 @@ mod tests {
         assert_eq!(slot.ticket_id, stored.id);
         assert_eq!(ticket.id, stored.id);
         assert!(result.stopped.is_none());
-        assert_eq!(ticket::Entity::find().count(&service.db).await.unwrap(), 1);
+        assert_eq!(
+            ticket::Entity::find().count(&service.db).await.unwrap(),
+            tickets
+        );
     }
 
     #[tokio::test]
     async fn start_slot_rejects_ambiguous_key_without_connection() {
-        let service = test_service().await;
-        let connected = add_ticket(&service, "JIRA-1", true).await;
-        add_ticket(&service, "JIRA-1", false).await;
+        let (mut service, [connected, _]) = setup().await;
+        service.use_connection(None);
+        service.seed_ticket("NIR-1", "Add export", 0, 0).await;
 
-        let err = service.start_slot("JIRA-1", None, None).await.unwrap_err();
+        let err = service.start_slot("NIR-1", None, None).await.unwrap_err();
         assert!(matches!(
             err,
-            NirvanaError::Domain(DomainError::AmbiguousTicket(key, _)) if key == "JIRA-1"
+            NirvanaError::Domain(DomainError::AmbiguousTicket(key, _)) if key == "NIR-1"
         ));
 
         let result = service
-            .start_slot("JIRA-1", None, Some("Test Jira"))
+            .start_slot("NIR-1", None, Some(Linear.name()))
             .await
             .unwrap();
         assert_eq!(result.started.ticket.id, connected.id);
@@ -713,12 +669,11 @@ mod tests {
 
     #[tokio::test]
     async fn start_slot_rejects_future_time() {
-        let service = test_service().await;
-        add_ticket(&service, "JIRA-1", true).await;
+        let (service, _) = setup().await;
         let now = Utc::now().timestamp();
 
         let err = service
-            .start_slot("JIRA-1", Some(now + 60), None)
+            .start_slot("NIR-1", Some(now + 60), None)
             .await
             .unwrap_err();
 
@@ -727,13 +682,14 @@ mod tests {
 
     #[tokio::test]
     async fn start_slot_rejects_backdated_overlap_with_closed_slot() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        add_slot(&service, &ticket, now - 3600, Some(now - 1800)).await;
+        service
+            .seed_slot(&ticket, now - 3600, Some(now - 1800))
+            .await;
 
         let err = service
-            .start_slot("JIRA-1", Some(now - 2700), None)
+            .start_slot("NIR-1", Some(now - 2700), None)
             .await
             .unwrap_err();
 
@@ -746,14 +702,13 @@ mod tests {
 
     #[tokio::test]
     async fn start_slot_rejects_time_before_running_slot_start() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let running = add_slot(&service, &ticket, now - 600, None).await;
+        let running = service.seed_slot(&ticket, now - 600, None).await;
 
         for at in [now - 1200, now - 600] {
             let err = service
-                .start_slot("JIRA-1", Some(at), None)
+                .start_slot("NIR-1", Some(at), None)
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -767,11 +722,12 @@ mod tests {
 
     #[tokio::test]
     async fn start_slot_rejects_running_slot_started_in_same_second() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
-        let running = add_slot(&service, &ticket, Utc::now().timestamp() + 60, None).await;
+        let (service, [ticket, _]) = setup().await;
+        let running = service
+            .seed_slot(&ticket, Utc::now().timestamp() + 60, None)
+            .await;
 
-        let err = service.start_slot("JIRA-1", None, None).await.unwrap_err();
+        let err = service.start_slot("NIR-1", None, None).await.unwrap_err();
 
         assert!(matches!(
             err,
@@ -783,14 +739,15 @@ mod tests {
 
     #[tokio::test]
     async fn start_slot_backdated_stops_running_slot_at_start() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        add_slot(&service, &ticket, now - 3600, Some(now - 1800)).await;
-        let running = add_slot(&service, &ticket, now - 1200, None).await;
+        service
+            .seed_slot(&ticket, now - 3600, Some(now - 1800))
+            .await;
+        let running = service.seed_slot(&ticket, now - 1200, None).await;
 
         let result = service
-            .start_slot("JIRA-1", Some(now - 600), None)
+            .start_slot("NIR-1", Some(now - 600), None)
             .await
             .unwrap();
 
@@ -803,10 +760,9 @@ mod tests {
 
     #[tokio::test]
     async fn stop_slot_stops_running_slot() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let running = add_slot(&service, &ticket, now - 600, None).await;
+        let running = service.seed_slot(&ticket, now - 600, None).await;
 
         let stopped = service.stop_slot(Some(now - 60)).await.unwrap().unwrap();
 
@@ -818,9 +774,10 @@ mod tests {
 
     #[tokio::test]
     async fn stop_slot_stops_running_slot_now() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
-        let running = add_slot(&service, &ticket, Utc::now().timestamp() - 600, None).await;
+        let (service, [ticket, _]) = setup().await;
+        let running = service
+            .seed_slot(&ticket, Utc::now().timestamp() - 600, None)
+            .await;
 
         let before = Utc::now().timestamp();
         let stopped = service.stop_slot(None).await.unwrap().unwrap();
@@ -833,9 +790,10 @@ mod tests {
 
     #[tokio::test]
     async fn stop_slot_rejects_running_slot_started_in_same_second() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
-        let running = add_slot(&service, &ticket, Utc::now().timestamp() + 60, None).await;
+        let (service, [ticket, _]) = setup().await;
+        let running = service
+            .seed_slot(&ticket, Utc::now().timestamp() + 60, None)
+            .await;
 
         let err = service.stop_slot(None).await.unwrap_err();
 
@@ -849,20 +807,18 @@ mod tests {
 
     #[tokio::test]
     async fn stop_slot_returns_none_when_not_tracking() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
+        service.seed_slot(&ticket, now - 600, Some(now - 300)).await;
 
         assert!(service.stop_slot(None).await.unwrap().is_none());
     }
 
     #[tokio::test]
     async fn stop_slot_rejects_future_time() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let running = add_slot(&service, &ticket, now - 600, None).await;
+        let running = service.seed_slot(&ticket, now - 600, None).await;
 
         let err = service.stop_slot(Some(now + 60)).await.unwrap_err();
 
@@ -873,10 +829,9 @@ mod tests {
 
     #[tokio::test]
     async fn stop_slot_rejects_time_not_after_start() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let running = add_slot(&service, &ticket, now - 600, None).await;
+        let running = service.seed_slot(&ticket, now - 600, None).await;
 
         for at in [now - 1200, now - 600] {
             let err = service.stop_slot(Some(at)).await.unwrap_err();
@@ -891,13 +846,13 @@ mod tests {
 
     #[tokio::test]
     async fn resume_slot_starts_ticket_of_last_stopped_slot() {
-        let service = test_service().await;
-        let first = add_ticket(&service, "JIRA-1", true).await;
-        let last = add_ticket(&service, "JIRA-2", true).await;
+        let (service, [first, last]) = setup().await;
         let now = Utc::now().timestamp();
-        add_slot(&service, &last, now - 3600, Some(now - 3000)).await;
-        add_slot(&service, &first, now - 2400, Some(now - 1800)).await;
-        add_slot(&service, &last, now - 1200, Some(now - 600)).await;
+        service.seed_slot(&last, now - 3600, Some(now - 3000)).await;
+        service
+            .seed_slot(&first, now - 2400, Some(now - 1800))
+            .await;
+        service.seed_slot(&last, now - 1200, Some(now - 600)).await;
 
         let resumed = service.resume_slot(None).await.unwrap();
 
@@ -909,10 +864,11 @@ mod tests {
 
     #[tokio::test]
     async fn resume_slot_starts_at_time() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+        service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
 
         let resumed = service.resume_slot(Some(now - 300)).await.unwrap();
 
@@ -923,10 +879,11 @@ mod tests {
 
     #[tokio::test]
     async fn resume_slot_rejects_future_time() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let stopped = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+        let stopped = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
 
         let err = service.resume_slot(Some(now + 60)).await.unwrap_err();
 
@@ -937,10 +894,11 @@ mod tests {
 
     #[tokio::test]
     async fn resume_slot_rejects_overlap_with_last_slot() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let stopped = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+        let stopped = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
 
         let err = service.resume_slot(Some(now - 900)).await.unwrap_err();
 
@@ -954,11 +912,12 @@ mod tests {
 
     #[tokio::test]
     async fn resume_slot_rejects_while_tracking() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let stopped = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
-        let running = add_slot(&service, &ticket, now - 300, None).await;
+        let stopped = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
+        let running = service.seed_slot(&ticket, now - 300, None).await;
 
         let err = service.resume_slot(None).await.unwrap_err();
 
@@ -972,8 +931,7 @@ mod tests {
 
     #[tokio::test]
     async fn resume_slot_rejects_without_previous_slot() {
-        let service = test_service().await;
-        add_ticket(&service, "JIRA-1", true).await;
+        let (service, _) = setup().await;
 
         let err = service.resume_slot(None).await.unwrap_err();
 
@@ -986,12 +944,12 @@ mod tests {
 
     #[tokio::test]
     async fn resume_slot_ignores_slots_of_other_profiles() {
-        let mut service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (mut service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let stopped = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
-        service.create_profile("work".to_string()).await.unwrap();
-        service.switch_profile("work").await.unwrap();
+        let stopped = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
+        service.use_profile("work").await;
 
         let err = service.resume_slot(None).await.unwrap_err();
 
@@ -1005,12 +963,12 @@ mod tests {
 
     #[tokio::test]
     async fn switch_slot_switches_to_previous_ticket() {
-        let service = test_service().await;
-        let previous = add_ticket(&service, "JIRA-1", true).await;
-        let current = add_ticket(&service, "JIRA-2", true).await;
+        let (service, [previous, current]) = setup().await;
         let now = Utc::now().timestamp();
-        add_slot(&service, &previous, now - 1200, Some(now - 600)).await;
-        let running = add_slot(&service, &current, now - 600, None).await;
+        service
+            .seed_slot(&previous, now - 1200, Some(now - 600))
+            .await;
+        let running = service.seed_slot(&current, now - 600, None).await;
 
         let result = service.switch_slot(None).await.unwrap();
 
@@ -1027,12 +985,12 @@ mod tests {
 
     #[tokio::test]
     async fn switch_slot_switches_at_time() {
-        let service = test_service().await;
-        let previous = add_ticket(&service, "JIRA-1", true).await;
-        let current = add_ticket(&service, "JIRA-2", true).await;
+        let (service, [previous, current]) = setup().await;
         let now = Utc::now().timestamp();
-        add_slot(&service, &previous, now - 1200, Some(now - 600)).await;
-        let running = add_slot(&service, &current, now - 600, None).await;
+        service
+            .seed_slot(&previous, now - 1200, Some(now - 600))
+            .await;
+        let running = service.seed_slot(&current, now - 600, None).await;
 
         let result = service.switch_slot(Some(now - 300)).await.unwrap();
 
@@ -1046,12 +1004,12 @@ mod tests {
 
     #[tokio::test]
     async fn switch_slot_rejects_future_time() {
-        let service = test_service().await;
-        let previous = add_ticket(&service, "JIRA-1", true).await;
-        let current = add_ticket(&service, "JIRA-2", true).await;
+        let (service, [previous, current]) = setup().await;
         let now = Utc::now().timestamp();
-        let stopped = add_slot(&service, &previous, now - 1200, Some(now - 600)).await;
-        let running = add_slot(&service, &current, now - 600, None).await;
+        let stopped = service
+            .seed_slot(&previous, now - 1200, Some(now - 600))
+            .await;
+        let running = service.seed_slot(&current, now - 600, None).await;
 
         let err = service.switch_slot(Some(now + 60)).await.unwrap_err();
 
@@ -1062,12 +1020,12 @@ mod tests {
 
     #[tokio::test]
     async fn switch_slot_rejects_time_before_running_slot_start() {
-        let service = test_service().await;
-        let previous = add_ticket(&service, "JIRA-1", true).await;
-        let current = add_ticket(&service, "JIRA-2", true).await;
+        let (service, [previous, current]) = setup().await;
         let now = Utc::now().timestamp();
-        let stopped = add_slot(&service, &previous, now - 1200, Some(now - 900)).await;
-        let running = add_slot(&service, &current, now - 600, None).await;
+        let stopped = service
+            .seed_slot(&previous, now - 1200, Some(now - 900))
+            .await;
+        let running = service.seed_slot(&current, now - 600, None).await;
 
         for at in [now - 800, now - 600] {
             let err = service.switch_slot(Some(at)).await.unwrap_err();
@@ -1082,13 +1040,15 @@ mod tests {
 
     #[tokio::test]
     async fn switch_slot_skips_slots_of_running_ticket() {
-        let service = test_service().await;
-        let previous = add_ticket(&service, "JIRA-1", true).await;
-        let current = add_ticket(&service, "JIRA-2", true).await;
+        let (service, [previous, current]) = setup().await;
         let now = Utc::now().timestamp();
-        add_slot(&service, &previous, now - 3600, Some(now - 3000)).await;
-        add_slot(&service, &current, now - 2400, Some(now - 1800)).await;
-        add_slot(&service, &current, now - 1200, None).await;
+        service
+            .seed_slot(&previous, now - 3600, Some(now - 3000))
+            .await;
+        service
+            .seed_slot(&current, now - 2400, Some(now - 1800))
+            .await;
+        service.seed_slot(&current, now - 1200, None).await;
 
         let result = service.switch_slot(None).await.unwrap();
 
@@ -1097,12 +1057,10 @@ mod tests {
 
     #[tokio::test]
     async fn switch_slot_rejects_when_not_tracking() {
-        let service = test_service().await;
-        let first = add_ticket(&service, "JIRA-1", true).await;
-        let second = add_ticket(&service, "JIRA-2", true).await;
+        let (service, [first, second]) = setup().await;
         let now = Utc::now().timestamp();
-        let a = add_slot(&service, &first, now - 1200, Some(now - 900)).await;
-        let b = add_slot(&service, &second, now - 600, Some(now - 300)).await;
+        let a = service.seed_slot(&first, now - 1200, Some(now - 900)).await;
+        let b = service.seed_slot(&second, now - 600, Some(now - 300)).await;
 
         let err = service.switch_slot(None).await.unwrap_err();
 
@@ -1116,11 +1074,12 @@ mod tests {
 
     #[tokio::test]
     async fn switch_slot_rejects_without_previous_ticket() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let stopped = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
-        let running = add_slot(&service, &ticket, now - 300, None).await;
+        let stopped = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
+        let running = service.seed_slot(&ticket, now - 300, None).await;
 
         let err = service.switch_slot(None).await.unwrap_err();
 
@@ -1134,12 +1093,12 @@ mod tests {
 
     #[tokio::test]
     async fn switch_slot_rejects_running_slot_started_in_same_second() {
-        let service = test_service().await;
-        let previous = add_ticket(&service, "JIRA-1", true).await;
-        let current = add_ticket(&service, "JIRA-2", true).await;
+        let (service, [previous, current]) = setup().await;
         let now = Utc::now().timestamp();
-        let stopped = add_slot(&service, &previous, now - 1200, Some(now - 600)).await;
-        let running = add_slot(&service, &current, now + 60, None).await;
+        let stopped = service
+            .seed_slot(&previous, now - 1200, Some(now - 600))
+            .await;
+        let running = service.seed_slot(&current, now + 60, None).await;
 
         let err = service.switch_slot(None).await.unwrap_err();
 
@@ -1153,9 +1112,10 @@ mod tests {
 
     #[tokio::test]
     async fn running_slot_returns_slot_with_ticket() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
-        let running = add_slot(&service, &ticket, Utc::now().timestamp() - 300, None).await;
+        let (service, [ticket, _]) = setup().await;
+        let running = service
+            .seed_slot(&ticket, Utc::now().timestamp() - 300, None)
+            .await;
 
         let slot = service.running_slot().await.unwrap().unwrap();
 
@@ -1180,14 +1140,21 @@ mod tests {
 
     #[tokio::test]
     async fn list_slots_returns_slots_overlapping_range() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        add_slot(&service, &ticket, now - 7200, Some(now - 5400)).await;
-        let crossing_start = add_slot(&service, &ticket, now - 5000, Some(now - 3000)).await;
-        let inside = add_slot(&service, &ticket, now - 2500, Some(now - 2000)).await;
-        let crossing_stop = add_slot(&service, &ticket, now - 1500, Some(now - 500)).await;
-        let running = add_slot(&service, &ticket, now - 300, None).await;
+        service
+            .seed_slot(&ticket, now - 7200, Some(now - 5400))
+            .await;
+        let crossing_start = service
+            .seed_slot(&ticket, now - 5000, Some(now - 3000))
+            .await;
+        let inside = service
+            .seed_slot(&ticket, now - 2500, Some(now - 2000))
+            .await;
+        let crossing_stop = service
+            .seed_slot(&ticket, now - 1500, Some(now - 500))
+            .await;
+        let running = service.seed_slot(&ticket, now - 300, None).await;
 
         assert_eq!(
             listed_slot_ids(&service, now - 4000, Some(now - 1000), false).await,
@@ -1205,10 +1172,9 @@ mod tests {
 
     #[tokio::test]
     async fn list_slots_returns_slots_with_tickets() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
+        let slot = service.seed_slot(&ticket, now - 600, Some(now - 300)).await;
 
         let slots = service.list_slots(now - 3600, None, false).await.unwrap();
 
@@ -1219,23 +1185,33 @@ mod tests {
 
     #[tokio::test]
     async fn list_slots_returns_publish_states() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let unpublished = add_slot(&service, &ticket, now - 3000, Some(now - 2700)).await;
-        let published = add_slot(&service, &ticket, now - 2400, Some(now - 2100)).await;
-        let pending = add_slot(&service, &ticket, now - 1800, Some(now - 1500)).await;
-        let stuck = add_slot(&service, &ticket, now - 1200, Some(now - 900)).await;
-        let failed = add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
-        add_publish_entry(&service, &ticket, &published, Some(now), None).await;
-        add_publish_entry(&service, &ticket, &pending, None, None).await;
-        let mut stuck_entry: publish_entry::ActiveModel =
-            add_publish_entry(&service, &ticket, &stuck, None, None)
-                .await
-                .into();
-        stuck_entry.claimed_at = Set(now - 3600);
-        stuck_entry.update(&service.db).await.unwrap();
-        add_publish_entry(&service, &ticket, &failed, None, Some("error")).await;
+        let unpublished = service
+            .seed_slot(&ticket, now - 3000, Some(now - 2700))
+            .await;
+        let published = service
+            .seed_slot(&ticket, now - 2400, Some(now - 2100))
+            .await;
+        let pending = service
+            .seed_slot(&ticket, now - 1800, Some(now - 1500))
+            .await;
+        let stuck = service
+            .seed_slot(&ticket, now - 1200, Some(now - 900))
+            .await;
+        let failed = service.seed_slot(&ticket, now - 600, Some(now - 300)).await;
+        service
+            .seed_publish_entry(&published, Linear, Some(now), None, now)
+            .await;
+        service
+            .seed_publish_entry(&pending, Linear, None, None, now)
+            .await;
+        service
+            .seed_publish_entry(&stuck, Linear, None, None, now - 3600)
+            .await;
+        service
+            .seed_publish_entry(&failed, Linear, None, Some("error"), now)
+            .await;
 
         let states: Vec<_> = service
             .list_slots(now - 3600, None, false)
@@ -1259,14 +1235,18 @@ mod tests {
 
     #[tokio::test]
     async fn list_slots_sorts_by_start_or_ticket() {
-        let service = test_service().await;
-        let first = add_ticket(&service, "JIRA-1", true).await;
-        let second = add_ticket(&service, "JIRA-2", true).await;
+        let (service, [first, second]) = setup().await;
         let now = Utc::now().timestamp();
-        let a = add_slot(&service, &second, now - 3600, Some(now - 3000)).await;
-        let b = add_slot(&service, &first, now - 2400, Some(now - 1800)).await;
-        let c = add_slot(&service, &second, now - 1200, Some(now - 600)).await;
-        let d = add_slot(&service, &first, now - 300, None).await;
+        let a = service
+            .seed_slot(&second, now - 3600, Some(now - 3000))
+            .await;
+        let b = service
+            .seed_slot(&first, now - 2400, Some(now - 1800))
+            .await;
+        let c = service
+            .seed_slot(&second, now - 1200, Some(now - 600))
+            .await;
+        let d = service.seed_slot(&first, now - 300, None).await;
 
         assert_eq!(
             listed_slot_ids(&service, now - 7200, None, false).await,
@@ -1280,11 +1260,10 @@ mod tests {
 
     #[tokio::test]
     async fn start_slot_updates_last_worked_at() {
-        let service = test_service().await;
-        let stored = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [stored, _]) = setup().await;
         let at = Utc::now().timestamp() - 60;
 
-        let result = service.start_slot("JIRA-1", Some(at), None).await.unwrap();
+        let result = service.start_slot("NIR-1", Some(at), None).await.unwrap();
 
         assert_eq!(result.started.ticket.last_worked_at, at);
         let ticket = ticket::Entity::find_by_id(stored.id)
@@ -1297,12 +1276,11 @@ mod tests {
 
     #[tokio::test]
     async fn add_slot_adds_closed_slot() {
-        let service = test_service().await;
-        let stored = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [stored, _]) = setup().await;
         let now = Utc::now().timestamp();
 
         let Slot { model, ticket } = service
-            .add_slot("JIRA-1", now - 3600, now - 1800, None)
+            .add_slot("NIR-1", now - 3600, now - 1800, None)
             .await
             .unwrap();
 
@@ -1316,10 +1294,11 @@ mod tests {
 
     #[tokio::test]
     async fn add_slot_rejects_overlap_with_closed_slot() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let closed = add_slot(&service, &ticket, now - 3600, Some(now - 1800)).await;
+        let closed = service
+            .seed_slot(&ticket, now - 3600, Some(now - 1800))
+            .await;
 
         for (started_at, stopped_at) in [
             (now - 4000, now - 3000),
@@ -1328,7 +1307,7 @@ mod tests {
             (now - 4000, now - 1000),
         ] {
             let err = service
-                .add_slot("JIRA-1", started_at, stopped_at, None)
+                .add_slot("NIR-1", started_at, stopped_at, None)
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -1342,13 +1321,12 @@ mod tests {
 
     #[tokio::test]
     async fn add_slot_rejects_overlap_with_running_slot() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let running = add_slot(&service, &ticket, now - 1800, None).await;
+        let running = service.seed_slot(&ticket, now - 1800, None).await;
 
         let err = service
-            .add_slot("JIRA-1", now - 900, now - 600, None)
+            .add_slot("NIR-1", now - 900, now - 600, None)
             .await
             .unwrap_err();
 
@@ -1362,14 +1340,15 @@ mod tests {
 
     #[tokio::test]
     async fn add_slot_accepts_adjacent_slots() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        add_slot(&service, &ticket, now - 3600, Some(now - 2400)).await;
-        add_slot(&service, &ticket, now - 1200, None).await;
+        service
+            .seed_slot(&ticket, now - 3600, Some(now - 2400))
+            .await;
+        service.seed_slot(&ticket, now - 1200, None).await;
 
         service
-            .add_slot("JIRA-1", now - 2400, now - 1200, None)
+            .add_slot("NIR-1", now - 2400, now - 1200, None)
             .await
             .unwrap();
 
@@ -1378,12 +1357,11 @@ mod tests {
 
     #[tokio::test]
     async fn add_slot_rejects_future_stop() {
-        let service = test_service().await;
-        add_ticket(&service, "JIRA-1", true).await;
+        let (service, _) = setup().await;
         let now = Utc::now().timestamp();
 
         let err = service
-            .add_slot("JIRA-1", now - 600, now + 60, None)
+            .add_slot("NIR-1", now - 600, now + 60, None)
             .await
             .unwrap_err();
 
@@ -1393,13 +1371,12 @@ mod tests {
 
     #[tokio::test]
     async fn add_slot_rejects_stop_not_after_start() {
-        let service = test_service().await;
-        add_ticket(&service, "JIRA-1", true).await;
+        let (service, _) = setup().await;
         let now = Utc::now().timestamp();
 
         for stopped_at in [now - 1200, now - 600] {
             let err = service
-                .add_slot("JIRA-1", now - 600, stopped_at, None)
+                .add_slot("NIR-1", now - 600, stopped_at, None)
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -1412,22 +1389,22 @@ mod tests {
 
     #[tokio::test]
     async fn add_slot_rejects_ambiguous_key_without_connection() {
-        let service = test_service().await;
-        let connected = add_ticket(&service, "JIRA-1", true).await;
-        add_ticket(&service, "JIRA-1", false).await;
+        let (mut service, [connected, _]) = setup().await;
+        service.use_connection(None);
+        service.seed_ticket("NIR-1", "Add export", 0, 0).await;
         let now = Utc::now().timestamp();
 
         let err = service
-            .add_slot("JIRA-1", now - 600, now - 300, None)
+            .add_slot("NIR-1", now - 600, now - 300, None)
             .await
             .unwrap_err();
         assert!(matches!(
             err,
-            NirvanaError::Domain(DomainError::AmbiguousTicket(key, _)) if key == "JIRA-1"
+            NirvanaError::Domain(DomainError::AmbiguousTicket(key, _)) if key == "NIR-1"
         ));
 
         let slot = service
-            .add_slot("JIRA-1", now - 600, now - 300, Some("Test Jira"))
+            .add_slot("NIR-1", now - 600, now - 300, Some(Linear.name()))
             .await
             .unwrap();
         assert_eq!(slot.ticket.id, connected.id);
@@ -1435,16 +1412,15 @@ mod tests {
 
     #[tokio::test]
     async fn add_slot_keeps_later_last_worked_at() {
-        let service = test_service().await;
-        add_ticket(&service, "JIRA-1", true).await;
+        let (service, _) = setup().await;
         let now = Utc::now().timestamp();
         service
-            .add_slot("JIRA-1", now - 600, now - 300, None)
+            .add_slot("NIR-1", now - 600, now - 300, None)
             .await
             .unwrap();
 
         let slot = service
-            .add_slot("JIRA-1", now - 3600, now - 1800, None)
+            .add_slot("NIR-1", now - 3600, now - 1800, None)
             .await
             .unwrap();
 
@@ -1459,14 +1435,14 @@ mod tests {
 
     #[tokio::test]
     async fn start_slot_keeps_later_last_worked_at() {
-        let service = test_service().await;
+        let (service, [stored, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let mut stored: ticket::ActiveModel = add_ticket(&service, "JIRA-1", true).await.into();
+        let mut stored: ticket::ActiveModel = stored.into();
         stored.last_worked_at = Set(now);
         stored.update(&service.db).await.unwrap();
 
         let result = service
-            .start_slot("JIRA-1", Some(now - 600), None)
+            .start_slot("NIR-1", Some(now - 600), None)
             .await
             .unwrap();
 
@@ -1475,16 +1451,16 @@ mod tests {
 
     #[tokio::test]
     async fn edit_slot_edits_times_and_ticket() {
-        let service = test_service().await;
-        let previous = add_ticket(&service, "JIRA-1", true).await;
-        let next = add_ticket(&service, "JIRA-2", true).await;
+        let (service, [previous, next]) = setup().await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &previous, now - 3600, Some(now - 1800)).await;
+        let slot = service
+            .seed_slot(&previous, now - 3600, Some(now - 1800))
+            .await;
 
         let Slot { model, ticket } = service
             .edit_slot(
                 slot.id,
-                Some("JIRA-2"),
+                Some("NIR-2"),
                 None,
                 Some(now - 1200),
                 Change::Set(now - 600),
@@ -1504,10 +1480,11 @@ mod tests {
 
     #[tokio::test]
     async fn edit_slot_keeps_fields_that_are_not_edited() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &ticket, now - 3600, Some(now - 1800)).await;
+        let slot = service
+            .seed_slot(&ticket, now - 3600, Some(now - 1800))
+            .await;
 
         let edited = service
             .edit_slot(slot.id, None, None, Some(now - 2400), Change::Skip)
@@ -1521,11 +1498,14 @@ mod tests {
 
     #[tokio::test]
     async fn edit_slot_rejects_slot_being_published() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
-        add_publish_entry(&service, &ticket, &slot, None, None).await;
+        let slot = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
+        service
+            .seed_publish_entry(&slot, Linear, None, None, now)
+            .await;
 
         let err = service
             .edit_slot(slot.id, None, None, Some(now - 900), Change::Skip)
@@ -1540,15 +1520,17 @@ mod tests {
 
     #[tokio::test]
     async fn edit_slot_keeps_ticket_of_failed_slot() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
-        add_ticket(&service, "JIRA-2", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
-        add_publish_entry(&service, &ticket, &slot, None, Some("error")).await;
+        let slot = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
+        service
+            .seed_publish_entry(&slot, Linear, None, Some("error"), now)
+            .await;
 
         let err = service
-            .edit_slot(slot.id, Some("JIRA-2"), None, None, Change::Skip)
+            .edit_slot(slot.id, Some("NIR-2"), None, None, Change::Skip)
             .await
             .unwrap_err();
         assert!(matches!(
@@ -1557,7 +1539,7 @@ mod tests {
         ));
 
         let edited = service
-            .edit_slot(slot.id, Some("JIRA-1"), None, Some(now - 900), Change::Skip)
+            .edit_slot(slot.id, Some("NIR-1"), None, Some(now - 900), Change::Skip)
             .await
             .unwrap();
         assert_eq!(edited.model.ticket_id, ticket.id);
@@ -1566,11 +1548,14 @@ mod tests {
 
     #[tokio::test]
     async fn edit_slot_rejects_published_slot() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
-        add_publish_entry(&service, &ticket, &slot, Some(now), None).await;
+        let slot = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
+        service
+            .seed_publish_entry(&slot, Linear, Some(now), None, now)
+            .await;
 
         let err = service
             .edit_slot(slot.id, None, None, Some(now - 900), Change::Skip)
@@ -1587,10 +1572,11 @@ mod tests {
 
     #[tokio::test]
     async fn edit_slot_rejects_unknown_slot_and_slot_of_other_profile() {
-        let mut service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (mut service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+        let slot = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
 
         let err = service
             .edit_slot(slot.id + 1, None, None, None, Change::Clear)
@@ -1601,8 +1587,7 @@ mod tests {
             NirvanaError::Domain(DomainError::SlotNotFound(id)) if id == slot.id + 1
         ));
 
-        service.create_profile("work".to_string()).await.unwrap();
-        service.switch_profile("work").await.unwrap();
+        service.use_profile("work").await;
         let err = service
             .edit_slot(slot.id, None, None, None, Change::Clear)
             .await
@@ -1615,10 +1600,11 @@ mod tests {
 
     #[tokio::test]
     async fn edit_slot_rejects_invalid_and_future_range() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+        let slot = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
 
         for stopped_at in [Change::Set(now - 1200), Change::Set(now - 1800)] {
             let err = service
@@ -1646,12 +1632,15 @@ mod tests {
 
     #[tokio::test]
     async fn edit_slot_rejects_overlap() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let first = add_slot(&service, &ticket, now - 3600, Some(now - 2400)).await;
-        let second = add_slot(&service, &ticket, now - 1800, Some(now - 1200)).await;
-        let running = add_slot(&service, &ticket, now - 600, None).await;
+        let first = service
+            .seed_slot(&ticket, now - 3600, Some(now - 2400))
+            .await;
+        let second = service
+            .seed_slot(&ticket, now - 1800, Some(now - 1200))
+            .await;
+        let running = service.seed_slot(&ticket, now - 600, None).await;
 
         for (started_at, stopped_at) in [
             (Some(now - 3000), Change::Skip),
@@ -1672,12 +1661,15 @@ mod tests {
 
     #[tokio::test]
     async fn edit_slot_moves_its_own_edges() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        add_slot(&service, &ticket, now - 3600, Some(now - 2400)).await;
-        let slot = add_slot(&service, &ticket, now - 1800, Some(now - 1200)).await;
-        add_slot(&service, &ticket, now - 600, None).await;
+        service
+            .seed_slot(&ticket, now - 3600, Some(now - 2400))
+            .await;
+        let slot = service
+            .seed_slot(&ticket, now - 1800, Some(now - 1200))
+            .await;
+        service.seed_slot(&ticket, now - 600, None).await;
 
         let edited = service
             .edit_slot(
@@ -1696,10 +1688,9 @@ mod tests {
 
     #[tokio::test]
     async fn edit_slot_keeps_running_slot_running() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let running = add_slot(&service, &ticket, now - 600, None).await;
+        let running = service.seed_slot(&ticket, now - 600, None).await;
 
         let edited = service
             .edit_slot(running.id, None, None, Some(now - 1200), Change::Skip)
@@ -1716,10 +1707,11 @@ mod tests {
 
     #[tokio::test]
     async fn edit_slot_reopens_slot() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+        let slot = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
         assert!(service.running_slot().await.unwrap().is_none());
 
         let edited = service
@@ -1736,11 +1728,12 @@ mod tests {
 
     #[tokio::test]
     async fn edit_slot_rejects_reopen_while_tracking() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 900)).await;
-        let running = add_slot(&service, &ticket, now - 600, None).await;
+        let slot = service
+            .seed_slot(&ticket, now - 1200, Some(now - 900))
+            .await;
+        let running = service.seed_slot(&ticket, now - 600, None).await;
 
         let err = service
             .edit_slot(slot.id, None, None, None, Change::Clear)
@@ -1757,11 +1750,12 @@ mod tests {
 
     #[tokio::test]
     async fn edit_slot_rejects_reopen_before_later_slot() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 900)).await;
-        let later = add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
+        let slot = service
+            .seed_slot(&ticket, now - 1200, Some(now - 900))
+            .await;
+        let later = service.seed_slot(&ticket, now - 600, Some(now - 300)).await;
 
         let err = service
             .edit_slot(slot.id, None, None, None, Change::Clear)
@@ -1778,10 +1772,9 @@ mod tests {
 
     #[tokio::test]
     async fn get_slot_finds_slot_by_id() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
+        let slot = service.seed_slot(&ticket, now - 600, Some(now - 300)).await;
 
         let (found, state) = service.get_slot(SlotTarget::Id(slot.id)).await.unwrap();
 
@@ -1792,11 +1785,12 @@ mod tests {
 
     #[tokio::test]
     async fn get_slot_finds_slot_at_time() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let stopped = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
-        let running = add_slot(&service, &ticket, now - 600, None).await;
+        let stopped = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
+        let running = service.seed_slot(&ticket, now - 600, None).await;
 
         for (at, expected) in [
             (now - 1200, &stopped),
@@ -1811,10 +1805,11 @@ mod tests {
 
     #[tokio::test]
     async fn get_slot_rejects_time_without_slot() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
+        service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
 
         for at in [now - 1800, now - 600, now - 300] {
             let err = service.get_slot(SlotTarget::At(at)).await.unwrap_err();
@@ -1824,10 +1819,9 @@ mod tests {
 
     #[tokio::test]
     async fn get_slot_rejects_future_time() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        add_slot(&service, &ticket, now - 600, None).await;
+        service.seed_slot(&ticket, now - 600, None).await;
 
         let err = service
             .get_slot(SlotTarget::At(now + 60))
@@ -1839,12 +1833,12 @@ mod tests {
 
     #[tokio::test]
     async fn get_slot_rejects_slot_of_other_profile() {
-        let mut service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (mut service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
-        service.create_profile("work".to_string()).await.unwrap();
-        service.switch_profile("work").await.unwrap();
+        let slot = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
+        service.use_profile("work").await;
 
         let err = service.get_slot(SlotTarget::Id(slot.id)).await.unwrap_err();
         assert!(matches!(
@@ -1860,15 +1854,24 @@ mod tests {
 
     #[tokio::test]
     async fn get_slot_reports_publish_state() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let published = add_slot(&service, &ticket, now - 1800, Some(now - 1500)).await;
-        let pending = add_slot(&service, &ticket, now - 1200, Some(now - 900)).await;
-        let failed = add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
-        add_publish_entry(&service, &ticket, &published, Some(now), None).await;
-        add_publish_entry(&service, &ticket, &pending, None, None).await;
-        add_publish_entry(&service, &ticket, &failed, None, Some("error")).await;
+        let published = service
+            .seed_slot(&ticket, now - 1800, Some(now - 1500))
+            .await;
+        let pending = service
+            .seed_slot(&ticket, now - 1200, Some(now - 900))
+            .await;
+        let failed = service.seed_slot(&ticket, now - 600, Some(now - 300)).await;
+        service
+            .seed_publish_entry(&published, Linear, Some(now), None, now)
+            .await;
+        service
+            .seed_publish_entry(&pending, Linear, None, None, now)
+            .await;
+        service
+            .seed_publish_entry(&failed, Linear, None, Some("error"), now)
+            .await;
 
         for (slot, expected) in [
             (published, PublishState::Published),
@@ -1882,34 +1885,22 @@ mod tests {
 
     #[tokio::test]
     async fn get_slot_targets_returns_entries_of_slot_with_states() {
-        let service = test_service().await;
-        let linear = service
-            .add_connection(ConnectionData {
-                name: "A Linear".to_string(),
-                kind: Kind::Linear,
-                host: "linear.app/test".to_string(),
-                identity: None,
-                secret_store: SecretStore::Plaintext,
-                token: "token".into(),
-            })
-            .await
-            .unwrap();
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
+        service.seed(Jira).await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 900)).await;
-        let other = add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
-        add_publish_entry(&service, &ticket, &slot, Some(now), None).await;
-        add_publish_entry(&service, &ticket, &other, None, Some("error")).await;
-        publish_entry::ActiveModel {
-            slot_id: Set(slot.id),
-            connection_id: Set(linear.model.id),
-            published_at: Set(None),
-            error: Set(None),
-            claimed_at: Set(stuck_before() - 1),
-        }
-        .insert(&service.db)
-        .await
-        .unwrap();
+        let slot = service
+            .seed_slot(&ticket, now - 1200, Some(now - 900))
+            .await;
+        let other = service.seed_slot(&ticket, now - 600, Some(now - 300)).await;
+        service
+            .seed_publish_entry(&slot, Linear, Some(now), None, now)
+            .await;
+        service
+            .seed_publish_entry(&other, Linear, None, Some("error"), now)
+            .await;
+        service
+            .seed_publish_entry(&slot, Jira, None, None, stuck_before() - 1)
+            .await;
 
         let (found, targets) = service
             .get_slot_targets(SlotTarget::Id(slot.id))
@@ -1924,21 +1915,23 @@ mod tests {
         assert_eq!(
             targets,
             [
-                ("A Linear", TargetState::Stuck),
-                ("Test Jira", TargetState::Published),
+                (Jira.name(), TargetState::Stuck),
+                (Linear.name(), TargetState::Published),
             ]
         );
     }
 
     #[tokio::test]
     async fn get_slot_targets_rejects_slot_of_other_profile() {
-        let mut service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (mut service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
-        add_publish_entry(&service, &ticket, &slot, Some(now), None).await;
-        service.create_profile("work".to_string()).await.unwrap();
-        service.switch_profile("work").await.unwrap();
+        let slot = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
+        service
+            .seed_publish_entry(&slot, Linear, Some(now), None, now)
+            .await;
+        service.use_profile("work").await;
 
         let err = service
             .get_slot_targets(SlotTarget::Id(slot.id))
@@ -1953,11 +1946,14 @@ mod tests {
 
     #[tokio::test]
     async fn delete_slot_rejects_slot_being_published() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
-        add_publish_entry(&service, &ticket, &slot, None, None).await;
+        let slot = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
+        service
+            .seed_publish_entry(&slot, Linear, None, None, now)
+            .await;
 
         let err = service.delete_slot(slot.id).await.unwrap_err();
 
@@ -1971,16 +1967,14 @@ mod tests {
 
     #[tokio::test]
     async fn delete_slot_deletes_stuck_slot() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
-        let mut entry: publish_entry::ActiveModel =
-            add_publish_entry(&service, &ticket, &slot, None, None)
-                .await
-                .into();
-        entry.claimed_at = Set(stuck_before() - 1);
-        entry.update(&service.db).await.unwrap();
+        let slot = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
+        service
+            .seed_publish_entry(&slot, Linear, None, None, stuck_before() - 1)
+            .await;
 
         service.delete_slot(slot.id).await.unwrap();
 
@@ -1995,11 +1989,12 @@ mod tests {
 
     #[tokio::test]
     async fn delete_slot_deletes_slot() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let deleted = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
-        let kept = add_slot(&service, &ticket, now - 600, None).await;
+        let deleted = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
+        let kept = service.seed_slot(&ticket, now - 600, None).await;
 
         service.delete_slot(deleted.id).await.unwrap();
 
@@ -2009,11 +2004,12 @@ mod tests {
 
     #[tokio::test]
     async fn delete_slot_deletes_running_slot_found_at_time() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let stopped = add_slot(&service, &ticket, now - 1200, Some(now - 600)).await;
-        add_slot(&service, &ticket, now - 600, None).await;
+        let stopped = service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
+        service.seed_slot(&ticket, now - 600, None).await;
 
         let (found, _) = service.get_slot(SlotTarget::At(now - 60)).await.unwrap();
         service.delete_slot(found.model.id).await.unwrap();
@@ -2025,13 +2021,18 @@ mod tests {
 
     #[tokio::test]
     async fn delete_slot_deletes_publish_entries() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let deleted = add_slot(&service, &ticket, now - 1200, Some(now - 900)).await;
-        let kept = add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
-        add_publish_entry(&service, &ticket, &deleted, Some(now), None).await;
-        let kept_entry = add_publish_entry(&service, &ticket, &kept, Some(now), None).await;
+        let deleted = service
+            .seed_slot(&ticket, now - 1200, Some(now - 900))
+            .await;
+        let kept = service.seed_slot(&ticket, now - 600, Some(now - 300)).await;
+        service
+            .seed_publish_entry(&deleted, Linear, Some(now), None, now)
+            .await;
+        let kept_entry = service
+            .seed_publish_entry(&kept, Linear, Some(now), None, now)
+            .await;
 
         service.delete_slot(deleted.id).await.unwrap();
 
@@ -2044,10 +2045,9 @@ mod tests {
 
     #[tokio::test]
     async fn delete_slot_rejects_unknown_slot() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        let slot = add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
+        let slot = service.seed_slot(&ticket, now - 600, Some(now - 300)).await;
 
         let err = service.delete_slot(slot.id + 1).await.unwrap_err();
 

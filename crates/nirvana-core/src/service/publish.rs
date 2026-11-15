@@ -382,16 +382,16 @@ mod tests {
         service.seed_slot(&ticket, 5000, None).await;
         let now = Utc::now().timestamp();
         service
-            .seed_publish_entry(&published, connection_id, Some(4000), None, 4000)
+            .seed_publish_entry(&published, Jira, Some(4000), None, 4000)
             .await;
         service
-            .seed_publish_entry(&failed, connection_id, None, Some("error"), now)
+            .seed_publish_entry(&failed, Jira, None, Some("error"), now)
             .await;
         service
-            .seed_publish_entry(&stuck, connection_id, None, None, now - STUCK_AFTER - 1)
+            .seed_publish_entry(&stuck, Jira, None, None, now - STUCK_AFTER - 1)
             .await;
         service
-            .seed_publish_entry(&pending, connection_id, None, None, now)
+            .seed_publish_entry(&pending, Jira, None, None, now)
             .await;
 
         let slots = find_publishable(
@@ -477,19 +477,18 @@ mod tests {
         let mut service = TestService::new(&[Jira]).await;
         service.use_connection(Some(Jira));
         let ticket = service.seed_ticket("KAR-1", "Title", 0, 0).await;
-        let connection_id = ticket.connection_id.unwrap();
         let failed = service.seed_slot(&ticket, 1000, Some(2000)).await;
         let stuck = service.seed_slot(&ticket, 2000, Some(3000)).await;
         let pending = service.seed_slot(&ticket, 3000, Some(4000)).await;
         let now = Utc::now().timestamp();
         service
-            .seed_publish_entry(&failed, connection_id, None, Some("error"), 0)
+            .seed_publish_entry(&failed, Jira, None, Some("error"), 0)
             .await;
         service
-            .seed_publish_entry(&stuck, connection_id, None, None, now - STUCK_AFTER - 1)
+            .seed_publish_entry(&stuck, Jira, None, None, now - STUCK_AFTER - 1)
             .await;
         service
-            .seed_publish_entry(&pending, connection_id, None, None, now)
+            .seed_publish_entry(&pending, Jira, None, None, now)
             .await;
         let slots = || {
             let slots = [&failed, &stuck, &pending].map(|model| Slot {
@@ -520,9 +519,7 @@ mod tests {
         let ticket = service.seed_ticket("KAR-1", "Title", 0, 0).await;
         let connection_id = ticket.connection_id.unwrap();
         let slot = service.seed_slot(&ticket, 1000, Some(2000)).await;
-        service
-            .seed_publish_entry(&slot, connection_id, None, None, 0)
-            .await;
+        service.seed_publish_entry(&slot, Jira, None, None, 0).await;
 
         let error = "network error".to_string();
         store_result(&service.db, slot.id, connection_id, Some(&error))
@@ -888,7 +885,6 @@ mod tests {
         service.start_mock().await;
         service.use_connection(Some(Jira));
         let ticket = service.seed_ticket("KAR-1", "Title", 0, 0).await;
-        let connection_id = ticket.connection_id.unwrap();
         let published = service
             .seed_slot(&ticket, local(10, 9), Some(local(10, 9) + 3000))
             .await;
@@ -896,10 +892,10 @@ mod tests {
             .seed_slot(&ticket, local(10, 10), Some(local(10, 10) + 1800))
             .await;
         service
-            .seed_publish_entry(&published, connection_id, Some(1000), None, 1000)
+            .seed_publish_entry(&published, Jira, Some(1000), None, 1000)
             .await;
         service
-            .seed_publish_entry(&failed, connection_id, None, Some("error"), 1000)
+            .seed_publish_entry(&failed, Jira, None, Some("error"), 1000)
             .await;
         service.mock_worklog("KAR-1", 1800).await;
 

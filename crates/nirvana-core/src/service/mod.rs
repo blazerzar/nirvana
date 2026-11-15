@@ -7,8 +7,6 @@ mod profile;
 mod publish;
 #[cfg(test)]
 mod test_service;
-#[cfg(test)]
-mod test_support;
 #[cfg(feature = "test-support")]
 mod testing;
 mod ticket;

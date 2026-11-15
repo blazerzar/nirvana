@@ -432,7 +432,7 @@ mod tests {
     use super::*;
     use crate::domain::{JiraSettingsEdit, LinearSettings, LinearSettingsEdit};
     use crate::secrets::read_credential;
-    use crate::service::test_service::TestConnection::{Jira, Linear};
+    use crate::service::test_service::TestConnection::{Jira, KeyringJira, Linear};
     use crate::service::test_service::{TestConnection, TestService};
 
     fn keyring_data(name: &str) -> ConnectionData {
@@ -538,16 +538,12 @@ mod tests {
 
     #[tokio::test]
     async fn rejected_keyring_connection_leaves_no_entry() {
-        let service = TestService::new(&[Jira]).await;
-        service
-            .add_connection(keyring_data("Keyring Jira"))
-            .await
-            .unwrap();
+        let service = TestService::new(&[Jira, KeyringJira]).await;
 
         let result = service
             .add_connection(ConnectionData {
                 token: "duplicate-token".into(),
-                ..keyring_data("Keyring Jira")
+                ..service.connection_data(KeyringJira)
             })
             .await;
 
@@ -555,7 +551,7 @@ mod tests {
             result,
             Err(NirvanaError::Domain(DomainError::ConnectionExists(_)))
         ));
-        assert_eq!(service.keyring_passwords(), ["keyring-token"]);
+        assert_eq!(service.keyring_passwords(), [KeyringJira.token()]);
     }
 
     #[tokio::test]
@@ -713,11 +709,8 @@ mod tests {
 
     #[tokio::test]
     async fn edit_connection_renames_and_keeps_keyring_token() {
-        let service = TestService::new(&[Jira]).await;
-        let added = service
-            .add_connection(keyring_data("Keyring Jira"))
-            .await
-            .unwrap();
+        let service = TestService::new(&[Jira, KeyringJira]).await;
+        let added = service.connection(KeyringJira).await;
 
         service
             .edit_connection(
@@ -734,7 +727,7 @@ mod tests {
         let token = read_credential(&service.keyring, added.model.id, &service.db)
             .await
             .unwrap();
-        assert_eq!(token.expose_secret(), "keyring-token");
+        assert_eq!(token.expose_secret(), KeyringJira.token());
     }
 
     #[tokio::test]
@@ -873,11 +866,7 @@ mod tests {
 
     #[tokio::test]
     async fn edit_connection_rejects_duplicate_name() {
-        let service = TestService::new(&[Jira]).await;
-        service
-            .add_connection(keyring_data("Keyring Jira"))
-            .await
-            .unwrap();
+        let service = TestService::new(&[Jira, KeyringJira]).await;
 
         let err = service
             .edit_connection(
@@ -1040,11 +1029,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_connections_returns_active_profile_connections() {
-        let mut service = TestService::new(&[Jira]).await;
-        service
-            .add_connection(keyring_data("Keyring Jira"))
-            .await
-            .unwrap();
+        let mut service = TestService::new(&[Jira, KeyringJira]).await;
 
         let connections = service.list_connections().await.unwrap();
 
@@ -1234,11 +1219,7 @@ mod tests {
 
     #[tokio::test]
     async fn delete_connection_removes_keyring_entry() {
-        let service = TestService::new(&[]).await;
-        service
-            .add_connection(keyring_data("Keyring Jira"))
-            .await
-            .unwrap();
+        let service = TestService::new(&[KeyringJira]).await;
 
         service
             .delete_connection("Keyring Jira", false)

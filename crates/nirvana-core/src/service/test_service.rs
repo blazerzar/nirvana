@@ -34,6 +34,10 @@ pub(super) enum TestConnection {
     Linear,
     /// "Test Jira", a Jira Cloud connection.
     Jira,
+    /// "Keyring Linear", with its token in the keyring.
+    KeyringLinear,
+    /// "Keyring Jira", a Jira Cloud connection with its token in the keyring.
+    KeyringJira,
 }
 
 impl TestConnection {
@@ -41,6 +45,17 @@ impl TestConnection {
         match self {
             Self::Linear => "Test Linear",
             Self::Jira => "Test Jira",
+            Self::KeyringLinear => "Keyring Linear",
+            Self::KeyringJira => "Keyring Jira",
+        }
+    }
+
+    pub(super) fn token(self) -> &'static str {
+        match self {
+            Self::Linear => "linear-token",
+            Self::Jira => "jira-token",
+            Self::KeyringLinear => "keyring-linear-token",
+            Self::KeyringJira => "keyring-jira-token",
         }
     }
 }
@@ -86,10 +101,7 @@ impl TestService {
         };
         service.use_profile("test").await;
         for connection in connections {
-            match connection {
-                TestConnection::Linear => service.seed_linear().await,
-                TestConnection::Jira => service.seed_jira().await,
-            }
+            service.seed(*connection).await;
         }
         service
     }
@@ -119,30 +131,33 @@ impl TestService {
             .map_or_else(|| UNREACHABLE_HOST.to_string(), MockServer::uri)
     }
 
-    pub(super) async fn seed_linear(&self) {
-        self.add_connection(ConnectionData {
-            name: TestConnection::Linear.name().to_string(),
-            kind: Kind::Linear,
+    /// Returns the data `connection` is seeded with.
+    pub(super) fn connection_data(&self, connection: TestConnection) -> ConnectionData {
+        let (kind, identity) = match connection {
+            TestConnection::Linear | TestConnection::KeyringLinear => (Kind::Linear, None),
+            TestConnection::Jira | TestConnection::KeyringJira => {
+                (Kind::JiraCloud, Some("tester@example.com".to_string()))
+            }
+        };
+        let secret_store = match connection {
+            TestConnection::Linear | TestConnection::Jira => SecretStore::Plaintext,
+            TestConnection::KeyringLinear | TestConnection::KeyringJira => SecretStore::Keyring,
+        };
+        ConnectionData {
+            name: connection.name().to_string(),
+            kind,
             host: self.host(),
-            identity: None,
-            secret_store: SecretStore::Plaintext,
-            token: "token".into(),
-        })
-        .await
-        .unwrap();
+            identity,
+            secret_store,
+            token: connection.token().into(),
+        }
     }
 
-    pub(super) async fn seed_jira(&self) {
-        self.add_connection(ConnectionData {
-            name: TestConnection::Jira.name().to_string(),
-            kind: Kind::JiraCloud,
-            host: self.host(),
-            identity: Some("tester@example.com".to_string()),
-            secret_store: SecretStore::Plaintext,
-            token: "token".into(),
-        })
-        .await
-        .unwrap();
+    /// Adds `connection` to the active profile.
+    pub(super) async fn seed(&self, connection: TestConnection) {
+        self.add_connection(self.connection_data(connection))
+            .await
+            .unwrap();
     }
 
     /// Creates the profile `name` and makes it active.

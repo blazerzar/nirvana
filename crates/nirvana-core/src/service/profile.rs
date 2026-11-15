@@ -206,10 +206,13 @@ pub(crate) async fn resolve(
 
 #[cfg(test)]
 mod tests {
+    use sea_orm::PaginatorTrait;
+
     use super::*;
     use crate::config::AppConfig;
-    use crate::domain::{ConnectionData, Kind};
-    use crate::service::test_support::test_service;
+    use crate::secrets::set_in_keychain;
+    use crate::service::test_service::TestConnection::{Jira, KeyringJira, KeyringLinear};
+    use crate::service::test_service::TestService;
 
     async fn profile_names(service: &Nirvana) -> Vec<String> {
         service
@@ -223,7 +226,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_profile_adds_profile() {
-        let service = test_service().await;
+        let service = TestService::new(&[]).await;
 
         let created = service.create_profile("work".to_string()).await.unwrap();
 
@@ -233,7 +236,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_profile_rejects_empty_name() {
-        let service = test_service().await;
+        let service = TestService::new(&[]).await;
 
         let err = service.create_profile(" ".to_string()).await.unwrap_err();
 
@@ -246,19 +249,17 @@ mod tests {
 
     #[tokio::test]
     async fn delete_profile_removes_keyring_entries_and_switches_active() {
-        let mut service = test_service().await;
-        service.create_profile("work".to_string()).await.unwrap();
-        service
-            .add_connection(ConnectionData {
-                name: "Keyring Jira".to_string(),
-                kind: Kind::JiraCloud,
-                host: "https://other.atlassian.net".to_string(),
-                identity: Some("tester@example.com".to_string()),
-                secret_store: SecretStore::Keyring,
-                token: "keyring-token".into(),
-            })
+        let mut service = TestService::new(&[Jira, KeyringJira, KeyringLinear]).await;
+        set_in_keychain(&service.keyring, Jira.token().to_string(), "kept".into())
             .await
             .unwrap();
+        service.create_profile("work".to_string()).await.unwrap();
+        let mut passwords = service.keyring_passwords();
+        passwords.sort();
+        assert_eq!(
+            passwords,
+            ["kept", KeyringJira.token(), KeyringLinear.token()]
+        );
 
         let active = service.delete_profile("test").await.unwrap();
 
@@ -272,14 +273,7 @@ mod tests {
                 .connections
                 .is_empty()
         );
-        let store = (service.keyring)().unwrap();
-        assert!(
-            store
-                .search(&[("service", "nirvana")].into())
-                .unwrap()
-                .iter()
-                .all(|entry| entry.get_password().is_err())
-        );
+        assert_eq!(service.keyring_passwords(), ["kept"]);
         assert_eq!(
             service.config().unwrap().core.profile.as_deref(),
             Some("work")
@@ -288,7 +282,7 @@ mod tests {
 
     #[tokio::test]
     async fn delete_profile_rejects_missing_profile() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
 
         let err = service.delete_profile("missing").await.unwrap_err();
 
@@ -300,7 +294,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_profile_rejects_duplicate_name() {
-        let service = test_service().await;
+        let service = TestService::new(&[]).await;
 
         let err = service
             .create_profile("test".to_string())
@@ -315,7 +309,7 @@ mod tests {
 
     #[tokio::test]
     async fn switch_profile_saves_active_profile() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
         service.create_profile("work".to_string()).await.unwrap();
 
         assert!(service.switch_profile("work").await.unwrap());
@@ -330,10 +324,12 @@ mod tests {
 
     #[tokio::test]
     async fn switch_to_active_profile_changes_nothing() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
+        std::fs::remove_file(&service.paths.config_file).unwrap();
 
         assert!(!service.switch_profile("test").await.unwrap());
 
+        assert!(!service.paths.config_file.exists());
         assert_eq!(
             service.config().unwrap().core.profile.as_deref(),
             Some("test")
@@ -342,7 +338,7 @@ mod tests {
 
     #[tokio::test]
     async fn switch_profile_rejects_missing_profile() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
 
         let err = service.switch_profile("missing").await.unwrap_err();
 
@@ -358,14 +354,20 @@ mod tests {
 
     #[tokio::test]
     async fn delete_profile_keeps_active_profile_when_deleting_another() {
-        let mut service = test_service().await;
-        service.create_profile("work".to_string()).await.unwrap();
+        let mut service = TestService::new(&[Jira]).await;
+        service.use_profile("work").await;
+        service.seed(Jira).await;
+        service.switch_profile("test").await.unwrap();
 
         let active = service.delete_profile("work").await.unwrap();
 
         assert_eq!(active, None);
         assert_eq!(profile_names(&service).await, ["test"]);
         assert_eq!(service.active_profile().await.unwrap().connections.len(), 1);
+        assert_eq!(
+            connection::Entity::find().count(&service.db).await.unwrap(),
+            1
+        );
         assert_eq!(
             service.config().unwrap().core.profile.as_deref(),
             Some("test")
@@ -374,12 +376,12 @@ mod tests {
 
     #[tokio::test]
     async fn active_profile_loads_its_connections() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[Jira]).await;
         service.create_profile("work".to_string()).await.unwrap();
 
         let profile = service.active_profile().await.unwrap();
         assert_eq!(profile.connections.len(), 1);
-        assert_eq!(profile.connections[0].model.name, "Test Jira");
+        assert_eq!(profile.connections[0].model.name, Jira.name());
 
         service.switch_profile("work").await.unwrap();
         assert!(
@@ -394,7 +396,7 @@ mod tests {
 
     #[tokio::test]
     async fn delete_last_profile_clears_active_profile() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
 
         let active = service.delete_profile("test").await.unwrap();
 
@@ -407,7 +409,7 @@ mod tests {
 
     #[tokio::test]
     async fn rename_active_profile_updates_config() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
 
         service
             .rename_profile("test", "personal".to_string())
@@ -425,7 +427,7 @@ mod tests {
 
     #[tokio::test]
     async fn rename_profile_keeps_active_profile_when_renaming_another() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
         service.create_profile("work".to_string()).await.unwrap();
 
         service
@@ -442,7 +444,7 @@ mod tests {
 
     #[tokio::test]
     async fn rename_profile_rejects_duplicate_name() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
         service.create_profile("work".to_string()).await.unwrap();
 
         let err = service
@@ -459,7 +461,7 @@ mod tests {
 
     #[tokio::test]
     async fn rename_profile_rejects_missing_profile() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
 
         let err = service
             .rename_profile("missing", "work".to_string())
@@ -474,7 +476,7 @@ mod tests {
 
     #[tokio::test]
     async fn rename_profile_rejects_empty_name() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
 
         let err = service
             .rename_profile("test", " ".to_string())
@@ -495,7 +497,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_keeps_configured_profile() {
-        let service = test_service().await;
+        let service = TestService::new(&[]).await;
         service.create_profile("work".to_string()).await.unwrap();
 
         let resolved = resolve(&service.db, Some("work".to_string()))
@@ -507,7 +509,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_falls_back_to_first_profile() {
-        let service = test_service().await;
+        let service = TestService::new(&[]).await;
         service.create_profile("work".to_string()).await.unwrap();
 
         let missing = resolve(&service.db, Some("missing".to_string()))
@@ -521,7 +523,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_without_profiles_is_none() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[]).await;
         service.delete_profile("test").await.unwrap();
 
         let resolved = resolve(&service.db, Some("test".to_string()))

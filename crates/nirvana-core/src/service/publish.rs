@@ -6,11 +6,12 @@
 //! sends only the claimed ones, so concurrent publishes do not send a slot
 //! twice. The result of each slot is stored in its entry, as ok or as failed
 //! with the error. A pending entry claimed more than [`STUCK_AFTER`] seconds
-//! ago was left by an interrupted publish.
+//! ago was left by an interrupted publish. With `squash`, the claimed slots of
+//! one ticket and local day are sent as one worklog or comment.
 
 use std::collections::{HashMap, HashSet};
 
-use chrono::Utc;
+use chrono::{DateTime, Local, NaiveDate, Utc};
 use nirvana_entity::{publish_entry, slot, ticket};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
@@ -87,11 +88,15 @@ impl Nirvana {
                 .integration(connection)
                 .await
                 .map_err(|e| error_chain(&e));
+            let groups = match connection.settings.squash() {
+                true => squash(slots),
+                false => slots.into_iter().map(|slot| vec![slot]).collect(),
+            };
             publishes.spawn(publish_to_connection(
                 self.db.clone(),
                 connection.model.id,
                 integration,
-                slots,
+                groups,
             ));
         }
 
@@ -108,47 +113,62 @@ impl Nirvana {
     }
 }
 
-/// Sends the slots to the connection one by one and stores the result of
-/// each. When `integration` could not be built, its error is stored for every
-/// slot.
+/// Sends each group of slots of one ticket to the connection as one worklog
+/// or comment, starting at the group's earliest slot start and lasting the
+/// summed duration, and stores the result on every slot of the group. When
+/// `integration` could not be built, its error is stored for every slot.
 async fn publish_to_connection(
     db: DatabaseConnection,
     connection_id: i64,
     integration: Result<Integration, String>,
-    slots: Vec<Slot>,
+    groups: Vec<Vec<Slot>>,
 ) -> PublishResult {
     let mut result = PublishResult::default();
-    for slot in slots {
+    for group in groups {
+        let first = &group[0];
+        let seconds = group.iter().map(Slot::elapsed).sum();
         let sent = match &integration {
             Ok(integration) => integration
-                .publish_slot(
-                    &slot.ticket.ticket_key,
-                    slot.model.started_at,
-                    slot.elapsed(),
-                )
+                .publish_slot(&first.ticket.ticket_key, first.model.started_at, seconds)
                 .await
                 .map_err(|e| error_chain(&e)),
             Err(error) => Err(error.clone()),
         };
-        let stored = store_result(&db, slot.model.id, connection_id, sent.as_ref().err()).await;
-        let error = match (sent, stored) {
-            (Ok(()), Ok(())) => {
-                result.published.push(slot);
-                continue;
-            }
-            (Ok(()), Err(e)) => format!(
-                "published, but storing the result failed: {}",
-                error_chain(&e)
-            ),
-            (Err(error), Ok(())) => error,
-            (Err(error), Err(e)) => {
-                format!("{error}, and storing the error failed: {}", error_chain(&e))
-            }
-        };
-        debug!(slot_id = slot.model.id, %error, "slot not published");
-        result.failed.push(PublishFailure { slot, error });
+        for slot in group {
+            let stored = store_result(&db, slot.model.id, connection_id, sent.as_ref().err()).await;
+            let error = match (&sent, stored) {
+                (Ok(()), Ok(())) => {
+                    result.published.push(slot);
+                    continue;
+                }
+                (Ok(()), Err(e)) => format!(
+                    "published, but storing the result failed: {}",
+                    error_chain(&e)
+                ),
+                (Err(error), Ok(())) => error.clone(),
+                (Err(error), Err(e)) => {
+                    format!("{error}, and storing the error failed: {}", error_chain(&e))
+                }
+            };
+            debug!(slot_id = slot.model.id, %error, "slot not published");
+            result.failed.push(PublishFailure { slot, error });
+        }
     }
     result
+}
+
+/// Groups the slots by ticket and the local day they started on, ordered by
+/// their first start.
+fn squash(slots: Vec<Slot>) -> Vec<Vec<Slot>> {
+    let mut groups: HashMap<(i64, Option<NaiveDate>), Vec<Slot>> = HashMap::new();
+    for slot in slots {
+        let day = DateTime::from_timestamp(slot.model.started_at, 0)
+            .map(|started_at| started_at.with_timezone(&Local).date_naive());
+        groups.entry((slot.ticket.id, day)).or_default().push(slot);
+    }
+    let mut groups: Vec<Vec<Slot>> = groups.into_values().collect();
+    groups.sort_by_key(|group| group[0].model.started_at);
+    groups
 }
 
 /// Returns the stopped slots of the profile that overlap the range, whose
@@ -305,11 +325,12 @@ fn error_chain(error: &dyn std::error::Error) -> String {
 
 #[cfg(test)]
 mod tests {
+    use chrono::TimeZone;
     use nirvana_entity::credential::SecretStore;
     use sea_orm::{ActiveModelTrait, PaginatorTrait};
 
     use super::*;
-    use crate::domain::{ConnectionData, Kind, LinearSettingsEdit, SettingsEdit};
+    use crate::domain::{ConnectionData, JiraSettingsEdit, Kind, LinearSettingsEdit, SettingsEdit};
     use crate::service::test_support::test_service;
 
     async fn add_ticket(service: &Nirvana, connection: &str, key: &str) -> ticket::Model {
@@ -394,6 +415,26 @@ mod tests {
             )
             .await
             .unwrap();
+    }
+
+    async fn enable_jira_squash(service: &Nirvana) {
+        service
+            .edit_connection_settings(
+                "Test Jira",
+                SettingsEdit::Jira(JiraSettingsEdit {
+                    publish: None,
+                    squash: Some(true),
+                }),
+            )
+            .await
+            .unwrap();
+    }
+
+    fn local(day: u32, hour: u32) -> i64 {
+        Local
+            .with_ymd_and_hms(2026, 11, day, hour, 0, 0)
+            .unwrap()
+            .timestamp()
     }
 
     fn ids(slots: &[Slot]) -> Vec<i64> {
@@ -665,6 +706,96 @@ mod tests {
         assert_eq!(result.failed.len(), 1);
         assert_eq!(result.failed[0].slot.model.id, jira_slot.id);
         assert!(entry(&service, &linear_slot).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn squash_groups_slots_by_ticket_and_local_day() {
+        let service = test_service().await;
+        let first = add_ticket(&service, "Test Jira", "KAR-1").await;
+        let second = add_ticket(&service, "Test Jira", "KAR-2").await;
+        let morning = add_slot(&service, &first, local(10, 0), Some(local(10, 1))).await;
+        let evening = add_slot(&service, &first, local(10, 23), Some(local(11, 1))).await;
+        let next_day = add_slot(&service, &first, local(11, 9), Some(local(11, 10))).await;
+        let other = add_slot(&service, &second, local(10, 9), Some(local(10, 10))).await;
+        let slots = [
+            (&morning, &first),
+            (&evening, &first),
+            (&next_day, &first),
+            (&other, &second),
+        ]
+        .map(|(model, ticket)| Slot {
+            model: model.clone(),
+            ticket: ticket.clone(),
+        });
+
+        let groups: Vec<Vec<i64>> = squash(slots.into()).iter().map(|g| ids(g)).collect();
+
+        assert_eq!(
+            groups,
+            [
+                vec![morning.id, evening.id],
+                vec![other.id],
+                vec![next_day.id]
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn publish_slots_squashes_and_stores_result_on_every_slot() {
+        let service = test_service().await;
+        enable_jira_squash(&service).await;
+        let ticket = add_ticket(&service, "Test Jira", "KAR-1").await;
+        let first = add_slot(&service, &ticket, local(10, 9), Some(local(10, 9) + 20)).await;
+        let second = add_slot(&service, &ticket, local(10, 10), Some(local(10, 10) + 20)).await;
+        let next_day = add_slot(&service, &ticket, local(11, 9), Some(local(11, 9) + 30)).await;
+
+        let result = service
+            .publish_slots(None, None, None, false)
+            .await
+            .unwrap();
+
+        assert!(result.published.is_empty());
+        let squashed = "worklog of 40 s is under the 60 s Jira accepts";
+        let single = "worklog of 30 s is under the 60 s Jira accepts";
+        let failed: Vec<(i64, &str)> = result
+            .failed
+            .iter()
+            .map(|failure| (failure.slot.model.id, failure.error.as_str()))
+            .collect();
+        assert_eq!(
+            failed,
+            [
+                (first.id, squashed),
+                (second.id, squashed),
+                (next_day.id, single)
+            ]
+        );
+        for (slot, error) in [(&first, squashed), (&second, squashed), (&next_day, single)] {
+            let entry = entry(&service, slot).await.unwrap();
+            assert_eq!(entry.error.as_deref(), Some(error));
+        }
+    }
+
+    #[tokio::test]
+    async fn publish_slots_squash_skips_published_slots_on_retry() {
+        let service = test_service().await;
+        enable_jira_squash(&service).await;
+        let ticket = add_ticket(&service, "Test Jira", "KAR-1").await;
+        let published = add_slot(&service, &ticket, local(10, 9), Some(local(10, 9) + 50)).await;
+        let failed = add_slot(&service, &ticket, local(10, 10), Some(local(10, 10) + 30)).await;
+        add_entry(&service, &published, &ticket, Some(1000), None, 1000).await;
+        add_entry(&service, &failed, &ticket, None, Some("error"), 1000).await;
+
+        let result = service.publish_slots(None, None, None, true).await.unwrap();
+
+        assert_eq!(result.failed.len(), 1);
+        assert_eq!(result.failed[0].slot.model.id, failed.id);
+        assert_eq!(
+            result.failed[0].error,
+            "worklog of 30 s is under the 60 s Jira accepts"
+        );
+        let entry = entry(&service, &published).await.unwrap();
+        assert_eq!((entry.published_at, entry.error), (Some(1000), None));
     }
 
     #[test]

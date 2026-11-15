@@ -119,6 +119,13 @@ impl Settings {
             Self::Linear(settings) => settings.publish,
         }
     }
+
+    pub fn squash(&self) -> bool {
+        match self {
+            Self::Jira(settings) => settings.squash,
+            Self::Linear(settings) => settings.squash,
+        }
+    }
 }
 
 #[derive(Debug)]

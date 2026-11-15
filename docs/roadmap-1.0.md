@@ -229,7 +229,7 @@ logged from the start.
 - [x] Reimplement publishing: a slot is published to its ticket's
       connection when that connection has `publish` enabled. Jira as
       worklogs, Linear as comments (`Worklog <start>-<stop> (<duration>)`).
-- [ ] Squash per ticket per local day when `squash` is enabled. A slot
+- [x] Squash per ticket per local day when `squash` is enabled. A slot
       belongs to the day it started on. The worklog or comment starts at
       the earliest slot start of the day and lasts the summed duration.
 - [x] No rounding - Jira rejects worklogs under 60 s, so such entry fails

@@ -1,7 +1,7 @@
 use chrono::Utc;
 use nirvana_core::{
-    Change, ConnectionData, DomainError, Kind, Nirvana, NirvanaError, SecretStore, Slot,
-    SlotTarget, TicketConnection, TicketSort,
+    Change, ConnectionData, DomainError, Kind, Nirvana, NirvanaError, PublishState, SecretStore,
+    Slot, SlotTarget, TicketConnection, TicketSort,
 };
 use tempfile::TempDir;
 
@@ -43,10 +43,10 @@ async fn setup() -> Setup {
     }
 }
 
-fn summary(slots: &[Slot]) -> Vec<(&str, i64, Option<i64>)> {
+fn summary(slots: &[(Slot, PublishState)]) -> Vec<(&str, i64, Option<i64>)> {
     slots
         .iter()
-        .map(|slot| {
+        .map(|(slot, _)| {
             (
                 slot.ticket.ticket_key.as_str(),
                 slot.model.started_at,
@@ -126,12 +126,12 @@ async fn edit_and_delete() {
         )
         .await
         .unwrap();
-    let (edited, published) = service.get_slot(SlotTarget::At(now - 2000)).await.unwrap();
+    let (edited, state) = service.get_slot(SlotTarget::At(now - 2000)).await.unwrap();
     assert_eq!(edited.model.id, id);
     assert_eq!(edited.ticket.ticket_key, "KAR-1");
     assert_eq!(edited.model.started_at, now - 3000);
     assert_eq!(edited.model.stopped_at, Some(now - 1200));
-    assert!(!published);
+    assert_eq!(state, PublishState::Unpublished);
 
     service
         .edit_slot(id, None, None, None, Change::Clear)

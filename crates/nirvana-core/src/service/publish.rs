@@ -311,7 +311,7 @@ async fn store_result(
     Ok(())
 }
 
-fn stuck_before() -> i64 {
+pub(super) fn stuck_before() -> i64 {
     Utc::now().timestamp() - STUCK_AFTER
 }
 

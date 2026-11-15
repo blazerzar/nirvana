@@ -1,6 +1,6 @@
 use nirvana_core::{
-    ConnectionEdit, DomainError, Kind, Nirvana, NirvanaError, SecretLocation, SecretStore,
-    SlotTarget, TicketConnection, TicketSort,
+    ConnectionEdit, DomainError, Kind, Nirvana, NirvanaError, PublishState, SecretLocation,
+    SecretStore, SlotTarget, TicketConnection, TicketSort,
 };
 use tempfile::TempDir;
 
@@ -59,10 +59,10 @@ async fn opens_030_data_dir() {
     );
 
     assert_eq!(service.list_slots(0, None, false).await.unwrap().len(), 27);
-    let (_, published) = service.get_slot(SlotTarget::Id(1)).await.unwrap();
-    assert!(published);
-    let (_, published) = service.get_slot(SlotTarget::Id(9)).await.unwrap();
-    assert!(!published);
+    let (_, state) = service.get_slot(SlotTarget::Id(1)).await.unwrap();
+    assert_eq!(state, PublishState::Published);
+    let (_, state) = service.get_slot(SlotTarget::Id(9)).await.unwrap();
+    assert_eq!(state, PublishState::Unpublished);
     let running = service.running_slot().await.unwrap().unwrap();
     assert_eq!(running.model.id, 27);
     assert_eq!(running.ticket.ticket_key, "PROD-88");

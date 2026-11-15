@@ -213,7 +213,7 @@ async fn delete_connection_keeps_or_deletes_tickets() {
     );
     let slots = service.list_slots(now - 7200, None, false).await.unwrap();
     assert_eq!(slots.len(), 1);
-    assert_eq!(slots[0].ticket.ticket_key, "NIR-1");
+    assert_eq!(slots[0].0.ticket.ticket_key, "NIR-1");
 
     let err = service.delete_connection("Jira", true).await.unwrap_err();
     assert!(matches!(

@@ -22,11 +22,20 @@ pub struct Model {
 
 impl ActiveModelBehavior for ActiveModel {}
 
-impl Entity {
-    pub fn find_published() -> Select<Self> {
-        Self::find().filter(COLUMN.published_at.is_not_null())
+impl Model {
+    /// Returns whether the entry is claimed and has no result yet.
+    pub fn is_pending(&self) -> bool {
+        self.published_at.is_none() && self.error.is_none()
     }
 
+    /// Returns whether the entry is pending and was claimed before
+    /// `stuck_before`.
+    pub fn is_stuck(&self, stuck_before: i64) -> bool {
+        self.is_pending() && self.claimed_at < stuck_before
+    }
+}
+
+impl Entity {
     /// Returns a condition matching slots without publish entries.
     pub fn unpublished() -> Expr {
         super::slot::COLUMN.id.not_in_subquery(
@@ -37,13 +46,20 @@ impl Entity {
         )
     }
 
-    /// Returns a condition matching entries that failed, or that are pending
-    /// and were claimed before `stuck_before`.
+    /// Returns a condition matching [pending](Model::is_pending) entries.
+    pub fn pending() -> Expr {
+        COLUMN.published_at.is_null().and(COLUMN.error.is_null())
+    }
+
+    /// Returns a condition matching [stuck](Model::is_stuck) entries.
+    pub fn stuck(stuck_before: i64) -> Expr {
+        Self::pending().and(COLUMN.claimed_at.lt(stuck_before))
+    }
+
+    /// Returns a condition matching entries that failed or are
+    /// [stuck](Self::stuck).
     pub fn retryable(stuck_before: i64) -> Expr {
-        COLUMN.error.is_not_null().or(COLUMN
-            .published_at
-            .is_null()
-            .and(COLUMN.claimed_at.lt(stuck_before)))
+        COLUMN.error.is_not_null().or(Self::stuck(stuck_before))
     }
 
     /// Returns a condition matching slots with a [retryable](Self::retryable)

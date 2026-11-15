@@ -9,13 +9,14 @@ use chrono::Utc;
 use nirvana_entity::{publish_entry, slot, ticket};
 use sea_orm::sea_query::{Expr, Order, WindowStatement};
 use sea_orm::{
-    ActiveModelTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, ExprTrait, QueryFilter,
-    QueryOrder, QueryTrait, SelectExt, Set, TransactionTrait,
+    ActiveModelTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, ExprTrait, LoaderTrait,
+    ModelTrait, QueryFilter, QueryOrder, QueryTrait, SelectExt, Set, TransactionTrait,
 };
 
-use crate::domain::{Change, Slot, SlotTarget, StartResult};
+use crate::domain::{Change, PublishState, Slot, SlotTarget, StartResult};
 use crate::errors::{DomainError, NirvanaError};
 use crate::service::Nirvana;
+use crate::service::publish::stuck_before;
 
 const TICKET_STARTED_AT: &str = "ticket_started_at";
 
@@ -32,7 +33,8 @@ impl Nirvana {
     }
 
     /// Returns the slots of the active profile that overlap the range from
-    /// `from` to `to`, or unbounded, with their tickets, ordered by start.
+    /// `from` to `to`, or unbounded, with their tickets and publish states,
+    /// ordered by start.
     /// With `by_ticket` the slots of a ticket are grouped, in the order of
     /// each ticket's first slot.
     ///
@@ -45,7 +47,7 @@ impl Nirvana {
         from: i64,
         to: Option<i64>,
         by_ticket: bool,
-    ) -> Result<Vec<Slot>, NirvanaError> {
+    ) -> Result<Vec<(Slot, PublishState)>, NirvanaError> {
         let profile = self.find_active_profile().await?;
         let mut query =
             slot::Entity::find_in_range(profile.id, from, to).find_also_related(ticket::Entity);
@@ -58,14 +60,22 @@ impl Nirvana {
                 )
                 .order_by(TICKET_STARTED_AT, Order::Asc);
         }
-        query
+        let (models, tickets): (Vec<_>, Vec<_>) = query
             .order_by_asc(slot::COLUMN.started_at)
             .all(&self.db)
             .await?
             .into_iter()
-            .map(|(model, ticket)| {
+            .unzip();
+        let entries = models.load_many(publish_entry::Entity, &self.db).await?;
+        let stuck_before = stuck_before();
+        models
+            .into_iter()
+            .zip(tickets)
+            .zip(entries)
+            .map(|((model, ticket), entries)| {
                 let ticket = ticket.ok_or(DomainError::TicketIdNotFound(model.ticket_id))?;
-                Ok(Slot { model, ticket })
+                let state = PublishState::from_entries(&entries, stuck_before);
+                Ok((Slot { model, ticket }, state))
             })
             .collect()
     }
@@ -283,7 +293,7 @@ impl Nirvana {
         if entries.iter().any(|entry| entry.published_at.is_some()) {
             return Err(DomainError::SlotAlreadyPublished.into());
         }
-        if entries.iter().any(|entry| entry.error.is_none()) {
+        if entries.iter().any(publish_entry::Model::is_pending) {
             return Err(DomainError::SlotBeingPublished.into());
         }
         if !entries.is_empty()
@@ -332,14 +342,13 @@ impl Nirvana {
     }
 
     /// Returns the slot of the active profile with the ID, or tracked at the
-    /// time, of `target`, with its ticket and whether it is published to any
-    /// connection.
+    /// time, of `target`, with its ticket and publish state.
     ///
     /// # Errors
     ///
     /// Returns an error if the time is in the future, no profile is active,
     /// the config is unavailable, no slot matches or a database query fails.
-    pub async fn get_slot(&self, target: SlotTarget) -> Result<(Slot, bool), NirvanaError> {
+    pub async fn get_slot(&self, target: SlotTarget) -> Result<(Slot, PublishState), NirvanaError> {
         if let SlotTarget::At(at) = target {
             reject_future_time(at)?;
         }
@@ -362,8 +371,12 @@ impl Nirvana {
             .into());
         };
         let ticket = ticket.ok_or(DomainError::TicketIdNotFound(model.ticket_id))?;
-        let published = is_published(&self.db, model.id).await?;
-        Ok((Slot { model, ticket }, published))
+        let entries = model
+            .find_related(publish_entry::Entity)
+            .all(&self.db)
+            .await?;
+        let state = PublishState::from_entries(&entries, stuck_before());
+        Ok((Slot { model, ticket }, state))
     }
 
     /// Deletes the slot `id` of the active profile with its publish entries.
@@ -377,8 +390,7 @@ impl Nirvana {
         let txn = self.db.begin().await?;
         if publish_entry::Entity::find()
             .filter(publish_entry::COLUMN.slot_id.eq(id))
-            .filter(publish_entry::COLUMN.published_at.is_null())
-            .filter(publish_entry::COLUMN.error.is_null())
+            .filter(publish_entry::Entity::pending())
             .exists(&txn)
             .await?
         {
@@ -410,14 +422,6 @@ async fn find_running_slot(
     };
     let ticket = ticket.ok_or(DomainError::TicketIdNotFound(model.ticket_id))?;
     Ok(Some(Slot { model, ticket }))
-}
-
-/// Returns whether the slot has an ok publish entry.
-async fn is_published(db: &impl ConnectionTrait, slot_id: i64) -> Result<bool, NirvanaError> {
-    Ok(publish_entry::Entity::find_published()
-        .filter(publish_entry::COLUMN.slot_id.eq(slot_id))
-        .exists(db)
-        .await?)
 }
 
 /// Returns the ticket of the last stopped slot of the profile, skipping the
@@ -592,7 +596,7 @@ mod tests {
             connection_id: Set(ticket.connection_id.unwrap()),
             published_at: Set(published_at),
             error: Set(error.map(str::to_string)),
-            claimed_at: Set(0),
+            claimed_at: Set(Utc::now().timestamp()),
         }
         .insert(&service.db)
         .await
@@ -1124,7 +1128,7 @@ mod tests {
             .await
             .unwrap()
             .into_iter()
-            .map(|slot| slot.model.id)
+            .map(|(slot, _)| slot.model.id)
             .collect()
     }
 
@@ -1163,8 +1167,48 @@ mod tests {
         let slots = service.list_slots(now - 3600, None, false).await.unwrap();
 
         assert_eq!(slots.len(), 1);
-        assert_eq!(slots[0].model, slot);
-        assert_eq!(slots[0].ticket, ticket);
+        assert_eq!(slots[0].0.model, slot);
+        assert_eq!(slots[0].0.ticket, ticket);
+    }
+
+    #[tokio::test]
+    async fn list_slots_returns_publish_states() {
+        let service = test_service().await;
+        let ticket = add_ticket(&service, "JIRA-1", true).await;
+        let now = Utc::now().timestamp();
+        let unpublished = add_slot(&service, &ticket, now - 3000, Some(now - 2700)).await;
+        let published = add_slot(&service, &ticket, now - 2400, Some(now - 2100)).await;
+        let pending = add_slot(&service, &ticket, now - 1800, Some(now - 1500)).await;
+        let stuck = add_slot(&service, &ticket, now - 1200, Some(now - 900)).await;
+        let failed = add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
+        add_publish_entry(&service, &ticket, &published, Some(now), None).await;
+        add_publish_entry(&service, &ticket, &pending, None, None).await;
+        let mut stuck_entry: publish_entry::ActiveModel =
+            add_publish_entry(&service, &ticket, &stuck, None, None)
+                .await
+                .into();
+        stuck_entry.claimed_at = Set(now - 3600);
+        stuck_entry.update(&service.db).await.unwrap();
+        add_publish_entry(&service, &ticket, &failed, None, Some("error")).await;
+
+        let states: Vec<_> = service
+            .list_slots(now - 3600, None, false)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|(slot, state)| (slot.model.id, state))
+            .collect();
+
+        assert_eq!(
+            states,
+            [
+                (unpublished.id, PublishState::Unpublished),
+                (published.id, PublishState::Published),
+                (pending.id, PublishState::Pending),
+                (stuck.id, PublishState::Failed),
+                (failed.id, PublishState::Failed),
+            ]
+        );
     }
 
     #[tokio::test]
@@ -1693,11 +1737,11 @@ mod tests {
         let now = Utc::now().timestamp();
         let slot = add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
 
-        let (found, published) = service.get_slot(SlotTarget::Id(slot.id)).await.unwrap();
+        let (found, state) = service.get_slot(SlotTarget::Id(slot.id)).await.unwrap();
 
         assert_eq!(found.model, slot);
         assert_eq!(found.ticket, ticket);
-        assert!(!published);
+        assert_eq!(state, PublishState::Unpublished);
     }
 
     #[tokio::test]
@@ -1769,22 +1813,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_slot_reports_published_slot() {
+    async fn get_slot_reports_publish_state() {
         let service = test_service().await;
         let ticket = add_ticket(&service, "JIRA-1", true).await;
         let now = Utc::now().timestamp();
-        let published = add_slot(&service, &ticket, now - 1200, Some(now - 900)).await;
+        let published = add_slot(&service, &ticket, now - 1800, Some(now - 1500)).await;
+        let pending = add_slot(&service, &ticket, now - 1200, Some(now - 900)).await;
         let failed = add_slot(&service, &ticket, now - 600, Some(now - 300)).await;
         add_publish_entry(&service, &ticket, &published, Some(now), None).await;
+        add_publish_entry(&service, &ticket, &pending, None, None).await;
         add_publish_entry(&service, &ticket, &failed, None, Some("error")).await;
 
-        let (_, is_published) = service
-            .get_slot(SlotTarget::Id(published.id))
-            .await
-            .unwrap();
-        assert!(is_published);
-        let (_, is_published) = service.get_slot(SlotTarget::Id(failed.id)).await.unwrap();
-        assert!(!is_published);
+        for (slot, expected) in [
+            (published, PublishState::Published),
+            (pending, PublishState::Pending),
+            (failed, PublishState::Failed),
+        ] {
+            let (_, state) = service.get_slot(SlotTarget::Id(slot.id)).await.unwrap();
+            assert_eq!(state, expected);
+        }
     }
 
     #[tokio::test]

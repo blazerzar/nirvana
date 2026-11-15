@@ -243,17 +243,20 @@ logged from the start.
       selected, like in `list`. Only unpublished slots are sent, failed ones
       only with `--retry`.
 - [x] Fix error messages of the errors publishing returns (decision 21).
-- [ ] Derive slot publish state from publish entries: unpublished, failed,
-      published (see the implementation guide).
-- [ ] Show the publish state of each slot in `list` as a marker (published,
-      error), returned by core with the slots.
+- [x] Derive slot publish state from publish entries: unpublished, pending,
+      failed, published (see the implementation guide).
+- [x] Show the publish state of each slot in `list` as a marker (published,
+      pending, error), returned by core with the slots.
+- [ ] Allow deleting a stuck slot (pending entry claimed more than 60 s
+      ago) after a confirmation.
 - [ ] Maybe add a command that shows one slot fully (publish state per
       target with errors).
 - [ ] Read the slots to publish inside the claim transaction, so a slot
       edited or deleted between the read and the claim is not sent with
       stale data and does not fail the whole publish.
-- [ ] Claim slots in chunks, so `publish --all` with thousands of
-      unpublished slots stays under SQLite's bound variable limit.
+- [ ] Stay under SQLite's bound variable limit with thousands of slots:
+      claim slots in chunks in `publish --all`, and load the publish
+      entries of `list` without binding every slot ID.
 
 ## E2E tests
 

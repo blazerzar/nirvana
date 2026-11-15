@@ -1,26 +1,28 @@
 use chrono::Local;
 use console::{Alignment, Term, style};
-use nirvana_core::Nirvana;
+use nirvana_core::{Nirvana, PublishState};
 
 use crate::cli::ListArgs;
 use crate::cli::table::{self, Column};
 use crate::cli::time::{format_duration, format_timestamp, parse_time, today_start};
 
-const COLUMNS: [Column; 5] = [
+const COLUMNS: [Column; 6] = [
     Column::new("KEY"),
     Column::new("TITLE").max_width(50),
     Column::new("START"),
     Column::new("STOP"),
     Column::new("DURATION").align(Alignment::Right),
+    Column::new("PUBLISHED").align(Alignment::Center),
 ];
 
-const COLUMNS_WITH_ID: [Column; 6] = [
+const COLUMNS_WITH_ID: [Column; 7] = [
     Column::new("ID").align(Alignment::Right),
     Column::new("KEY"),
     Column::new("TITLE").max_width(50),
     Column::new("START"),
     Column::new("STOP"),
     Column::new("DURATION").align(Alignment::Right),
+    Column::new("PUBLISHED").align(Alignment::Center),
 ];
 
 pub(crate) async fn run(args: ListArgs) -> anyhow::Result<()> {
@@ -40,9 +42,9 @@ pub(crate) async fn run(args: ListArgs) -> anyhow::Result<()> {
     }
 
     let mut previous_ticket_id = None;
-    let rows: Vec<(String, [String; 5])> = slots
+    let rows: Vec<(String, [String; 6])> = slots
         .into_iter()
-        .map(|slot| {
+        .map(|(slot, state)| {
             let duration = format_duration(slot.elapsed());
             let same_ticket = args.by_ticket
                 && previous_ticket_id.replace(slot.ticket.id) == Some(slot.ticket.id);
@@ -62,21 +64,31 @@ pub(crate) async fn run(args: ListArgs) -> anyhow::Result<()> {
                     .map(format_timestamp)
                     .unwrap_or_default(),
                 duration,
+                marker(state),
             ];
             (slot.model.id.to_string(), row)
         })
         .collect();
 
     if args.show_ids {
-        let rows: Vec<[String; 6]> = rows
+        let rows: Vec<[String; 7]> = rows
             .into_iter()
-            .map(|(id, [key, title, start, stop, duration])| {
-                [id, key, title, start, stop, duration]
+            .map(|(id, [key, title, start, stop, duration, marker])| {
+                [id, key, title, start, stop, duration, marker]
             })
             .collect();
         table::print(&term, &COLUMNS_WITH_ID, &rows)
     } else {
-        let rows: Vec<[String; 5]> = rows.into_iter().map(|(_, row)| row).collect();
+        let rows: Vec<[String; 6]> = rows.into_iter().map(|(_, row)| row).collect();
         table::print(&term, &COLUMNS, &rows)
+    }
+}
+
+fn marker(state: PublishState) -> String {
+    match state {
+        PublishState::Unpublished => String::new(),
+        PublishState::Pending => style("○").yellow().to_string(),
+        PublishState::Failed => style("×").red().to_string(),
+        PublishState::Published => style("✓").green().to_string(),
     }
 }

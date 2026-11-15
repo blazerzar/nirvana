@@ -1,6 +1,6 @@
 use console::{Term, style};
 use dialoguer::Confirm;
-use nirvana_core::{Nirvana, Slot};
+use nirvana_core::{Nirvana, PublishState, Slot};
 use tracing::info;
 
 use crate::cli::time::{format_duration, format_timestamp};
@@ -11,11 +11,11 @@ pub(crate) async fn run(args: DeleteArgs) -> anyhow::Result<()> {
 
     let service = Nirvana::new().await?;
     let term = Term::stdout();
-    let (slot, published) = service.get_slot(target).await?;
+    let (slot, state) = service.get_slot(target).await?;
     let description = describe(&slot);
-    let prompt = match published {
-        true => format!("Slot {description} is published. Delete it anyway?"),
-        false => format!("Are you sure you want to delete slot {description}?"),
+    let prompt = match state {
+        PublishState::Published => format!("Slot {description} is published. Delete it anyway?"),
+        _ => format!("Are you sure you want to delete slot {description}?"),
     };
     if !args.yes
         && !Confirm::with_theme(&theme())
@@ -31,7 +31,7 @@ pub(crate) async fn run(args: DeleteArgs) -> anyhow::Result<()> {
     }
 
     service.delete_slot(slot.model.id).await?;
-    info!(key = %slot.ticket.ticket_key, slot_id = slot.model.id, published, "slot deleted");
+    info!(key = %slot.ticket.ticket_key, slot_id = slot.model.id, ?state, "slot deleted");
     term.write_line(&format!(
         "{} slot {} {} {}",
         style("Deleted").green(),

@@ -396,13 +396,18 @@ slot's state is **derived** from `publish_entries`, never stored:
 | Entries of the slot | State |
 |---|---|
 | none | **unpublished** |
-| no ok entry, at least one failed or pending | **failed** |
+| at least one pending, claimed in the last 60 s | **pending** |
+| no ok entry, at least one failed or stuck | **failed** |
 | every entry ok | **published** |
-| some ok, some failed or pending | **partial** (Portal stage) |
+| some ok, some failed or stuck | **partial** (Portal stage) |
 
-- A pending entry (both NULL) left after an interrupted publish counts as
-  failed, because the backend may have received it. It is retried once it is
-  stuck (claimed more than 60 s ago).
+- A pending entry (both NULL) is being published. Once it is stuck
+  (claimed more than 60 s ago, e.g. after an interrupted publish) it counts
+  as failed, because the backend may have received it, and it is retried
+  with `--retry`.
+- The CLI `list` has a PUBLISHED column that marks published slots with
+  `✓`, pending with `○` and failed with `×`. Unpublished slots get no
+  marker.
 - Whether an unpublished slot is sent depends on its connection's `publish`
   setting at publish time, not on its state. Unpublished counts (footer,
   publish button, week header) come from the same selection publish uses,

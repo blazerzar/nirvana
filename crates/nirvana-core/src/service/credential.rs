@@ -197,43 +197,64 @@ mod tests {
     use sea_orm::ConnectionTrait;
 
     use super::*;
-    use crate::domain::{ConnectionData, Kind};
     use crate::secrets::read_credential;
-    use crate::service::test_support::{keyring_passwords, test_service};
+    use crate::service::test_service::TestConnection::{
+        Jira, JiraDc, KeyringJira, KeyringLinear, Linear,
+    };
+    use crate::service::test_service::{TestConnection, TestService};
 
-    async fn add_keyring_connection(service: &Nirvana) -> i64 {
+    const PLAINTEXT_CONNECTIONS: [TestConnection; 3] = [Jira, JiraDc, Linear];
+    const KEYRING_CONNECTIONS: [TestConnection; 2] = [KeyringJira, KeyringLinear];
+    const CONNECTIONS: [TestConnection; 5] = [Jira, KeyringJira, JiraDc, Linear, KeyringLinear];
+
+    async fn credential_row(
+        service: &TestService,
+        connection: TestConnection,
+    ) -> credential::Model {
+        let profile = service.find_active_profile().await.unwrap();
         service
-            .add_connection(ConnectionData {
-                name: "Keyring Jira".to_string(),
-                kind: Kind::JiraDc,
-                host: "jira.example.com".to_string(),
-                identity: None,
-                secret_store: SecretStore::Keyring,
-                token: "keyring-token".into(),
-            })
+            .find_credential(profile.id, connection.name())
             .await
             .unwrap()
-            .model
-            .id
+            .1
     }
 
-    async fn credential_row(service: &Nirvana, name: &str) -> credential::Model {
-        let profile = service.find_active_profile().await.unwrap();
-        service.find_credential(profile.id, name).await.unwrap().1
+    async fn expected_credential(service: &TestService, connection: TestConnection) -> Credential {
+        let location = match service.connection_data(connection).secret_store {
+            SecretStore::Plaintext => SecretLocation::Plaintext,
+            SecretStore::Keyring => {
+                let account = credential_row(service, connection).await.credential;
+                assert_account(&account, connection);
+                SecretLocation::Keyring { account }
+            }
+            SecretStore::Env => unreachable!(),
+        };
+        Credential {
+            connection: connection.name().to_string(),
+            location,
+        }
     }
 
-    async fn token(service: &Nirvana, connection_id: i64) -> String {
-        read_credential(&service.keyring, connection_id, &service.db)
+    async fn token(service: &TestService, connection: TestConnection) -> String {
+        let id = service.connection(connection).await.model.id;
+        read_credential(&service.keyring, id, &service.db)
             .await
             .unwrap()
             .expose_secret()
             .to_string()
     }
 
-    fn assert_key(account: &str, prefix: &str) {
-        let key = account.strip_prefix(prefix).unwrap();
-        assert_eq!(key.len(), 8);
-        assert!(key.chars().all(|c| c.is_ascii_hexdigit()));
+    fn tokens(connections: &[TestConnection]) -> Vec<&'static str> {
+        let mut tokens: Vec<_> = connections.iter().map(|c| c.token()).collect();
+        tokens.sort_unstable();
+        tokens
+    }
+
+    fn assert_account(account: &str, connection: TestConnection) {
+        let prefix = format!("nirvana_test_{}_", connection.name());
+        let key = account.strip_prefix(&prefix).unwrap();
+        assert_eq!(key.len(), 8, "{account}");
+        assert!(key.chars().all(|c| c.is_ascii_hexdigit()), "{account}");
     }
 
     fn unavailable_keyring(service: &mut Nirvana) {
@@ -242,96 +263,94 @@ mod tests {
 
     #[tokio::test]
     async fn list_credentials_returns_locations_without_tokens() {
-        let service = test_service().await;
-        add_keyring_connection(&service).await;
-        let account = credential_row(&service, "Keyring Jira").await.credential;
+        let service = TestService::new(&CONNECTIONS).await;
+        let mut expected = Vec::new();
+        for connection in CONNECTIONS {
+            expected.push(expected_credential(&service, connection).await);
+        }
 
         let credentials = service.list_credentials().await.unwrap();
 
-        assert_eq!(
-            credentials,
-            [
-                Credential {
-                    connection: "Test Jira".to_string(),
-                    location: SecretLocation::Plaintext,
-                },
-                Credential {
-                    connection: "Keyring Jira".to_string(),
-                    location: SecretLocation::Keyring { account },
-                },
-            ]
-        );
+        assert_eq!(credentials, expected);
     }
 
     #[tokio::test]
     async fn get_credential_returns_location_without_token() {
-        let service = test_service().await;
-        add_keyring_connection(&service).await;
-        let account = credential_row(&service, "Keyring Jira").await.credential;
+        let service = TestService::new(&CONNECTIONS).await;
 
-        let plaintext = service.get_credential("Test Jira").await.unwrap();
-        let keyring = service.get_credential("Keyring Jira").await.unwrap();
+        for connection in CONNECTIONS {
+            let credential = service.get_credential(connection.name()).await.unwrap();
 
-        assert_eq!(
-            [plaintext, keyring],
-            [
-                Credential {
-                    connection: "Test Jira".to_string(),
-                    location: SecretLocation::Plaintext,
-                },
-                Credential {
-                    connection: "Keyring Jira".to_string(),
-                    location: SecretLocation::Keyring { account },
-                },
-            ]
-        );
+            assert_eq!(credential, expected_credential(&service, connection).await);
+        }
     }
 
     #[tokio::test]
     async fn update_credential_replaces_plaintext_token() {
-        let service = test_service().await;
-        let row = credential_row(&service, "Test Jira").await;
+        let service = TestService::new(&PLAINTEXT_CONNECTIONS).await;
 
-        service
-            .update_credential("Test Jira", "new-token".into())
-            .await
-            .unwrap();
+        for connection in PLAINTEXT_CONNECTIONS {
+            let row = credential_row(&service, connection).await;
 
-        assert_eq!(
-            credential_row(&service, "Test Jira").await,
-            credential::Model {
-                credential: "new-token".to_string(),
-                ..row
-            }
-        );
+            service
+                .update_credential(connection.name(), "new-token".into())
+                .await
+                .unwrap();
+
+            assert_eq!(
+                credential_row(&service, connection).await,
+                credential::Model {
+                    credential: "new-token".to_string(),
+                    ..row
+                },
+                "{}",
+                connection.name()
+            );
+        }
     }
 
     #[tokio::test]
     async fn update_credential_replaces_keyring_token() {
-        let service = test_service().await;
-        let id = add_keyring_connection(&service).await;
-        let row = credential_row(&service, "Keyring Jira").await;
+        let service = TestService::new(&KEYRING_CONNECTIONS).await;
 
-        service
-            .update_credential("Keyring Jira", "new-token".into())
-            .await
-            .unwrap();
+        for connection in KEYRING_CONNECTIONS {
+            let row = credential_row(&service, connection).await;
+            let new_token = format!("new-{}", connection.token());
 
-        assert_eq!(credential_row(&service, "Keyring Jira").await, row);
-        assert_eq!(token(&service, id).await, "new-token");
-        assert_eq!(keyring_passwords(&service), ["new-token"]);
+            service
+                .update_credential(connection.name(), new_token.clone().into())
+                .await
+                .unwrap();
+
+            assert_eq!(
+                credential_row(&service, connection).await,
+                row,
+                "{}",
+                connection.name()
+            );
+            assert_eq!(
+                token(&service, connection).await,
+                new_token,
+                "{}",
+                connection.name()
+            );
+        }
+        assert_eq!(
+            service.keyring_passwords(),
+            ["new-keyring-jira-token", "new-keyring-linear-token"]
+        );
     }
 
     #[tokio::test]
     async fn update_credential_rejects_env() {
-        let service = test_service().await;
-        let row = credential_row(&service, "Test Jira").await;
+        let service = TestService::new(&[Jira]).await;
+        let row = credential_row(&service, Jira).await;
         set_credential(&service.db, row, SecretStore::Env, "NIRVANA_TOKEN".into())
             .await
             .unwrap();
 
         let err = service
-            .update_credential("Test Jira", "new-token".into())
+            .update_credential(Jira.name(), "new-token".into())
             .await
             .unwrap_err();
 
@@ -343,67 +362,86 @@ mod tests {
 
     #[tokio::test]
     async fn move_credential_moves_plaintext_to_keyring() {
-        let service = test_service().await;
-        let id = credential_row(&service, "Test Jira").await.connection_id;
+        let service = TestService::new(&PLAINTEXT_CONNECTIONS).await;
 
-        service
-            .move_credential("Test Jira", SecretStore::Keyring)
-            .await
-            .unwrap();
+        for connection in PLAINTEXT_CONNECTIONS {
+            service
+                .move_credential(connection.name(), SecretStore::Keyring)
+                .await
+                .unwrap();
 
-        let row = credential_row(&service, "Test Jira").await;
-        assert_eq!(row.secret_store, SecretStore::Keyring);
-        assert_key(&row.credential, "nirvana_test_Test Jira_");
-        assert_eq!(token(&service, id).await, "token");
-        assert_eq!(keyring_passwords(&service), ["token"]);
+            let row = credential_row(&service, connection).await;
+            assert_eq!(
+                row.secret_store,
+                SecretStore::Keyring,
+                "{}",
+                connection.name()
+            );
+            assert_account(&row.credential, connection);
+            assert_eq!(
+                token(&service, connection).await,
+                connection.token(),
+                "{}",
+                connection.name()
+            );
+        }
+        assert_eq!(service.keyring_passwords(), tokens(&PLAINTEXT_CONNECTIONS));
     }
 
     #[tokio::test]
     async fn move_credential_moves_keyring_to_plaintext() {
-        let service = test_service().await;
-        let id = add_keyring_connection(&service).await;
+        let service = TestService::new(&KEYRING_CONNECTIONS).await;
 
-        service
-            .move_credential("Keyring Jira", SecretStore::Plaintext)
-            .await
-            .unwrap();
+        for connection in KEYRING_CONNECTIONS {
+            service
+                .move_credential(connection.name(), SecretStore::Plaintext)
+                .await
+                .unwrap();
 
-        let row = credential_row(&service, "Keyring Jira").await;
-        assert_eq!(row.secret_store, SecretStore::Plaintext);
-        assert_eq!(row.credential, "keyring-token");
-        assert_eq!(token(&service, id).await, "keyring-token");
-        assert!(keyring_passwords(&service).is_empty());
+            let row = credential_row(&service, connection).await;
+            assert_eq!(
+                row.secret_store,
+                SecretStore::Plaintext,
+                "{}",
+                connection.name()
+            );
+            assert_eq!(row.credential, connection.token(), "{}", connection.name());
+        }
+        assert!(service.keyring_passwords().is_empty());
     }
 
     #[tokio::test]
     async fn move_credential_rejects_same_store() {
-        let service = test_service().await;
-        add_keyring_connection(&service).await;
+        let service = TestService::new(&[Jira, KeyringJira]).await;
 
-        for (name, store) in [
-            ("Test Jira", SecretStore::Plaintext),
-            ("Keyring Jira", SecretStore::Keyring),
+        for (connection, store) in [
+            (Jira, SecretStore::Plaintext),
+            (KeyringJira, SecretStore::Keyring),
         ] {
-            let row = credential_row(&service, name).await;
+            let name = connection.name();
+            let row = credential_row(&service, connection).await;
 
             let err = service.move_credential(name, store).await.unwrap_err();
 
-            assert!(matches!(
-                err,
-                NirvanaError::Domain(DomainError::CredentialAlreadyIn(n, s)) if n == name && s == store
-            ));
-            assert_eq!(credential_row(&service, name).await, row);
+            assert!(
+                matches!(
+                    &err,
+                    NirvanaError::Domain(DomainError::CredentialAlreadyIn(n, s)) if n == name && *s == store
+                ),
+                "{name}: {err:?}"
+            );
+            assert_eq!(credential_row(&service, connection).await, row, "{name}");
         }
-        assert_eq!(keyring_passwords(&service), ["keyring-token"]);
+        assert_eq!(service.keyring_passwords(), [KeyringJira.token()]);
     }
 
     #[tokio::test]
     async fn move_credential_rejects_env() {
-        let service = test_service().await;
-        let row = credential_row(&service, "Test Jira").await;
+        let service = TestService::new(&[Jira]).await;
+        let row = credential_row(&service, Jira).await;
 
         let err = service
-            .move_credential("Test Jira", SecretStore::Env)
+            .move_credential(Jira.name(), SecretStore::Env)
             .await
             .unwrap_err();
 
@@ -411,48 +449,46 @@ mod tests {
             err,
             NirvanaError::Secret(SecretError::UnsupportedStore(SecretStore::Env))
         ));
-        assert_eq!(credential_row(&service, "Test Jira").await, row);
+        assert_eq!(credential_row(&service, Jira).await, row);
     }
 
     #[tokio::test]
     async fn credential_changes_reject_missing_connection() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[Jira]).await;
         service.create_profile("work".to_string()).await.unwrap();
 
-        for profile in ["test", "work"] {
+        for (profile, name) in [("test", "missing"), ("work", Jira.name())] {
             service.switch_profile(profile).await.unwrap();
-            let name = if profile == "test" {
-                "missing"
-            } else {
-                "Test Jira"
-            };
 
             let got = service.get_credential(name).await.map(|_| ());
             let updated = service.update_credential(name, "new-token".into()).await;
             let moved = service.move_credential(name, SecretStore::Keyring).await;
 
             for err in [got.unwrap_err(), updated.unwrap_err(), moved.unwrap_err()] {
-                assert!(matches!(
-                    err,
-                    NirvanaError::Domain(DomainError::ConnectionNotFound(n)) if n == name
-                ));
+                assert!(
+                    matches!(
+                        &err,
+                        NirvanaError::Domain(DomainError::ConnectionNotFound(n)) if n == name
+                    ),
+                    "{profile}: {err:?}"
+                );
             }
         }
         service.switch_profile("test").await.unwrap();
         assert_eq!(
-            credential_row(&service, "Test Jira").await.credential,
-            "token"
+            credential_row(&service, Jira).await.credential,
+            Jira.token()
         );
     }
 
     #[tokio::test]
     async fn move_to_unavailable_keyring_keeps_plaintext_row() {
-        let mut service = test_service().await;
-        let row = credential_row(&service, "Test Jira").await;
+        let mut service = TestService::new(&[Jira]).await;
+        let row = credential_row(&service, Jira).await;
         unavailable_keyring(&mut service);
 
         let err = service
-            .move_credential("Test Jira", SecretStore::Keyring)
+            .move_credential(Jira.name(), SecretStore::Keyring)
             .await
             .unwrap_err();
 
@@ -460,13 +496,13 @@ mod tests {
             err,
             NirvanaError::Secret(SecretError::KeyringUnavailable(_))
         ));
-        assert_eq!(credential_row(&service, "Test Jira").await, row);
+        assert_eq!(credential_row(&service, Jira).await, row);
     }
 
     #[tokio::test]
     async fn move_to_keyring_removes_entry_when_row_update_fails() {
-        let service = test_service().await;
-        let row = credential_row(&service, "Test Jira").await;
+        let service = TestService::new(&[Jira]).await;
+        let row = credential_row(&service, Jira).await;
         service
             .db
             .execute_unprepared(
@@ -477,24 +513,23 @@ mod tests {
             .unwrap();
 
         let err = service
-            .move_credential("Test Jira", SecretStore::Keyring)
+            .move_credential(Jira.name(), SecretStore::Keyring)
             .await
             .unwrap_err();
 
         assert!(matches!(err, NirvanaError::Db(_)), "{err:?}");
-        assert_eq!(credential_row(&service, "Test Jira").await, row);
-        assert!(keyring_passwords(&service).is_empty());
+        assert_eq!(credential_row(&service, Jira).await, row);
+        assert!(service.keyring_passwords().is_empty());
     }
 
     #[tokio::test]
     async fn update_on_unavailable_keyring_keeps_token() {
-        let mut service = test_service().await;
-        let id = add_keyring_connection(&service).await;
+        let mut service = TestService::new(&[KeyringJira]).await;
         let keyring = service.keyring.clone();
         unavailable_keyring(&mut service);
 
         let err = service
-            .update_credential("Keyring Jira", "new-token".into())
+            .update_credential(KeyringJira.name(), "new-token".into())
             .await
             .unwrap_err();
 
@@ -503,18 +538,17 @@ mod tests {
             NirvanaError::Secret(SecretError::KeyringUnavailable(_))
         ));
         service.keyring = keyring;
-        assert_eq!(token(&service, id).await, "keyring-token");
+        assert_eq!(token(&service, KeyringJira).await, KeyringJira.token());
     }
 
     #[tokio::test]
     async fn move_from_unavailable_keyring_keeps_keyring_row() {
-        let mut service = test_service().await;
-        add_keyring_connection(&service).await;
-        let row = credential_row(&service, "Keyring Jira").await;
+        let mut service = TestService::new(&[KeyringJira]).await;
+        let row = credential_row(&service, KeyringJira).await;
         unavailable_keyring(&mut service);
 
         let err = service
-            .move_credential("Keyring Jira", SecretStore::Plaintext)
+            .move_credential(KeyringJira.name(), SecretStore::Plaintext)
             .await
             .unwrap_err();
 
@@ -522,6 +556,6 @@ mod tests {
             err,
             NirvanaError::Secret(SecretError::KeyringUnavailable(_))
         ));
-        assert_eq!(credential_row(&service, "Keyring Jira").await, row);
+        assert_eq!(credential_row(&service, KeyringJira).await, row);
     }
 }

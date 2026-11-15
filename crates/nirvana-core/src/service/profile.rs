@@ -254,10 +254,8 @@ mod tests {
             .await
             .unwrap();
         service.create_profile("work".to_string()).await.unwrap();
-        let mut passwords = service.keyring_passwords();
-        passwords.sort();
         assert_eq!(
-            passwords,
+            service.keyring_passwords(),
             ["kept", KeyringJira.token(), KeyringLinear.token()]
         );
 

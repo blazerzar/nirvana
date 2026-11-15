@@ -36,6 +36,8 @@ pub(super) enum TestConnection {
     Linear,
     /// "Test Jira", a Jira Cloud connection.
     Jira,
+    /// "Test Jira DC", a Jira Data Center connection.
+    JiraDc,
     /// "Keyring Linear", with its token in the keyring.
     KeyringLinear,
     /// "Keyring Jira", a Jira Cloud connection with its token in the keyring.
@@ -47,6 +49,7 @@ impl TestConnection {
         match self {
             Self::Linear => "Test Linear",
             Self::Jira => "Test Jira",
+            Self::JiraDc => "Test Jira DC",
             Self::KeyringLinear => "Keyring Linear",
             Self::KeyringJira => "Keyring Jira",
         }
@@ -56,6 +59,7 @@ impl TestConnection {
         match self {
             Self::Linear => "linear-token",
             Self::Jira => "jira-token",
+            Self::JiraDc => "jira-dc-token",
             Self::KeyringLinear => "keyring-linear-token",
             Self::KeyringJira => "keyring-jira-token",
         }
@@ -140,9 +144,12 @@ impl TestService {
             TestConnection::Jira | TestConnection::KeyringJira => {
                 (Kind::JiraCloud, Some("tester@example.com".to_string()))
             }
+            TestConnection::JiraDc => (Kind::JiraDc, None),
         };
         let secret_store = match connection {
-            TestConnection::Linear | TestConnection::Jira => SecretStore::Plaintext,
+            TestConnection::Linear | TestConnection::Jira | TestConnection::JiraDc => {
+                SecretStore::Plaintext
+            }
             TestConnection::KeyringLinear | TestConnection::KeyringJira => SecretStore::Keyring,
         };
         ConnectionData {
@@ -347,16 +354,19 @@ impl TestService {
             .unwrap()
     }
 
-    /// Returns the passwords stored in the keyring.
+    /// Returns the passwords stored in the keyring, sorted.
     pub(super) fn keyring_passwords(&self) -> Vec<String> {
-        self.keyring_entries()
+        let mut passwords: Vec<String> = self
+            .keyring_entries()
             .into_iter()
             .filter_map(|entry| match entry.get_password() {
                 Ok(password) => Some(password),
                 Err(keyring_core::Error::NoEntry) => None,
                 Err(e) => panic!("keyring read failed: {e}"),
             })
-            .collect()
+            .collect();
+        passwords.sort();
+        passwords
     }
 
     /// Deletes every password stored in the keyring.

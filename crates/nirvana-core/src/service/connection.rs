@@ -1144,6 +1144,7 @@ mod tests {
             profile_id: Set(service.find_active_profile().await.unwrap().id),
             connection_id: Set(Some(connection_id)),
             ticket_key: Set(key.to_string()),
+            title: Set(String::new()),
             synced_at: Set(0),
             ..Default::default()
         }

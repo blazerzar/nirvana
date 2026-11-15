@@ -468,6 +468,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn migrated_030_ticket_without_summary_gets_empty_title() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_file =
+            changed_fixture(dir.path(), "update tickets set summary = null where id = 1").await;
+        let db = open(&db_file).await.unwrap();
+
+        assert_eq!(
+            text_rows(&db, "select title from tickets where id = 1").await,
+            [""]
+        );
+    }
+
+    #[tokio::test]
     async fn migration_fails_when_slot_connection_differs_from_ticket() {
         let error =
             migrate_changed_fixture("update slots set connection_id = 2 where id = 1").await;
@@ -496,7 +509,7 @@ mod tests {
         assert!(migrated_schema.contains(&"connections|profile_id|INTEGER|1||0".to_string()));
         assert!(migrated_schema.contains(&"tickets|profile_id|INTEGER|1||0".to_string()));
         assert!(migrated_schema.contains(&"tickets|connection_id|INTEGER|0||0".to_string()));
-        assert!(migrated_schema.contains(&"tickets|title|TEXT|0||0".to_string()));
+        assert!(migrated_schema.contains(&"tickets|title|TEXT|1||0".to_string()));
         assert!(migrated_schema.contains(&"tickets|synced_at|INTEGER|1||0".to_string()));
         assert!(
             migrated_schema
@@ -773,6 +786,7 @@ mod tests {
             profile_id: Set(profile.id),
             connection_id: Set(Some(connection.id)),
             ticket_key: Set("KEY-1".to_string()),
+            title: Set(String::new()),
             synced_at: Set(0),
             ..Default::default()
         }
@@ -826,6 +840,7 @@ mod tests {
             let ticket = ticket::ActiveModel {
                 profile_id: Set(profile.id),
                 ticket_key: Set("KEY-1".to_string()),
+                title: Set(String::new()),
                 synced_at: Set(0),
                 ..Default::default()
             }

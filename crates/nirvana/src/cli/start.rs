@@ -38,7 +38,7 @@ pub(crate) fn write_start_result(term: &Term, result: StartResult) -> anyhow::Re
             "{} ticket {} {} {}",
             style("Stopped").yellow(),
             style(&stopped.ticket.ticket_key).bold(),
-            style(stopped.ticket.title.as_deref().unwrap_or_default()).dim(),
+            style(&stopped.ticket.title).dim(),
             format_duration(stopped.elapsed()),
         ))?;
     }
@@ -52,7 +52,7 @@ pub(crate) fn write_started(term: &Term, label: &str, slot: Slot) -> anyhow::Res
         "{} ticket {} {}",
         style(label).green(),
         style(&ticket.ticket_key).bold(),
-        style(ticket.title.unwrap_or_default()).dim(),
+        style(ticket.title).dim(),
     ))?;
 
     Ok(())
@@ -83,7 +83,7 @@ async fn select_ticket(
     let items: Vec<String> = tickets
         .iter()
         .map(|(ticket, connection)| {
-            let title = ticket.title.as_deref().unwrap_or_default();
+            let title = &ticket.title;
             match connection {
                 Some(connection) if key_counts[ticket.ticket_key.as_str()] > 1 => {
                     format!("{} {title} ({})", ticket.ticket_key, connection.name)

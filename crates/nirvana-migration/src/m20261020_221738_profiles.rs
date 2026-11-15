@@ -71,7 +71,7 @@ async fn add_profiles(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
         .col(integer("profile_id"))
         .col(integer_null("connection_id"))
         .col(text("ticket_key"))
-        .col(text_null("title"))
+        .col(text("title"))
         .col(integer("last_worked_at").default(0))
         .col(integer("synced_at"))
         .foreign_key(
@@ -142,14 +142,9 @@ async fn add_profiles(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
         debug!("cleared identity of {cleared} jira-dc connections");
 
         let select = Query::select()
-            .columns([
-                "id",
-                "ticket_key",
-                "summary",
-                "connection_id",
-                "last_worked_at",
-                "last_worked_at",
-            ])
+            .columns(["id", "ticket_key"])
+            .expr(Func::coalesce([Expr::col("summary"), Expr::val("")]))
+            .columns(["connection_id", "last_worked_at", "last_worked_at"])
             .expr(Expr::val(profile_id))
             .from("tickets")
             .to_owned();

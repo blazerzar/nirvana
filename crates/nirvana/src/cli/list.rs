@@ -50,10 +50,7 @@ pub(crate) async fn run(args: ListArgs) -> anyhow::Result<()> {
                 && previous_ticket_id.replace(slot.ticket.id) == Some(slot.ticket.id);
             let (key, title) = match same_ticket {
                 true => Default::default(),
-                false => (
-                    slot.ticket.ticket_key,
-                    slot.ticket.title.unwrap_or_default(),
-                ),
+                false => (slot.ticket.ticket_key, slot.ticket.title),
             };
             let row = [
                 key,

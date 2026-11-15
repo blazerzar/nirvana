@@ -14,7 +14,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text", unique_key = "key_in_connection")]
     pub ticket_key: String,
     #[sea_orm(column_type = "Text")]
-    pub title: Option<String>,
+    pub title: String,
     #[sea_orm(default_value = 0)]
     pub last_worked_at: i64,
     pub synced_at: i64,

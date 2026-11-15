@@ -51,7 +51,7 @@ pub(crate) async fn list(
         .map(|(ticket, connection)| {
             let row = [
                 ticket.ticket_key,
-                ticket.title.unwrap_or_default(),
+                ticket.title,
                 connection.map_or_else(|| "".to_string(), |c| c.name),
                 Some(ticket.last_worked_at)
                     .filter(|&timestamp| timestamp != 0)
@@ -86,7 +86,7 @@ pub(crate) async fn load(key: String, connection: Option<String>) -> anyhow::Res
         "{} ticket {} {}",
         style("Loaded").green(),
         style(&ticket.ticket_key).bold(),
-        ticket.title.unwrap_or_default(),
+        ticket.title,
     ))?;
 
     Ok(())
@@ -149,7 +149,7 @@ pub(crate) async fn sync(key: String, connection: Option<String>) -> anyhow::Res
         "{} ticket {} {}",
         style("Synced").green(),
         style(&ticket.ticket_key).bold(),
-        ticket.title.unwrap_or_default(),
+        ticket.title,
     ))?;
 
     Ok(())

@@ -339,6 +339,7 @@ mod tests {
             profile_id: Set(connection.model.profile_id),
             connection_id: Set(Some(connection.model.id)),
             ticket_key: Set(key.to_string()),
+            title: Set(String::new()),
             synced_at: Set(0),
             ..Default::default()
         }

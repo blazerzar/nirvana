@@ -46,7 +46,7 @@ pub(crate) async fn run(args: EditArgs) -> anyhow::Result<()> {
         "{} slot {} {} {}",
         style("Edited").green(),
         style(&slot.ticket.ticket_key).bold(),
-        style(slot.ticket.title.as_deref().unwrap_or_default()).dim(),
+        style(&slot.ticket.title).dim(),
         format_duration(slot.elapsed()),
     ))?;
 

@@ -55,11 +55,9 @@ impl Nirvana {
             TicketSort::Key => {
                 query.order_by_asc(Func::lower(ticket::COLUMN.ticket_key.into_simple_expr()))
             }
-            TicketSort::Title => query.order_by_with_nulls(
-                Func::lower(ticket::COLUMN.title.into_simple_expr()),
-                Order::Asc,
-                NullOrdering::Last,
-            ),
+            TicketSort::Title => {
+                query.order_by_asc(Func::lower(ticket::COLUMN.title.into_simple_expr()))
+            }
             TicketSort::Connection => query.order_by_with_nulls(
                 Func::lower(connection::COLUMN.name.into_simple_expr()),
                 Order::Asc,
@@ -211,7 +209,7 @@ impl Nirvana {
         title: String,
     ) -> Result<ticket::Model, NirvanaError> {
         let mut ticket: ticket::ActiveModel = ticket.into();
-        ticket.title = Set(Some(title));
+        ticket.title = Set(title);
         ticket.synced_at = Set(chrono::Utc::now().timestamp());
         Ok(ticket.update(&self.db).await?)
     }
@@ -227,7 +225,7 @@ impl Nirvana {
             profile_id: Set(connection.model.profile_id),
             connection_id: Set(Some(connection.model.id)),
             ticket_key: Set(issue.key),
-            title: Set(Some(issue.title)),
+            title: Set(issue.title),
             synced_at: Set(chrono::Utc::now().timestamp()),
             ..Default::default()
         };
@@ -382,7 +380,7 @@ mod tests {
 
     struct TicketData {
         key: &'static str,
-        title: Option<&'static str>,
+        title: &'static str,
         connection_id: Option<i64>,
         last_worked_at: i64,
         synced_at: i64,
@@ -393,7 +391,7 @@ mod tests {
             profile_id: Set(service.find_active_profile().await.unwrap().id),
             connection_id: Set(data.connection_id),
             ticket_key: Set(data.key.to_string()),
-            title: Set(data.title.map(str::to_string)),
+            title: Set(data.title.to_string()),
             last_worked_at: Set(data.last_worked_at),
             synced_at: Set(data.synced_at),
             ..Default::default()
@@ -425,21 +423,21 @@ mod tests {
         for data in [
             TicketData {
                 key: "JIRA-1",
-                title: Some("Fix login"),
+                title: "Fix login",
                 connection_id: Some(jira),
                 last_worked_at: 200,
                 synced_at: 10,
             },
             TicketData {
                 key: "LIN-1",
-                title: None,
+                title: "Remove import",
                 connection_id: Some(linear),
                 last_worked_at: 300,
                 synced_at: 30,
             },
             TicketData {
                 key: "OLD-1",
-                title: Some("add export"),
+                title: "add export",
                 connection_id: None,
                 last_worked_at: 100,
                 synced_at: 20,
@@ -729,7 +727,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(ticket.ticket_key, "JIRA-1");
-        assert_eq!(ticket.title.as_deref(), Some("Fix login"));
+        assert_eq!(ticket.title, "Fix login");
         assert_eq!(ticket.connection_id, Some(connection.model.id));
         assert_eq!(ticket.profile_id, connection.model.profile_id);
         assert!(ticket.synced_at > 0);
@@ -743,7 +741,7 @@ mod tests {
             &service,
             TicketData {
                 key: "JIRA-1",
-                title: Some("Fix login"),
+                title: "Fix login",
                 connection_id: Some(connection.model.id),
                 last_worked_at: 200,
                 synced_at: 10,
@@ -756,7 +754,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(ticket.title.as_deref(), Some("Fix logout"));
+        assert_eq!(ticket.title, "Fix logout");
         assert_eq!(ticket.last_worked_at, 200);
         assert!(ticket.synced_at > 10);
         assert_eq!(
@@ -780,7 +778,7 @@ mod tests {
             service,
             TicketData {
                 key: "JIRA-1",
-                title: None,
+                title: "",
                 connection_id: None,
                 last_worked_at: 0,
                 synced_at: 0,
@@ -1016,7 +1014,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(ticket.title.as_deref(), Some("Fix logout"));
+        assert_eq!(ticket.title, "Fix logout");
         assert!(ticket.synced_at > jira.synced_at);
         assert_eq!(ticket.ticket_key, jira.ticket_key);
         assert_eq!(ticket.last_worked_at, jira.last_worked_at);

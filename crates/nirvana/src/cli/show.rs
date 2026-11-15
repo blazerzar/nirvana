@@ -22,7 +22,7 @@ pub(crate) async fn run(args: ShowArgs) -> anyhow::Result<()> {
     term.write_line(&format!(
         "{} {}",
         style(&slot.ticket.ticket_key).bold(),
-        style(slot.ticket.title.as_deref().unwrap_or_default()).dim(),
+        style(&slot.ticket.title).dim(),
     ))?;
     term.write_line(&format!(
         "{} - {} ({})",

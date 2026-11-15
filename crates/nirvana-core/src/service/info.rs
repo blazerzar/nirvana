@@ -37,11 +37,11 @@ impl Nirvana {
 
 #[cfg(test)]
 mod tests {
-    use crate::service::test_support::test_service;
+    use crate::service::test_service::TestService;
 
     #[tokio::test]
     async fn info_reports_sqlite_version() {
-        let service = test_service().await;
+        let service = TestService::new(&[]).await;
 
         let info = service.info().await.unwrap();
 
@@ -50,7 +50,7 @@ mod tests {
 
     #[tokio::test]
     async fn info_reports_keyring_vendor() {
-        let service = test_service().await;
+        let service = TestService::new(&[]).await;
 
         let info = service.info().await.unwrap();
 

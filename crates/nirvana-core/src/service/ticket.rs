@@ -339,11 +339,31 @@ fn pick_issue(
 
 #[cfg(test)]
 mod tests {
-    use nirvana_entity::credential::SecretStore;
-
     use super::*;
-    use crate::domain::{ConnectionData, Kind};
-    use crate::service::test_support::test_service;
+    use crate::domain::{ConnectionData, Kind, SecretStore};
+    use crate::service::test_service::TestConnection::{Jira, Linear};
+    use crate::service::test_service::TestService;
+
+    /// Returns a service with the connections "Test Linear" and "Test Jira",
+    /// without a current connection, and three tickets: "NIR-1" in "Test
+    /// Linear", "KAR-1" without a connection and "QA-1" in "Test Jira".
+    async fn setup() -> (TestService, [ticket::Model; 3]) {
+        let mut service = TestService::new(&[Linear, Jira]).await;
+        service.use_connection(Some(Linear));
+        let nir = service.seed_ticket("NIR-1", "Add export", 100, 10).await;
+        service.use_connection(Some(Jira));
+        let qa = service.seed_ticket("QA-1", "Fix login", 300, 20).await;
+        service.use_connection(None);
+        let kar = service.seed_ticket("KAR-1", "Remove import", 200, 30).await;
+        (service, [nir, kar, qa])
+    }
+
+    fn key_target(key: &str, connection: Option<&str>) -> TicketTarget {
+        TicketTarget::Key {
+            key: key.to_string(),
+            connection: connection.map(str::to_string),
+        }
+    }
 
     fn issue(key: &str, title: &str) -> Result<IssueInfo, NirvanaError> {
         Ok(IssueInfo {
@@ -360,132 +380,74 @@ mod tests {
         Err(IntegrationError::Auth("401 Unauthorized".to_string()).into())
     }
 
-    /// Adds a second Jira connection named "Other Jira" and returns both
-    /// connections of the active profile.
-    async fn two_connections(service: &Nirvana) -> (Connection, Connection) {
-        service
-            .add_connection(ConnectionData {
-                name: "Other Jira".to_string(),
-                kind: Kind::JiraDc,
-                host: "jira.example.com".to_string(),
-                identity: None,
-                secret_store: SecretStore::Plaintext,
-                token: "token".into(),
-            })
-            .await
-            .unwrap();
-        let mut connections = service.list_connections().await.unwrap().into_iter();
-        (connections.next().unwrap(), connections.next().unwrap())
-    }
-
-    struct TicketData {
-        key: &'static str,
-        title: &'static str,
-        connection_id: Option<i64>,
-        last_worked_at: i64,
-        synced_at: i64,
-    }
-
-    async fn add_ticket(service: &Nirvana, data: TicketData) -> ticket::Model {
-        ticket::ActiveModel {
-            profile_id: Set(service.find_active_profile().await.unwrap().id),
-            connection_id: Set(data.connection_id),
-            ticket_key: Set(data.key.to_string()),
-            title: Set(data.title.to_string()),
-            last_worked_at: Set(data.last_worked_at),
-            synced_at: Set(data.synced_at),
-            ..Default::default()
-        }
-        .insert(&service.db)
-        .await
-        .unwrap()
-    }
-
-    /// Adds a "linear" connection and three tickets to the active profile:
-    /// "JIRA-1" in "Test Jira", "LIN-1" in "linear" and "OLD-1" without a
-    /// connection.
-    async fn add_tickets(service: &Nirvana) -> [ticket::Model; 3] {
-        let jira = service.list_connections().await.unwrap()[0].model.id;
-        let linear = service
-            .add_connection(ConnectionData {
-                name: "linear".to_string(),
-                kind: Kind::Linear,
-                host: "linear.app".to_string(),
-                identity: None,
-                secret_store: SecretStore::Plaintext,
-                token: "token".into(),
-            })
-            .await
-            .unwrap()
-            .model
-            .id;
-        let mut tickets = Vec::new();
-        for data in [
-            TicketData {
-                key: "JIRA-1",
-                title: "Fix login",
-                connection_id: Some(jira),
-                last_worked_at: 200,
-                synced_at: 10,
-            },
-            TicketData {
-                key: "LIN-1",
-                title: "Remove import",
-                connection_id: Some(linear),
-                last_worked_at: 300,
-                synced_at: 30,
-            },
-            TicketData {
-                key: "OLD-1",
-                title: "add export",
-                connection_id: None,
-                last_worked_at: 100,
-                synced_at: 20,
-            },
-        ] {
-            tickets.push(add_ticket(service, data).await);
-        }
-        tickets.try_into().unwrap()
-    }
-
-    async fn ticket_keys(
-        service: &Nirvana,
-        connection: TicketConnection,
-        sort: TicketSort,
-    ) -> Vec<String> {
-        service
-            .list_tickets(connection, sort)
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|(ticket, _)| ticket.ticket_key)
-            .collect()
-    }
-
     #[tokio::test]
     async fn list_tickets_orders_by_last_worked_at_by_default() {
-        let service = test_service().await;
-        add_tickets(&service).await;
+        let (service, _) = setup().await;
 
         assert_eq!(
-            ticket_keys(&service, TicketConnection::Any, TicketSort::default()).await,
-            ["LIN-1", "JIRA-1", "OLD-1"]
+            service
+                .ticket_keys(TicketConnection::Any, TicketSort::default())
+                .await,
+            ["QA-1", "KAR-1", "NIR-1"]
         );
     }
 
     #[tokio::test]
     async fn list_tickets_sorts_by_each_column() {
-        let service = test_service().await;
-        add_tickets(&service).await;
+        let (service, _) = setup().await;
 
         for (sort, keys) in [
-            (TicketSort::Key, ["JIRA-1", "LIN-1", "OLD-1"]),
-            (TicketSort::Title, ["OLD-1", "JIRA-1", "LIN-1"]),
-            (TicketSort::Connection, ["LIN-1", "JIRA-1", "OLD-1"]),
-            (TicketSort::Synced, ["LIN-1", "OLD-1", "JIRA-1"]),
+            (TicketSort::Key, ["KAR-1", "NIR-1", "QA-1"]),
+            (TicketSort::Title, ["NIR-1", "QA-1", "KAR-1"]),
+            (TicketSort::Connection, ["QA-1", "NIR-1", "KAR-1"]),
+            (TicketSort::Synced, ["KAR-1", "QA-1", "NIR-1"]),
         ] {
             assert_eq!(
-                ticket_keys(&service, TicketConnection::Any, sort).await,
+                service.ticket_keys(TicketConnection::Any, sort).await,
+                keys,
+                "{sort:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn list_tickets_sorts_titles_and_connections_ignoring_case() {
+        let service = TestService::new(&[Linear, Jira]).await;
+        for (name, kind, host) in [
+            ("jira dc", Kind::JiraDc, "jira.nirvana.com"),
+            ("linear team", Kind::Linear, "linear.app/nirvana"),
+        ] {
+            service
+                .add_connection(ConnectionData {
+                    name: name.to_string(),
+                    kind,
+                    host: host.to_string(),
+                    identity: None,
+                    secret_store: SecretStore::Plaintext,
+                    token: "token".into(),
+                })
+                .await
+                .unwrap();
+        }
+        for (connection, key, title) in [
+            (Jira.name(), "KAR-1", "Fix login"),
+            (Linear.name(), "NIR-1", "add export"),
+            ("jira dc", "QA-1", "Remove import"),
+            ("linear team", "NIR-2", "update docs"),
+        ] {
+            let connection = service.get_connection(connection).await.unwrap();
+            service
+                .store_ticket(&connection, issue(key, title).unwrap())
+                .await
+                .unwrap();
+        }
+
+        for (sort, keys) in [
+            (TicketSort::Title, ["NIR-1", "KAR-1", "QA-1", "NIR-2"]),
+            (TicketSort::Connection, ["QA-1", "NIR-2", "KAR-1", "NIR-1"]),
+        ] {
+            assert_eq!(
+                service.ticket_keys(TicketConnection::Any, sort).await,
                 keys,
                 "{sort:?}"
             );
@@ -494,8 +456,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_tickets_shows_disconnected_tickets() {
-        let service = test_service().await;
-        add_tickets(&service).await;
+        let (service, _) = setup().await;
 
         let tickets = service
             .list_tickets(TicketConnection::Any, TicketSort::default())
@@ -506,55 +467,51 @@ mod tests {
             .iter()
             .map(|(_, connection)| connection.as_ref().map(|c| c.name.as_str()))
             .collect();
-        assert_eq!(connections, [Some("linear"), Some("Test Jira"), None]);
+        assert_eq!(connections, [Some(Jira.name()), None, Some(Linear.name())]);
     }
 
     #[tokio::test]
     async fn list_tickets_filters_by_connection() {
-        let service = test_service().await;
-        add_tickets(&service).await;
+        let (service, _) = setup().await;
 
         assert_eq!(
-            ticket_keys(
-                &service,
-                TicketConnection::Named("Test Jira".to_string()),
-                TicketSort::default()
-            )
-            .await,
-            ["JIRA-1"]
+            service
+                .ticket_keys(
+                    TicketConnection::Named(Linear.name().to_string()),
+                    TicketSort::default()
+                )
+                .await,
+            ["NIR-1"]
         );
     }
 
     #[tokio::test]
     async fn list_tickets_filters_connected_tickets() {
-        let service = test_service().await;
-        add_tickets(&service).await;
+        let (service, _) = setup().await;
 
         assert_eq!(
-            ticket_keys(&service, TicketConnection::Connected, TicketSort::default()).await,
-            ["LIN-1", "JIRA-1"]
+            service
+                .ticket_keys(TicketConnection::Connected, TicketSort::default())
+                .await,
+            ["QA-1", "NIR-1"]
         );
     }
 
     #[tokio::test]
     async fn list_tickets_filters_disconnected_tickets() {
-        let service = test_service().await;
-        add_tickets(&service).await;
+        let (service, _) = setup().await;
 
         assert_eq!(
-            ticket_keys(
-                &service,
-                TicketConnection::Disconnected,
-                TicketSort::default()
-            )
-            .await,
-            ["OLD-1"]
+            service
+                .ticket_keys(TicketConnection::Disconnected, TicketSort::default())
+                .await,
+            ["KAR-1"]
         );
     }
 
     #[tokio::test]
     async fn list_tickets_rejects_missing_connection() {
-        let service = test_service().await;
+        let (service, _) = setup().await;
 
         let err = service
             .list_tickets(
@@ -572,10 +529,8 @@ mod tests {
 
     #[tokio::test]
     async fn list_tickets_hides_other_profiles_tickets() {
-        let mut service = test_service().await;
-        add_tickets(&service).await;
-        service.create_profile("work".to_string()).await.unwrap();
-        service.switch_profile("work").await.unwrap();
+        let (mut service, _) = setup().await;
+        service.use_profile("work").await;
 
         assert!(
             service
@@ -586,7 +541,7 @@ mod tests {
         );
         let err = service
             .list_tickets(
-                TicketConnection::Named("Test Jira".to_string()),
+                TicketConnection::Named(Linear.name().to_string()),
                 TicketSort::default(),
             )
             .await
@@ -599,10 +554,10 @@ mod tests {
 
     #[tokio::test]
     async fn load_ticket_rejects_missing_connection() {
-        let service = test_service().await;
+        let (service, _) = setup().await;
 
         let err = service
-            .load_ticket("JIRA-1", Some("missing"))
+            .load_ticket("NIR-1", Some("missing"))
             .await
             .unwrap_err();
 
@@ -614,63 +569,82 @@ mod tests {
 
     #[tokio::test]
     async fn load_ticket_without_connections_does_not_find_ticket() {
-        let mut service = test_service().await;
-        service.create_profile("work".to_string()).await.unwrap();
-        service.switch_profile("work").await.unwrap();
+        let (mut service, _) = setup().await;
+        service.use_profile("work").await;
 
-        let err = service.load_ticket("JIRA-1", None).await.unwrap_err();
+        let err = service.load_ticket("NIR-1", None).await.unwrap_err();
 
         assert!(matches!(
             err,
-            NirvanaError::Domain(DomainError::TicketNotFound(key)) if key == "JIRA-1"
+            NirvanaError::Domain(DomainError::TicketNotFound(key)) if key == "NIR-1"
         ));
     }
 
     #[tokio::test]
+    async fn load_ticket_stores_ticket_found_in_one_connection() {
+        let (mut service, _) = setup().await;
+        service.use_connection(Some(Linear));
+        service.start_mock().await;
+        service.mock_issue("NIR-2", "Add import").await;
+
+        let ticket = service.load_ticket("NIR-2", None).await.unwrap();
+
+        let linear = service.connection(Linear).await;
+        assert_eq!(ticket.connection_id, Some(linear.model.id));
+        assert_eq!(ticket.title, "Add import");
+        assert!(
+            service
+                .requested_paths()
+                .await
+                .contains(&"/rest/api/2/issue/NIR-2".to_string())
+        );
+    }
+
+    #[tokio::test]
     async fn pick_issue_returns_only_connection_that_found_ticket() {
-        let service = test_service().await;
-        let (first, second) = two_connections(&service).await;
+        let service = TestService::new(&[Linear, Jira]).await;
+        let linear = service.connection(Linear).await;
+        let jira = service.connection(Jira).await;
 
         let (connection, issue) = pick_issue(
-            "JIRA-1",
+            "NIR-1",
             vec![
-                (first, not_found("JIRA-1")),
-                (second, issue("JIRA-1", "Fix login")),
+                (linear, not_found("NIR-1")),
+                (jira, issue("NIR-1", "Fix login")),
             ],
         )
         .unwrap();
 
-        assert_eq!(connection.model.name, "Other Jira");
+        assert_eq!(connection.model.name, Jira.name());
         assert_eq!(issue.title, "Fix login");
     }
 
     #[tokio::test]
     async fn pick_issue_skips_failed_connection_when_ticket_is_found() {
-        let service = test_service().await;
-        let (first, second) = two_connections(&service).await;
+        let service = TestService::new(&[Linear, Jira]).await;
+        let linear = service.connection(Linear).await;
+        let jira = service.connection(Jira).await;
 
         let (connection, _) = pick_issue(
-            "JIRA-1",
-            vec![
-                (first, auth_failed()),
-                (second, issue("JIRA-1", "Fix login")),
-            ],
+            "NIR-1",
+            vec![(linear, auth_failed()), (jira, issue("NIR-1", "Fix login"))],
         )
         .unwrap();
 
-        assert_eq!(connection.model.name, "Other Jira");
+        assert_eq!(connection.model.name, Jira.name());
     }
 
     #[tokio::test]
     async fn pick_issue_rejects_ticket_found_in_several_connections() {
-        let service = test_service().await;
-        let (first, second) = two_connections(&service).await;
+        let service = TestService::new(&[Linear, Jira]).await;
+        let linear = service.connection(Linear).await;
+        let jira = service.connection(Jira).await;
 
         let err = pick_issue(
-            "JIRA-1",
+            "NIR-1",
             vec![
-                (first, issue("JIRA-1", "Fix login")),
-                (second, issue("JIRA-1", "Fix logout")),
+                (linear, issue("NIR-1", "Fix login")),
+                (jira, issue("NIR-1", "Fix logout")),
             ],
         )
         .unwrap_err();
@@ -678,35 +652,37 @@ mod tests {
         assert!(matches!(
             err,
             NirvanaError::Domain(DomainError::AmbiguousTicket(key, connections))
-                if key == "JIRA-1" && connections == ["Test Jira", "Other Jira"]
+                if key == "NIR-1" && connections == [Linear.name(), Jira.name()]
         ));
     }
 
     #[tokio::test]
     async fn pick_issue_reports_ticket_not_found_in_any_connection() {
-        let service = test_service().await;
-        let (first, second) = two_connections(&service).await;
+        let service = TestService::new(&[Linear, Jira]).await;
+        let linear = service.connection(Linear).await;
+        let jira = service.connection(Jira).await;
 
         let err = pick_issue(
-            "JIRA-1",
-            vec![(first, not_found("JIRA-1")), (second, not_found("JIRA-1"))],
+            "NIR-1",
+            vec![(linear, not_found("NIR-1")), (jira, not_found("NIR-1"))],
         )
         .unwrap_err();
 
         assert!(matches!(
             err,
-            NirvanaError::Domain(DomainError::TicketNotFound(key)) if key == "JIRA-1"
+            NirvanaError::Domain(DomainError::TicketNotFound(key)) if key == "NIR-1"
         ));
     }
 
     #[tokio::test]
     async fn pick_issue_reports_failure_when_ticket_is_not_found() {
-        let service = test_service().await;
-        let (first, second) = two_connections(&service).await;
+        let service = TestService::new(&[Linear, Jira]).await;
+        let linear = service.connection(Linear).await;
+        let jira = service.connection(Jira).await;
 
         let err = pick_issue(
-            "JIRA-1",
-            vec![(first, not_found("JIRA-1")), (second, auth_failed())],
+            "NIR-1",
+            vec![(linear, not_found("NIR-1")), (jira, auth_failed())],
         )
         .unwrap_err();
 
@@ -718,15 +694,15 @@ mod tests {
 
     #[tokio::test]
     async fn store_ticket_inserts_ticket() {
-        let service = test_service().await;
-        let connection = service.get_connection("Test Jira").await.unwrap();
+        let (service, _) = setup().await;
+        let connection = service.connection(Linear).await;
 
         let ticket = service
-            .store_ticket(&connection, issue("JIRA-1", "Fix login").unwrap())
+            .store_ticket(&connection, issue("NIR-2", "Fix login").unwrap())
             .await
             .unwrap();
 
-        assert_eq!(ticket.ticket_key, "JIRA-1");
+        assert_eq!(ticket.ticket_key, "NIR-2");
         assert_eq!(ticket.title, "Fix login");
         assert_eq!(ticket.connection_id, Some(connection.model.id));
         assert_eq!(ticket.profile_id, connection.model.profile_id);
@@ -735,109 +711,75 @@ mod tests {
 
     #[tokio::test]
     async fn store_ticket_updates_stored_ticket() {
-        let service = test_service().await;
-        let connection = service.get_connection("Test Jira").await.unwrap();
-        add_ticket(
-            &service,
-            TicketData {
-                key: "JIRA-1",
-                title: "Fix login",
-                connection_id: Some(connection.model.id),
-                last_worked_at: 200,
-                synced_at: 10,
-            },
-        )
-        .await;
+        let (service, _) = setup().await;
+        let connection = service.connection(Linear).await;
 
         let ticket = service
-            .store_ticket(&connection, issue("JIRA-1", "Fix logout").unwrap())
+            .store_ticket(&connection, issue("NIR-1", "Fix logout").unwrap())
             .await
             .unwrap();
 
         assert_eq!(ticket.title, "Fix logout");
-        assert_eq!(ticket.last_worked_at, 200);
+        assert_eq!(ticket.last_worked_at, 100);
         assert!(ticket.synced_at > 10);
-        assert_eq!(
-            ticket::Entity::find().all(&service.db).await.unwrap().len(),
-            1
-        );
-    }
-
-    fn key_target(key: &str, connection: Option<&str>) -> TicketTarget {
-        TicketTarget::Key {
-            key: key.to_string(),
-            connection: connection.map(str::to_string),
-        }
-    }
-
-    /// Adds the tickets of `add_tickets` and a disconnected "JIRA-1", which
-    /// it returns.
-    async fn add_duplicate_ticket(service: &Nirvana) -> ticket::Model {
-        add_tickets(service).await;
-        add_ticket(
-            service,
-            TicketData {
-                key: "JIRA-1",
-                title: "",
-                connection_id: None,
-                last_worked_at: 0,
-                synced_at: 0,
-            },
-        )
-        .await
+        assert_eq!(ticket::Entity::find().count(&service.db).await.unwrap(), 3);
     }
 
     #[tokio::test]
     async fn find_ticket_ignores_key_case() {
-        let service = test_service().await;
-        let [jira, ..] = add_tickets(&service).await;
+        let (service, [nir, ..]) = setup().await;
         let profile_id = service.find_active_profile().await.unwrap().id;
 
-        let ticket = find_ticket(&service.db, profile_id, key_target("jira-1", None))
+        let ticket = find_ticket(&service.db, profile_id, key_target("nir-1", None))
             .await
             .unwrap();
 
-        assert_eq!(ticket, jira);
+        assert_eq!(ticket, nir);
     }
 
     #[tokio::test]
     async fn delete_ticket_rejects_ambiguous_key() {
-        let service = test_service().await;
-        add_duplicate_ticket(&service).await;
+        let (mut service, _) = setup().await;
+        service.use_connection(None);
+        service.seed_ticket("NIR-1", "Add export", 0, 0).await;
 
         let err = service
-            .delete_ticket(key_target("JIRA-1", None), false)
+            .delete_ticket(key_target("NIR-1", None), false)
             .await
             .unwrap_err();
 
         assert!(matches!(
             err,
             NirvanaError::Domain(DomainError::AmbiguousTicket(key, connections))
-                if key == "JIRA-1" && connections == ["Test Jira", "no connection"]
+                if key == "NIR-1" && connections == [Linear.name(), "no connection"]
         ));
     }
 
     #[tokio::test]
     async fn delete_ticket_deletes_match_in_connection() {
-        let service = test_service().await;
-        let disconnected = add_duplicate_ticket(&service).await;
+        let (mut service, [nir, ..]) = setup().await;
+        service.use_connection(None);
+        service.seed_ticket("NIR-1", "Add export", 0, 0).await;
 
         let ticket = service
-            .delete_ticket(key_target("JIRA-1", Some("Test Jira")), false)
+            .delete_ticket(key_target("NIR-1", Some(Linear.name())), false)
             .await
             .unwrap();
 
-        assert_ne!(ticket, disconnected);
+        assert_eq!(ticket, nir);
         assert_eq!(
-            ticket_keys(&service, TicketConnection::Any, TicketSort::default()).await,
-            ["LIN-1", "OLD-1", "JIRA-1"]
+            service
+                .ticket_keys(TicketConnection::Any, TicketSort::default())
+                .await,
+            ["QA-1", "KAR-1", "NIR-1"]
         );
     }
 
     #[tokio::test]
     async fn delete_ticket_deletes_ticket_by_id() {
-        let service = test_service().await;
-        let disconnected = add_duplicate_ticket(&service).await;
+        let (mut service, _) = setup().await;
+        service.use_connection(None);
+        let disconnected = service.seed_ticket("NIR-1", "Add export", 0, 0).await;
 
         let ticket = service
             .delete_ticket(TicketTarget::Id(disconnected.id), false)
@@ -846,43 +788,45 @@ mod tests {
 
         assert_eq!(ticket, disconnected);
         assert_eq!(
-            ticket_keys(&service, TicketConnection::Any, TicketSort::default()).await,
-            ["LIN-1", "JIRA-1", "OLD-1"]
+            service
+                .ticket_keys(TicketConnection::Any, TicketSort::default())
+                .await,
+            ["QA-1", "KAR-1", "NIR-1"]
         );
     }
 
     #[tokio::test]
     async fn delete_ticket_deletes_disconnected_match() {
-        let service = test_service().await;
-        add_tickets(&service).await;
+        let (service, _) = setup().await;
 
         service
-            .delete_ticket(key_target("OLD-1", None), false)
+            .delete_ticket(key_target("KAR-1", None), false)
             .await
             .unwrap();
 
         assert_eq!(
-            ticket_keys(&service, TicketConnection::Any, TicketSort::default()).await,
-            ["LIN-1", "JIRA-1"]
+            service
+                .ticket_keys(TicketConnection::Any, TicketSort::default())
+                .await,
+            ["QA-1", "NIR-1"]
         );
     }
 
     #[tokio::test]
     async fn delete_ticket_rejects_missing_ticket_or_connection() {
-        let service = test_service().await;
-        add_tickets(&service).await;
+        let (service, _) = setup().await;
 
         let err = service
-            .delete_ticket(key_target("JIRA-2", None), false)
+            .delete_ticket(key_target("NIR-2", None), false)
             .await
             .unwrap_err();
         assert!(matches!(
             err,
-            NirvanaError::Domain(DomainError::TicketNotFound(key)) if key == "JIRA-2"
+            NirvanaError::Domain(DomainError::TicketNotFound(key)) if key == "NIR-2"
         ));
 
         let err = service
-            .delete_ticket(key_target("JIRA-1", Some("missing")), false)
+            .delete_ticket(key_target("NIR-1", Some("missing")), false)
             .await
             .unwrap_err();
         assert!(matches!(
@@ -893,13 +837,11 @@ mod tests {
 
     #[tokio::test]
     async fn delete_ticket_keeps_other_profiles_tickets() {
-        let mut service = test_service().await;
-        let [.., other] = add_tickets(&service).await;
-        service.create_profile("work".to_string()).await.unwrap();
-        service.switch_profile("work").await.unwrap();
+        let (mut service, [_, kar, _]) = setup().await;
+        service.use_profile("work").await;
 
         let err = service
-            .delete_ticket(key_target("OLD-1", None), false)
+            .delete_ticket(key_target("KAR-1", None), false)
             .await
             .unwrap_err();
         assert!(matches!(
@@ -907,50 +849,42 @@ mod tests {
             NirvanaError::Domain(DomainError::TicketNotFound(_))
         ));
         let err = service
-            .delete_ticket(TicketTarget::Id(other.id), false)
+            .delete_ticket(TicketTarget::Id(kar.id), false)
             .await
             .unwrap_err();
         assert!(matches!(
             err,
-            NirvanaError::Domain(DomainError::TicketIdNotFound(id)) if id == other.id
+            NirvanaError::Domain(DomainError::TicketIdNotFound(id)) if id == kar.id
         ));
         assert_eq!(ticket::Entity::find().count(&service.db).await.unwrap(), 3);
     }
 
     #[tokio::test]
     async fn delete_ticket_deletes_slots_only_with_slots() {
-        let service = test_service().await;
-        let [_, kept, deleted] = add_tickets(&service).await;
+        let (service, [_, deleted, kept]) = setup().await;
         for ticket in [&kept, &deleted, &deleted] {
-            slot::ActiveModel {
-                ticket_id: Set(ticket.id),
-                profile_id: Set(ticket.profile_id),
-                started_at: Set(0),
-                stopped_at: Set(Some(60)),
-                ..Default::default()
-            }
-            .insert(&service.db)
-            .await
-            .unwrap();
+            service.seed_slot(ticket, 0, Some(60)).await;
         }
 
         let err = service
-            .delete_ticket(key_target("OLD-1", None), false)
+            .delete_ticket(key_target("KAR-1", None), false)
             .await
             .unwrap_err();
         assert!(matches!(
             err,
-            NirvanaError::Domain(DomainError::TicketHasSlots(key, 2)) if key == "OLD-1"
+            NirvanaError::Domain(DomainError::TicketHasSlots(key, 2)) if key == "KAR-1"
         ));
         assert_eq!(slot::Entity::find().count(&service.db).await.unwrap(), 3);
 
         service
-            .delete_ticket(key_target("OLD-1", None), true)
+            .delete_ticket(key_target("KAR-1", None), true)
             .await
             .unwrap();
         assert_eq!(
-            ticket_keys(&service, TicketConnection::Any, TicketSort::default()).await,
-            ["LIN-1", "JIRA-1"]
+            service
+                .ticket_keys(TicketConnection::Any, TicketSort::default())
+                .await,
+            ["QA-1", "NIR-1"]
         );
         let slots = slot::Entity::find().all(&service.db).await.unwrap();
         assert_eq!(slots.len(), 1);
@@ -958,44 +892,57 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sync_ticket_rejects_disconnected_ticket() {
-        let service = test_service().await;
-        add_tickets(&service).await;
+    async fn sync_ticket_updates_title() {
+        let (mut service, [.., qa]) = setup().await;
+        service.use_connection(Some(Jira));
+        service.start_mock().await;
+        service.mock_issue("QA-1", "Fix logout").await;
 
-        let err = service.sync_ticket("OLD-1", None).await.unwrap_err();
+        let ticket = service.sync_ticket("QA-1", None).await.unwrap();
+
+        assert_eq!(ticket.id, qa.id);
+        assert_eq!(ticket.title, "Fix logout");
+        assert!(ticket.synced_at > qa.synced_at);
+    }
+
+    #[tokio::test]
+    async fn sync_ticket_rejects_disconnected_ticket() {
+        let (service, _) = setup().await;
+
+        let err = service.sync_ticket("KAR-1", None).await.unwrap_err();
 
         assert!(matches!(
             err,
-            NirvanaError::Domain(DomainError::TicketHasNoConnection(key)) if key == "OLD-1"
+            NirvanaError::Domain(DomainError::TicketHasNoConnection(key)) if key == "KAR-1"
         ));
     }
 
     #[tokio::test]
     async fn sync_ticket_rejects_ambiguous_key() {
-        let service = test_service().await;
-        add_duplicate_ticket(&service).await;
+        let (mut service, _) = setup().await;
+        service.use_connection(None);
+        service.seed_ticket("NIR-1", "Add export", 0, 0).await;
 
-        let err = service.sync_ticket("JIRA-1", None).await.unwrap_err();
+        let err = service.sync_ticket("NIR-1", None).await.unwrap_err();
 
         assert!(matches!(
             err,
-            NirvanaError::Domain(DomainError::AmbiguousTicket(key, _)) if key == "JIRA-1"
+            NirvanaError::Domain(DomainError::AmbiguousTicket(key, _)) if key == "NIR-1"
         ));
     }
 
     #[tokio::test]
     async fn sync_ticket_rejects_missing_ticket_or_connection() {
-        let service = test_service().await;
-        add_tickets(&service).await;
+        let (service, _) = setup().await;
 
-        let err = service.sync_ticket("JIRA-2", None).await.unwrap_err();
+        let err = service.sync_ticket("NIR-2", None).await.unwrap_err();
         assert!(matches!(
             err,
-            NirvanaError::Domain(DomainError::TicketNotFound(key)) if key == "JIRA-2"
+            NirvanaError::Domain(DomainError::TicketNotFound(key)) if key == "NIR-2"
         ));
 
         let err = service
-            .sync_ticket("JIRA-1", Some("missing"))
+            .sync_ticket("NIR-1", Some("missing"))
             .await
             .unwrap_err();
         assert!(matches!(
@@ -1006,17 +953,16 @@ mod tests {
 
     #[tokio::test]
     async fn update_title_keeps_key_and_last_worked_at() {
-        let service = test_service().await;
-        let [jira, ..] = add_tickets(&service).await;
+        let (service, [nir, ..]) = setup().await;
 
         let ticket = service
-            .update_title(jira.clone(), "Fix logout".to_string())
+            .update_title(nir.clone(), "Fix logout".to_string())
             .await
             .unwrap();
 
         assert_eq!(ticket.title, "Fix logout");
-        assert!(ticket.synced_at > jira.synced_at);
-        assert_eq!(ticket.ticket_key, jira.ticket_key);
-        assert_eq!(ticket.last_worked_at, jira.last_worked_at);
+        assert!(ticket.synced_at > nir.synced_at);
+        assert_eq!(ticket.ticket_key, nir.ticket_key);
+        assert_eq!(ticket.last_worked_at, nir.last_worked_at);
     }
 }

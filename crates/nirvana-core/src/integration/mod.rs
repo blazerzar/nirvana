@@ -14,7 +14,6 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use jira::{JiraAuth, JiraIntegration};
 use linear::LinearIntegration;
-use reqwest::Url;
 use secrecy::SecretString;
 use thiserror::Error;
 
@@ -66,11 +65,8 @@ impl Integration {
         client: reqwest::Client,
         token: SecretString,
     ) -> Result<Self, NirvanaError> {
-        let host = &connection.model.host;
-        let jira_url = || {
-            Url::parse(&format!("https://{host}/rest/api/2"))
-                .map_err(|_| DomainError::InvalidHost(host.clone()))
-        };
+        let host_url = connection.host_url();
+        let invalid_host = || DomainError::InvalidHost(connection.model.host.clone());
         let integration = match connection.kind {
             Kind::JiraCloud => {
                 let email = connection
@@ -80,18 +76,18 @@ impl Integration {
                     .ok_or(DomainError::MissingIdentity(connection.kind))?;
                 Self::Jira(JiraIntegration::new(
                     client,
-                    jira_url()?,
+                    jira::api_url(&host_url).ok_or_else(invalid_host)?,
                     JiraAuth::Basic { email, token },
                 ))
             }
             Kind::JiraDc => Self::Jira(JiraIntegration::new(
                 client,
-                jira_url()?,
+                jira::api_url(&host_url).ok_or_else(invalid_host)?,
                 JiraAuth::Bearer(token),
             )),
             Kind::Linear => Self::Linear(LinearIntegration::new(
                 client,
-                Url::parse(linear::API_URL).expect("Linear API URL is valid"),
+                linear::api_url(&host_url).ok_or_else(invalid_host)?,
                 token,
             )),
         };

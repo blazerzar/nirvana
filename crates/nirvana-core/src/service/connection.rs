@@ -403,12 +403,26 @@ async fn insert_connection(
     })
 }
 
+/// Trims `url` and strips `https://` and a trailing slash, ignoring the case
+/// of the scheme. `http://` is kept in lowercase, so the host is reached over
+/// HTTP.
 fn normalize_host(url: &str) -> String {
     let s = url.trim();
-    let s = s.strip_prefix("https://").unwrap_or(s);
-    let s = s.strip_prefix("http://").unwrap_or(s);
     let s = s.strip_suffix('/').unwrap_or(s);
-    s.to_string()
+    if let Some(host) = strip_scheme(s, "https://") {
+        host.to_string()
+    } else if let Some(host) = strip_scheme(s, "http://") {
+        format!("http://{host}")
+    } else {
+        s.to_string()
+    }
+}
+
+fn strip_scheme<'a>(url: &'a str, scheme: &str) -> Option<&'a str> {
+    let prefix = url.get(..scheme.len())?;
+    prefix
+        .eq_ignore_ascii_case(scheme)
+        .then(|| &url[scheme.len()..])
 }
 
 #[cfg(test)]
@@ -1313,14 +1327,17 @@ mod tests {
     }
 
     #[test]
-    fn normalize_host_strips_scheme_whitespace_and_trailing_slash() {
+    fn normalize_host_strips_https_whitespace_and_trailing_slash_ignoring_case() {
         for host in [
             "example.com",
             "https://example.com",
-            "http://example.com/",
             " https://example.com/ ",
+            "HTTPS://example.com",
         ] {
             assert_eq!(normalize_host(host), "example.com");
+        }
+        for host in [" http://example.com/ ", "HTTP://example.com"] {
+            assert_eq!(normalize_host(host), "http://example.com");
         }
     }
 }

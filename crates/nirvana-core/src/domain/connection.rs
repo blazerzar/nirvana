@@ -51,11 +51,20 @@ impl Connection {
         })
     }
 
-    pub fn issue_url(&self, ticket_key: &str) -> String {
+    /// Returns the host as a URL, over HTTPS unless it has a scheme.
+    pub fn host_url(&self) -> String {
         let host = &self.model.host;
+        match host.starts_with("http://") || host.starts_with("https://") {
+            true => host.clone(),
+            false => format!("https://{host}"),
+        }
+    }
+
+    pub fn issue_url(&self, ticket_key: &str) -> String {
+        let host_url = self.host_url();
         match self.kind {
-            Kind::JiraCloud | Kind::JiraDc => format!("https://{host}/browse/{ticket_key}"),
-            Kind::Linear => format!("https://{host}/issue/{ticket_key}"),
+            Kind::JiraCloud | Kind::JiraDc => format!("{host_url}/browse/{ticket_key}"),
+            Kind::Linear => format!("{host_url}/issue/{ticket_key}"),
         }
     }
 }
@@ -224,6 +233,16 @@ mod tests {
             (
                 Kind::JiraDc,
                 "jira.nirvana.com",
+                "https://jira.nirvana.com/browse/ENG-1",
+            ),
+            (
+                Kind::JiraDc,
+                "http://jira.nirvana.com",
+                "http://jira.nirvana.com/browse/ENG-1",
+            ),
+            (
+                Kind::JiraDc,
+                "https://jira.nirvana.com",
                 "https://jira.nirvana.com/browse/ENG-1",
             ),
             (

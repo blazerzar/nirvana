@@ -72,7 +72,7 @@ async fn add_edit_and_move_credential() {
             "Jira",
             ConnectionEdit {
                 name: Some("Work Jira".to_string()),
-                host: Some("http://work.atlassian.net/".to_string()),
+                host: Some("https://work.atlassian.net/".to_string()),
                 identity: Some("work@example.com".to_string()),
             },
         )

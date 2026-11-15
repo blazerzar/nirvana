@@ -1,10 +1,11 @@
 //! Linear through its GraphQL API.
 //!
-//! The API endpoint is passed in, [`API_URL`] in production, and the personal
-//! API key is sent as the `Authorization` header. GraphQL errors are mapped to
-//! [`IntegrationError`] by their code, and a missing issue by its message,
-//! since Linear reports it as a generic input error. Linear has no worklogs,
-//! so time is published as a comment on the issue.
+//! The API endpoint is passed in, built from the workspace host by
+//! [`api_url`] in production, and the personal API key is sent as the
+//! `Authorization` header. GraphQL errors are mapped to [`IntegrationError`]
+//! by their code, and a missing issue by its message, since Linear reports it
+//! as a generic input error. Linear has no worklogs, so time is published as
+//! a comment on the issue.
 
 use chrono::Local;
 use reqwest::Url;
@@ -17,7 +18,8 @@ use tracing::debug;
 
 use crate::integration::{IntegrationError, IssueInfo, utc};
 
-pub(crate) const API_URL: &str = "https://api.linear.app/graphql";
+const DOMAIN: &str = "linear.app";
+const API_DOMAIN: &str = "api.linear.app";
 
 pub(crate) struct LinearIntegration {
     api_url: Url,
@@ -152,6 +154,18 @@ impl LinearIntegration {
     }
 }
 
+/// Returns the GraphQL endpoint for the workspace at `host_url`. The API of
+/// linear.app is on its `api.` subdomain.
+pub(crate) fn api_url(host_url: &str) -> Option<Url> {
+    let mut url = Url::parse(host_url).ok()?;
+    if url.host_str() == Some(DOMAIN) {
+        url.set_host(Some(API_DOMAIN)).ok()?;
+    }
+    url.set_path("graphql");
+    url.set_query(None);
+    Some(url)
+}
+
 fn not_found(error: IntegrationError, ticket_key: &str) -> IntegrationError {
     match error {
         IntegrationError::Api(message) if message.starts_with("Entity not found") => {
@@ -250,6 +264,18 @@ mod tests {
             .unwrap_err();
 
         assert!(matches!(err, IntegrationError::Api(_)));
+    }
+
+    #[test]
+    fn api_url_uses_api_subdomain_of_linear_app() {
+        assert_eq!(
+            api_url("https://linear.app/nirvana").unwrap().as_str(),
+            "https://api.linear.app/graphql"
+        );
+        assert_eq!(
+            api_url("http://127.0.0.1:8080/nirvana").unwrap().as_str(),
+            "http://127.0.0.1:8080/graphql"
+        );
     }
 
     #[test]

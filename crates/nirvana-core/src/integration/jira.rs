@@ -136,6 +136,11 @@ async fn check_status(
     }
 }
 
+/// Returns the REST API v2 endpoint of the Jira at `host_url`.
+pub(crate) fn api_url(host_url: &str) -> Option<Url> {
+    Url::parse(&format!("{host_url}/rest/api/2")).ok()
+}
+
 /// Cuts `body` to [`MAX_ERROR_BODY_CHARS`], marking the cut with `…`.
 fn truncate(body: &str) -> String {
     match body.char_indices().nth(MAX_ERROR_BODY_CHARS) {
@@ -262,6 +267,18 @@ mod tests {
 
         assert!(matches!(err, IntegrationError::InvalidTimestamp(i64::MAX)));
         assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[test]
+    fn api_url_adds_rest_api_path() {
+        assert_eq!(
+            api_url("https://jira.example.com").unwrap().as_str(),
+            "https://jira.example.com/rest/api/2"
+        );
+        assert_eq!(
+            api_url("http://127.0.0.1:8080").unwrap().as_str(),
+            "http://127.0.0.1:8080/rest/api/2"
+        );
     }
 
     #[test]

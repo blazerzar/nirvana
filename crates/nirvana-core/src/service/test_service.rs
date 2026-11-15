@@ -11,7 +11,7 @@
 use std::ops::{Deref, DerefMut};
 
 use nirvana_entity::credential::SecretStore;
-use nirvana_entity::{slot, ticket};
+use nirvana_entity::{publish_entry, slot, ticket};
 use sea_orm::{ActiveModelTrait, Set};
 use serde_json::json;
 use tempfile::TempDir;
@@ -205,6 +205,26 @@ impl TestService {
         .unwrap()
     }
 
+    pub(super) async fn seed_publish_entry(
+        &self,
+        slot: &slot::Model,
+        connection_id: i64,
+        published_at: Option<i64>,
+        error: Option<&str>,
+        claimed_at: i64,
+    ) -> publish_entry::Model {
+        publish_entry::ActiveModel {
+            slot_id: Set(slot.id),
+            connection_id: Set(connection_id),
+            published_at: Set(published_at),
+            error: Set(error.map(str::to_string)),
+            claimed_at: Set(claimed_at),
+        }
+        .insert(&self.db)
+        .await
+        .unwrap()
+    }
+
     /// Returns the keys of the tickets that `list_tickets` returns.
     pub(super) async fn ticket_keys(
         &self,
@@ -251,6 +271,22 @@ impl TestService {
             .unwrap()
             .into_iter()
             .map(|request| request.url.path().to_string())
+            .collect()
+    }
+
+    /// Returns the passwords stored in the keyring.
+    pub(super) fn keyring_passwords(&self) -> Vec<String> {
+        let store = (self.keyring)().unwrap();
+        let spec = [("service", "nirvana")].into();
+        store
+            .search(&spec)
+            .unwrap()
+            .into_iter()
+            .filter_map(|entry| match entry.get_password() {
+                Ok(password) => Some(password),
+                Err(keyring_core::Error::NoEntry) => None,
+                Err(e) => panic!("keyring read failed: {e}"),
+            })
             .collect()
     }
 }

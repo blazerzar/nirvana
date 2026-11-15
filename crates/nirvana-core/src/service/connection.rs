@@ -432,7 +432,8 @@ mod tests {
     use super::*;
     use crate::domain::{JiraSettingsEdit, LinearSettings, LinearSettingsEdit};
     use crate::secrets::read_credential;
-    use crate::service::test_support::{keyring_passwords, test_service};
+    use crate::service::test_service::TestConnection::{Jira, Linear};
+    use crate::service::test_service::{TestConnection, TestService};
 
     fn keyring_data(name: &str) -> ConnectionData {
         ConnectionData {
@@ -445,11 +446,43 @@ mod tests {
         }
     }
 
+    async fn connection_names(service: &Nirvana) -> Vec<String> {
+        service
+            .active_profile()
+            .await
+            .unwrap()
+            .connections
+            .into_iter()
+            .map(|connection| connection.model.name)
+            .collect()
+    }
+
+    fn jira_settings_edit(publish: Option<bool>, squash: Option<bool>) -> SettingsEdit {
+        SettingsEdit::Jira(JiraSettingsEdit { publish, squash })
+    }
+
+    async fn settings_of(service: &TestService, connection: TestConnection) -> (bool, bool) {
+        match service.connection(connection).await.settings {
+            Settings::Jira(settings) => (settings.publish, settings.squash),
+            Settings::Linear(settings) => (settings.publish, settings.squash),
+        }
+    }
+
+    async fn publish_entries(service: &Nirvana) -> Vec<(i64, i64)> {
+        publish_entry::Entity::find()
+            .all(&service.db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|entry| (entry.slot_id, entry.connection_id))
+            .collect()
+    }
+
     #[tokio::test]
     async fn add_connection_adds_to_active_profile() {
-        let mut service = test_service().await;
-        let work = service.create_profile("work".to_string()).await.unwrap();
-        service.switch_profile("work").await.unwrap();
+        let mut service = TestService::new(&[Jira]).await;
+        service.use_profile("work").await;
+        let work = service.find_active_profile().await.unwrap();
 
         let added = service
             .add_connection(keyring_data("Work Jira"))
@@ -464,9 +497,8 @@ mod tests {
 
     #[tokio::test]
     async fn add_connection_allows_same_name_in_another_profile() {
-        let mut service = test_service().await;
-        service.create_profile("work".to_string()).await.unwrap();
-        service.switch_profile("work").await.unwrap();
+        let mut service = TestService::new(&[Jira]).await;
+        service.use_profile("work").await;
 
         let added = service
             .add_connection(ConnectionData {
@@ -480,7 +512,7 @@ mod tests {
 
     #[tokio::test]
     async fn keyring_connection_stores_account_and_reads_token() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
         let connection = service
             .add_connection(keyring_data("Keyring Jira"))
             .await
@@ -506,7 +538,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejected_keyring_connection_leaves_no_entry() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
         service
             .add_connection(keyring_data("Keyring Jira"))
             .await
@@ -523,12 +555,12 @@ mod tests {
             result,
             Err(NirvanaError::Domain(DomainError::ConnectionExists(_)))
         ));
-        assert_eq!(keyring_passwords(&service), ["keyring-token"]);
+        assert_eq!(service.keyring_passwords(), ["keyring-token"]);
     }
 
     #[tokio::test]
     async fn add_connection_rejects_duplicate_name() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
 
         let result = service
             .add_connection(ConnectionData {
@@ -546,7 +578,7 @@ mod tests {
 
     #[tokio::test]
     async fn add_connection_rejects_empty_name() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
 
         let result = service.add_connection(keyring_data(" ")).await;
 
@@ -554,13 +586,13 @@ mod tests {
             result,
             Err(NirvanaError::Domain(DomainError::EmptyConnectionName))
         ));
-        assert!(keyring_passwords(&service).is_empty());
+        assert!(service.keyring_passwords().is_empty());
         assert_eq!(service.active_profile().await.unwrap().connections.len(), 1);
     }
 
     #[tokio::test]
     async fn add_connection_rejects_jira_cloud_without_identity() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
 
         for identity in [None, Some(" ".to_string())] {
             let result = service
@@ -577,13 +609,13 @@ mod tests {
                 )))
             ));
         }
-        assert!(keyring_passwords(&service).is_empty());
+        assert!(service.keyring_passwords().is_empty());
         assert_eq!(service.active_profile().await.unwrap().connections.len(), 1);
     }
 
     #[tokio::test]
     async fn add_connection_rejects_jira_dc_with_identity() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
 
         let result = service
             .add_connection(ConnectionData {
@@ -598,13 +630,13 @@ mod tests {
                 Kind::JiraDc
             )))
         ));
-        assert!(keyring_passwords(&service).is_empty());
+        assert!(service.keyring_passwords().is_empty());
         assert_eq!(service.active_profile().await.unwrap().connections.len(), 1);
     }
 
     #[tokio::test]
     async fn add_connection_adds_jira_dc_without_identity() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
 
         let added = service
             .add_connection(ConnectionData {
@@ -621,7 +653,7 @@ mod tests {
 
     #[tokio::test]
     async fn add_connection_rejects_linear_with_identity() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
 
         let result = service
             .add_connection(ConnectionData {
@@ -636,13 +668,13 @@ mod tests {
                 Kind::Linear
             )))
         ));
-        assert!(keyring_passwords(&service).is_empty());
+        assert!(service.keyring_passwords().is_empty());
         assert_eq!(service.active_profile().await.unwrap().connections.len(), 1);
     }
 
     #[tokio::test]
     async fn add_connection_adds_linear_with_default_settings() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
 
         let added = service
             .add_connection(ConnectionData {
@@ -679,20 +711,9 @@ mod tests {
         ));
     }
 
-    async fn connection_names(service: &Nirvana) -> Vec<String> {
-        service
-            .active_profile()
-            .await
-            .unwrap()
-            .connections
-            .into_iter()
-            .map(|connection| connection.model.name)
-            .collect()
-    }
-
     #[tokio::test]
     async fn edit_connection_renames_and_keeps_keyring_token() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
         let added = service
             .add_connection(keyring_data("Keyring Jira"))
             .await
@@ -718,7 +739,7 @@ mod tests {
 
     #[tokio::test]
     async fn edit_connection_changes_host_and_identity() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
 
         service
             .edit_connection(
@@ -732,8 +753,7 @@ mod tests {
             .await
             .unwrap();
 
-        let connection = &service.list_connections().await.unwrap()[0];
-        assert_eq!(connection.model.name, "Test Jira");
+        let connection = service.connection(Jira).await;
         assert_eq!(connection.model.host, "new.atlassian.net");
         assert_eq!(
             connection.model.identity.as_deref(),
@@ -743,7 +763,7 @@ mod tests {
 
     #[tokio::test]
     async fn edit_connection_keeps_fields_that_are_not_edited() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
 
         service
             .edit_connection(
@@ -756,7 +776,7 @@ mod tests {
             .await
             .unwrap();
 
-        let connection = &service.list_connections().await.unwrap()[0];
+        let connection = service.connection(Jira).await;
         assert_eq!(connection.model.host, "new.atlassian.net");
         assert_eq!(
             connection.model.identity.as_deref(),
@@ -766,7 +786,7 @@ mod tests {
 
     #[tokio::test]
     async fn edit_connection_rejects_empty_jira_cloud_identity() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
 
         let err = service
             .edit_connection(
@@ -787,7 +807,7 @@ mod tests {
 
     #[tokio::test]
     async fn edit_connection_rejects_identity_without_identity_kind() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
         for (name, kind) in [("DC Jira", Kind::JiraDc), ("Linear", Kind::Linear)] {
             service
                 .add_connection(ConnectionData {
@@ -829,9 +849,8 @@ mod tests {
 
     #[tokio::test]
     async fn edit_connection_only_edits_in_active_profile() {
-        let mut service = test_service().await;
-        service.create_profile("work".to_string()).await.unwrap();
-        service.switch_profile("work").await.unwrap();
+        let mut service = TestService::new(&[Jira]).await;
+        service.use_profile("work").await;
 
         let err = service
             .edit_connection(
@@ -854,7 +873,7 @@ mod tests {
 
     #[tokio::test]
     async fn edit_connection_rejects_duplicate_name() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
         service
             .add_connection(keyring_data("Keyring Jira"))
             .await
@@ -883,7 +902,7 @@ mod tests {
 
     #[tokio::test]
     async fn edit_connection_rejects_missing_connection() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
 
         let err = service
             .edit_connection(
@@ -904,7 +923,7 @@ mod tests {
 
     #[tokio::test]
     async fn edit_connection_rejects_empty_name() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
 
         let err = service
             .edit_connection(
@@ -924,88 +943,54 @@ mod tests {
         assert_eq!(connection_names(&service).await, ["Test Jira"]);
     }
 
-    fn jira_settings_edit(publish: Option<bool>, squash: Option<bool>) -> SettingsEdit {
-        SettingsEdit::Jira(JiraSettingsEdit { publish, squash })
-    }
-
-    async fn jira_settings_of(service: &Nirvana, name: &str) -> (bool, bool) {
-        match service.get_connection(name).await.unwrap().settings {
-            Settings::Jira(settings) => (settings.publish, settings.squash),
-            Settings::Linear(_) => panic!("expected jira settings"),
-        }
-    }
-
-    async fn add_linear(service: &Nirvana) -> i64 {
-        service
-            .add_connection(ConnectionData {
-                kind: Kind::Linear,
-                identity: None,
-                secret_store: SecretStore::Plaintext,
-                ..keyring_data("Linear")
-            })
-            .await
-            .unwrap()
-            .model
-            .id
-    }
-
-    async fn linear_settings_of(service: &Nirvana, name: &str) -> (bool, bool) {
-        match service.get_connection(name).await.unwrap().settings {
-            Settings::Linear(settings) => (settings.publish, settings.squash),
-            Settings::Jira(_) => panic!("expected linear settings"),
-        }
-    }
-
     #[tokio::test]
     async fn edit_connection_settings_changes_jira_settings() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
 
         service
             .edit_connection_settings("Test Jira", jira_settings_edit(Some(false), Some(true)))
             .await
             .unwrap();
 
-        assert_eq!(jira_settings_of(&service, "Test Jira").await, (false, true));
+        assert_eq!(settings_of(&service, Jira).await, (false, true));
     }
 
     #[tokio::test]
     async fn edit_connection_settings_keeps_settings_that_are_not_edited() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
 
         service
             .edit_connection_settings("Test Jira", jira_settings_edit(None, Some(true)))
             .await
             .unwrap();
 
-        assert_eq!(jira_settings_of(&service, "Test Jira").await, (true, true));
+        assert_eq!(settings_of(&service, Jira).await, (true, true));
     }
 
     #[tokio::test]
     async fn edit_connection_settings_changes_linear_settings() {
-        let service = test_service().await;
-        add_linear(&service).await;
+        let service = TestService::new(&[Linear]).await;
 
         service
             .edit_connection_settings(
-                "Linear",
+                Linear.name(),
                 SettingsEdit::Linear(LinearSettingsEdit {
                     publish: Some(true),
-                    squash: None,
+                    squash: Some(true),
                 }),
             )
             .await
             .unwrap();
 
-        assert_eq!(linear_settings_of(&service, "Linear").await, (true, false));
+        assert_eq!(settings_of(&service, Linear).await, (true, true));
     }
 
     #[tokio::test]
     async fn edit_connection_settings_rejects_settings_of_other_kind() {
-        let service = test_service().await;
-        add_linear(&service).await;
+        let service = TestService::new(&[Linear]).await;
 
         let err = service
-            .edit_connection_settings("Linear", jira_settings_edit(Some(false), None))
+            .edit_connection_settings(Linear.name(), jira_settings_edit(Some(false), None))
             .await
             .unwrap_err();
 
@@ -1017,9 +1002,8 @@ mod tests {
 
     #[tokio::test]
     async fn edit_connection_settings_only_edits_in_active_profile() {
-        let mut service = test_service().await;
-        service.create_profile("work".to_string()).await.unwrap();
-        service.switch_profile("work").await.unwrap();
+        let mut service = TestService::new(&[Jira]).await;
+        service.use_profile("work").await;
 
         let err = service
             .edit_connection_settings("Test Jira", jira_settings_edit(Some(false), None))
@@ -1031,13 +1015,13 @@ mod tests {
             NirvanaError::Domain(DomainError::ConnectionNotFound(name)) if name == "Test Jira"
         ));
         service.switch_profile("test").await.unwrap();
-        assert_eq!(jira_settings_of(&service, "Test Jira").await, (true, false));
+        assert_eq!(settings_of(&service, Jira).await, (true, false));
     }
 
     #[tokio::test]
     async fn edit_connection_settings_rejects_missing_settings() {
-        let service = test_service().await;
-        let id = service.get_connection("Test Jira").await.unwrap().model.id;
+        let service = TestService::new(&[Jira]).await;
+        let id = service.connection(Jira).await.model.id;
         jira_settings::Entity::delete_by_id(id)
             .exec(&service.db)
             .await
@@ -1056,7 +1040,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_connections_returns_active_profile_connections() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[Jira]).await;
         service
             .add_connection(keyring_data("Keyring Jira"))
             .await
@@ -1074,21 +1058,19 @@ mod tests {
                 ("Keyring Jira", SecretStore::Keyring)
             ]
         );
-        service.create_profile("work".to_string()).await.unwrap();
-        service.switch_profile("work").await.unwrap();
+        service.use_profile("work").await;
         assert!(service.list_connections().await.unwrap().is_empty());
     }
 
     #[tokio::test]
     async fn get_connection_finds_only_in_active_profile() {
-        let mut service = test_service().await;
+        let mut service = TestService::new(&[Jira]).await;
 
         let connection = service.get_connection("Test Jira").await.unwrap();
         assert_eq!(connection.model.name, "Test Jira");
         assert_eq!(connection.secret_store, SecretStore::Plaintext);
 
-        service.create_profile("work".to_string()).await.unwrap();
-        service.switch_profile("work").await.unwrap();
+        service.use_profile("work").await;
         let err = service.get_connection("Test Jira").await.unwrap_err();
         assert!(matches!(
             err,
@@ -1098,8 +1080,8 @@ mod tests {
 
     #[tokio::test]
     async fn list_connections_rejects_missing_credential() {
-        let service = test_service().await;
-        let id = service.list_connections().await.unwrap()[0].model.id;
+        let service = TestService::new(&[Jira]).await;
+        let id = service.connection(Jira).await.model.id;
         credential::Entity::delete_by_id(id)
             .exec(&service.db)
             .await
@@ -1115,8 +1097,8 @@ mod tests {
 
     #[tokio::test]
     async fn list_connections_rejects_missing_settings() {
-        let service = test_service().await;
-        let id = service.list_connections().await.unwrap()[0].model.id;
+        let service = TestService::new(&[Jira]).await;
+        let id = service.connection(Jira).await.model.id;
         jira_settings::Entity::delete_by_id(id)
             .exec(&service.db)
             .await
@@ -1138,67 +1120,33 @@ mod tests {
         kept_connection: i64,
     }
 
-    /// Adds a ticket of `connection_id` with one slot and returns their ids.
-    async fn add_slot(service: &Nirvana, connection_id: i64, key: &str) -> (i64, i64) {
-        let ticket = ticket::ActiveModel {
-            profile_id: Set(service.find_active_profile().await.unwrap().id),
-            connection_id: Set(Some(connection_id)),
-            ticket_key: Set(key.to_string()),
-            title: Set(String::new()),
-            synced_at: Set(0),
-            ..Default::default()
-        }
-        .insert(&service.db)
-        .await
-        .unwrap();
-        let slot = slot::ActiveModel {
-            ticket_id: Set(ticket.id),
-            profile_id: Set(ticket.profile_id),
-            started_at: Set(0),
-            stopped_at: Set(Some(60)),
-            ..Default::default()
-        }
-        .insert(&service.db)
-        .await
-        .unwrap();
-        (ticket.id, slot.id)
-    }
+    /// Adds a published slot to "Test Jira", which is deleted, and to "Test
+    /// Linear", which is kept. The "Test Linear" slot is published to both.
+    async fn add_history(service: &mut TestService) -> History {
+        let deleted_connection = service.connection(Jira).await.model.id;
+        let kept_connection = service.connection(Linear).await.model.id;
+        service.use_connection(Some(Jira));
+        let deleted_ticket = service.seed_ticket("DEL-1", "Deleted", 0, 0).await;
+        let deleted_slot = service.seed_slot(&deleted_ticket, 0, Some(60)).await;
+        service.use_connection(Some(Linear));
+        let kept_ticket = service.seed_ticket("KEEP-1", "Kept", 0, 0).await;
+        let kept_slot = service.seed_slot(&kept_ticket, 0, Some(60)).await;
 
-    /// Adds a published slot to "Test Jira" and to a new keyring connection
-    /// "Keyring Jira". The "Test Jira" slot is published to both.
-    async fn add_history(service: &Nirvana) -> History {
-        let kept_connection = service.list_connections().await.unwrap()[0].model.id;
-        let deleted_connection = service
-            .add_connection(keyring_data("Keyring Jira"))
-            .await
-            .unwrap()
-            .model
-            .id;
-        let (deleted_ticket, deleted_slot) = add_slot(service, deleted_connection, "DEL-1").await;
-        let (kept_ticket, kept_slot) = add_slot(service, kept_connection, "KEEP-1").await;
-
-        for (slot_id, connection_id) in [
-            (deleted_slot, deleted_connection),
-            (kept_slot, kept_connection),
-            (kept_slot, deleted_connection),
+        for (slot, connection_id) in [
+            (&deleted_slot, deleted_connection),
+            (&kept_slot, kept_connection),
+            (&kept_slot, deleted_connection),
         ] {
-            publish_entry::ActiveModel {
-                slot_id: Set(slot_id),
-                connection_id: Set(connection_id),
-                published_at: Set(Some(60)),
-                error: Set(None),
-                claimed_at: Set(60),
-            }
-            .insert(&service.db)
-            .await
-            .unwrap();
+            service
+                .seed_publish_entry(slot, connection_id, Some(60), None, 60)
+                .await;
         }
 
         History {
             deleted_connection,
-            deleted_ticket,
-            kept_ticket,
-            kept_slot,
+            deleted_ticket: deleted_ticket.id,
+            kept_ticket: kept_ticket.id,
+            kept_slot: kept_slot.id,
             kept_connection,
         }
     }
@@ -1215,28 +1163,14 @@ mod tests {
         assert_eq!((credential, settings), (None, None));
     }
 
-    async fn publish_entries(service: &Nirvana) -> Vec<(i64, i64)> {
-        publish_entry::Entity::find()
-            .all(&service.db)
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|entry| (entry.slot_id, entry.connection_id))
-            .collect()
-    }
-
     #[tokio::test]
     async fn delete_connection_keeps_tickets_without_connection() {
-        let service = test_service().await;
-        let history = add_history(&service).await;
+        let mut service = TestService::new(&[Linear, Jira]).await;
+        let history = add_history(&mut service).await;
 
-        service
-            .delete_connection("Keyring Jira", false)
-            .await
-            .unwrap();
+        service.delete_connection(Jira.name(), false).await.unwrap();
 
-        assert_eq!(connection_names(&service).await, ["Test Jira"]);
-        assert!(keyring_passwords(&service).is_empty());
+        assert_eq!(connection_names(&service).await, [Linear.name()]);
         assert_cascaded(&service, history.deleted_connection).await;
         let ticket = ticket::Entity::find_by_id(history.deleted_ticket)
             .one(&service.db)
@@ -1256,16 +1190,12 @@ mod tests {
 
     #[tokio::test]
     async fn delete_connection_deletes_tickets_and_slots() {
-        let service = test_service().await;
-        let history = add_history(&service).await;
+        let mut service = TestService::new(&[Linear, Jira]).await;
+        let history = add_history(&mut service).await;
 
-        service
-            .delete_connection("Keyring Jira", true)
-            .await
-            .unwrap();
+        service.delete_connection(Jira.name(), true).await.unwrap();
 
-        assert_eq!(connection_names(&service).await, ["Test Jira"]);
-        assert!(keyring_passwords(&service).is_empty());
+        assert_eq!(connection_names(&service).await, [Linear.name()]);
         assert_cascaded(&service, history.deleted_connection).await;
         let tickets = ticket::Entity::find().all(&service.db).await.unwrap();
         assert_eq!(
@@ -1285,10 +1215,13 @@ mod tests {
 
     #[tokio::test]
     async fn delete_connection_deletes_linear_settings() {
-        let service = test_service().await;
-        let id = add_linear(&service).await;
+        let service = TestService::new(&[Linear]).await;
+        let id = service.connection(Linear).await.model.id;
 
-        service.delete_connection("Linear", false).await.unwrap();
+        service
+            .delete_connection(Linear.name(), false)
+            .await
+            .unwrap();
 
         assert!(
             linear_settings::Entity::find_by_id(id)
@@ -1300,8 +1233,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn delete_connection_removes_keyring_entry() {
+        let service = TestService::new(&[]).await;
+        service
+            .add_connection(keyring_data("Keyring Jira"))
+            .await
+            .unwrap();
+
+        service
+            .delete_connection("Keyring Jira", false)
+            .await
+            .unwrap();
+
+        assert!(service.keyring_passwords().is_empty());
+    }
+
+    #[tokio::test]
     async fn delete_connection_rejects_missing_connection() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
 
         let err = service
             .delete_connection("missing", true)
@@ -1317,7 +1266,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_connection_rejects_missing_connection() {
-        let service = test_service().await;
+        let service = TestService::new(&[Jira]).await;
 
         let err = service.test_connection("missing").await.unwrap_err();
 

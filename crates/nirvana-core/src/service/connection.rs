@@ -430,7 +430,7 @@ mod tests {
     use secrecy::ExposeSecret;
 
     use super::*;
-    use crate::domain::{JiraSettingsEdit, LinearSettings, LinearSettingsEdit};
+    use crate::domain::{JiraSettingsEdit, LinearSettings};
     use crate::secrets::read_credential;
     use crate::service::test_service::TestConnection::{Jira, KeyringJira, Linear};
     use crate::service::test_service::{TestConnection, TestService};
@@ -455,10 +455,6 @@ mod tests {
             .into_iter()
             .map(|connection| connection.model.name)
             .collect()
-    }
-
-    fn jira_settings_edit(publish: Option<bool>, squash: Option<bool>) -> SettingsEdit {
-        SettingsEdit::Jira(JiraSettingsEdit { publish, squash })
     }
 
     async fn settings_of(service: &TestService, connection: TestConnection) -> (bool, bool) {
@@ -937,7 +933,7 @@ mod tests {
         let service = TestService::new(&[Jira]).await;
 
         service
-            .edit_connection_settings("Test Jira", jira_settings_edit(Some(false), Some(true)))
+            .edit_settings(Jira, Some(false), Some(true))
             .await
             .unwrap();
 
@@ -948,10 +944,7 @@ mod tests {
     async fn edit_connection_settings_keeps_settings_that_are_not_edited() {
         let service = TestService::new(&[Jira]).await;
 
-        service
-            .edit_connection_settings("Test Jira", jira_settings_edit(None, Some(true)))
-            .await
-            .unwrap();
+        service.edit_settings(Jira, None, Some(true)).await.unwrap();
 
         assert_eq!(settings_of(&service, Jira).await, (true, true));
     }
@@ -961,13 +954,7 @@ mod tests {
         let service = TestService::new(&[Linear]).await;
 
         service
-            .edit_connection_settings(
-                Linear.name(),
-                SettingsEdit::Linear(LinearSettingsEdit {
-                    publish: Some(true),
-                    squash: Some(true),
-                }),
-            )
+            .edit_settings(Linear, Some(true), Some(true))
             .await
             .unwrap();
 
@@ -979,7 +966,13 @@ mod tests {
         let service = TestService::new(&[Linear]).await;
 
         let err = service
-            .edit_connection_settings(Linear.name(), jira_settings_edit(Some(false), None))
+            .edit_connection_settings(
+                Linear.name(),
+                SettingsEdit::Jira(JiraSettingsEdit {
+                    publish: Some(false),
+                    squash: None,
+                }),
+            )
             .await
             .unwrap_err();
 
@@ -995,7 +988,7 @@ mod tests {
         service.use_profile("work").await;
 
         let err = service
-            .edit_connection_settings("Test Jira", jira_settings_edit(Some(false), None))
+            .edit_settings(Jira, Some(false), None)
             .await
             .unwrap_err();
 
@@ -1017,7 +1010,7 @@ mod tests {
             .unwrap();
 
         let err = service
-            .edit_connection_settings("Test Jira", jira_settings_edit(Some(false), None))
+            .edit_settings(Jira, Some(false), None)
             .await
             .unwrap_err();
 

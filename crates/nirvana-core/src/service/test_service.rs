@@ -15,14 +15,16 @@ use nirvana_entity::{publish_entry, slot, ticket};
 use sea_orm::{ActiveModelTrait, Set};
 use serde_json::json;
 use tempfile::TempDir;
-use wiremock::matchers::{body_partial_json, method, path};
+use wiremock::matchers::{body_partial_json, body_string_contains, method, path};
 use wiremock::{Mock, MockBuilder, MockServer, ResponseTemplate};
 
 use crate::domain::{
-    Connection, ConnectionData, ConnectionEdit, Kind, TicketConnection, TicketSort,
+    Connection, ConnectionData, ConnectionEdit, JiraSettingsEdit, Kind, LinearSettingsEdit,
+    SettingsEdit, TicketConnection, TicketSort,
 };
+use crate::errors::NirvanaError;
 use crate::paths::AppPaths;
-use crate::secrets::mock_store;
+use crate::secrets::{KEYRING_SERVICE, mock_store};
 use crate::service::Nirvana;
 
 const UNREACHABLE_HOST: &str = "http://127.0.0.1:9";
@@ -166,6 +168,22 @@ impl TestService {
         self.switch_profile(name).await.unwrap();
     }
 
+    /// Edits the settings of `connection`, keeping the ones that are `None`.
+    pub(super) async fn edit_settings(
+        &self,
+        connection: TestConnection,
+        publish: Option<bool>,
+        squash: Option<bool>,
+    ) -> Result<(), NirvanaError> {
+        let edit = match self.connection_data(connection).kind {
+            Kind::Linear => SettingsEdit::Linear(LinearSettingsEdit { publish, squash }),
+            Kind::JiraCloud | Kind::JiraDc => {
+                SettingsEdit::Jira(JiraSettingsEdit { publish, squash })
+            }
+        };
+        self.edit_connection_settings(connection.name(), edit).await
+    }
+
     /// Makes `connection` the connection of seeded tickets, or seeds them
     /// without one.
     pub(super) fn use_connection(&mut self, connection: Option<TestConnection>) {
@@ -261,7 +279,7 @@ impl TestService {
         let connection = self
             .current_connection
             .expect("mocks need a current connection");
-        let kind = self.connection(connection).await.kind;
+        let kind = self.connection_data(connection).kind;
         let response = match kind {
             Kind::Linear => ResponseTemplate::new(200).set_body_json(json!({
                 "data": { "issue": { "identifier": key, "title": title } },
@@ -278,6 +296,39 @@ impl TestService {
             .await;
     }
 
+    /// Mocks a Jira worklog of `seconds` on the ticket `key`. One such
+    /// worklog is expected.
+    pub(super) async fn mock_worklog(&self, key: &str, seconds: i64) {
+        Mock::given(method("POST"))
+            .and(path(format!("/rest/api/2/issue/{key}/worklog")))
+            .and(body_partial_json(json!({ "timeSpentSeconds": seconds })))
+            .respond_with(ResponseTemplate::new(201))
+            .expect(1)
+            .mount(self.mock_server())
+            .await;
+    }
+
+    /// Mocks a Linear comment on the ticket `key` that logs `duration`, such
+    /// as "1h 5m". One such comment is expected.
+    pub(super) async fn mock_comment(&self, key: &str, duration: &str) {
+        Mock::given(method("POST"))
+            .and(path("/graphql"))
+            .and(body_partial_json(
+                json!({ "variables": { "issueId": key } }),
+            ))
+            .and(body_string_contains(format!("Logged {duration},")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": { "commentCreate": { "success": true } },
+            })))
+            .expect(1)
+            .mount(self.mock_server())
+            .await;
+    }
+
+    fn mock_server(&self) -> &MockServer {
+        self.mock.as_ref().expect("mocks need start_mock")
+    }
+
     /// Returns the paths of the requests the mock server received.
     pub(super) async fn requested_paths(&self) -> Vec<String> {
         let mock = self.mock.as_ref().expect("requests need start_mock");
@@ -289,13 +340,16 @@ impl TestService {
             .collect()
     }
 
+    fn keyring_entries(&self) -> Vec<keyring_core::Entry> {
+        let store = (self.keyring)().unwrap();
+        store
+            .search(&[("service", KEYRING_SERVICE)].into())
+            .unwrap()
+    }
+
     /// Returns the passwords stored in the keyring.
     pub(super) fn keyring_passwords(&self) -> Vec<String> {
-        let store = (self.keyring)().unwrap();
-        let spec = [("service", "nirvana")].into();
-        store
-            .search(&spec)
-            .unwrap()
+        self.keyring_entries()
             .into_iter()
             .filter_map(|entry| match entry.get_password() {
                 Ok(password) => Some(password),
@@ -303,6 +357,13 @@ impl TestService {
                 Err(e) => panic!("keyring read failed: {e}"),
             })
             .collect()
+    }
+
+    /// Deletes every password stored in the keyring.
+    pub(super) fn clear_keyring(&self) {
+        for entry in self.keyring_entries() {
+            entry.delete_credential().unwrap();
+        }
     }
 }
 

@@ -37,7 +37,7 @@ type Store = windows_native_keyring_store::store::Store;
 #[cfg(target_os = "linux")]
 type Store = zbus_secret_service_keyring_store::store::Store;
 
-const KEYRING_SERVICE: &str = "nirvana";
+pub(crate) const KEYRING_SERVICE: &str = "nirvana";
 
 pub(crate) type StoreFactory =
     Arc<dyn Fn() -> keyring_core::Result<Arc<CredentialStore>> + Send + Sync>;

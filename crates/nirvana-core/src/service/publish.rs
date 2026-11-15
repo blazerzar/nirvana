@@ -326,65 +326,11 @@ fn error_chain(error: &dyn std::error::Error) -> String {
 #[cfg(test)]
 mod tests {
     use chrono::TimeZone;
-    use nirvana_entity::credential::SecretStore;
-    use sea_orm::{ActiveModelTrait, PaginatorTrait};
+    use sea_orm::PaginatorTrait;
 
     use super::*;
-    use crate::domain::{ConnectionData, JiraSettingsEdit, Kind, LinearSettingsEdit, SettingsEdit};
-    use crate::service::test_support::test_service;
-
-    async fn add_ticket(service: &Nirvana, connection: &str, key: &str) -> ticket::Model {
-        let connection = service.get_connection(connection).await.unwrap();
-        ticket::ActiveModel {
-            profile_id: Set(connection.model.profile_id),
-            connection_id: Set(Some(connection.model.id)),
-            ticket_key: Set(key.to_string()),
-            title: Set(String::new()),
-            synced_at: Set(0),
-            ..Default::default()
-        }
-        .insert(&service.db)
-        .await
-        .unwrap()
-    }
-
-    async fn add_slot(
-        service: &Nirvana,
-        ticket: &ticket::Model,
-        started_at: i64,
-        stopped_at: Option<i64>,
-    ) -> slot::Model {
-        slot::ActiveModel {
-            ticket_id: Set(ticket.id),
-            profile_id: Set(ticket.profile_id),
-            started_at: Set(started_at),
-            stopped_at: Set(stopped_at),
-            ..Default::default()
-        }
-        .insert(&service.db)
-        .await
-        .unwrap()
-    }
-
-    async fn add_entry(
-        service: &Nirvana,
-        slot: &slot::Model,
-        ticket: &ticket::Model,
-        published_at: Option<i64>,
-        error: Option<&str>,
-        claimed_at: i64,
-    ) {
-        publish_entry::ActiveModel {
-            slot_id: Set(slot.id),
-            connection_id: Set(ticket.connection_id.unwrap()),
-            published_at: Set(published_at),
-            error: Set(error.map(str::to_string)),
-            claimed_at: Set(claimed_at),
-        }
-        .insert(&service.db)
-        .await
-        .unwrap();
-    }
+    use crate::service::test_service::TestConnection::{Jira, KeyringJira, Linear};
+    use crate::service::test_service::TestService;
 
     async fn entry(service: &Nirvana, slot: &slot::Model) -> Option<publish_entry::Model> {
         publish_entry::Entity::find()
@@ -392,43 +338,6 @@ mod tests {
             .one(&service.db)
             .await
             .unwrap()
-    }
-
-    async fn add_linear(service: &Nirvana, publish: bool) {
-        service
-            .add_connection(ConnectionData {
-                name: "Test Linear".to_string(),
-                kind: Kind::Linear,
-                host: "linear.app/test".to_string(),
-                identity: None,
-                secret_store: SecretStore::Plaintext,
-                token: "token".into(),
-            })
-            .await
-            .unwrap();
-        service
-            .edit_connection_settings(
-                "Test Linear",
-                SettingsEdit::Linear(LinearSettingsEdit {
-                    publish: Some(publish),
-                    squash: None,
-                }),
-            )
-            .await
-            .unwrap();
-    }
-
-    async fn enable_jira_squash(service: &Nirvana) {
-        service
-            .edit_connection_settings(
-                "Test Jira",
-                SettingsEdit::Jira(JiraSettingsEdit {
-                    publish: None,
-                    squash: Some(true),
-                }),
-            )
-            .await
-            .unwrap();
     }
 
     fn local(day: u32, hour: u32) -> i64 {
@@ -442,23 +351,48 @@ mod tests {
         slots.iter().map(|slot| slot.model.id).collect()
     }
 
+    fn failures(result: &PublishResult) -> Vec<(i64, &str)> {
+        result
+            .failed
+            .iter()
+            .map(|failure| (failure.slot.model.id, failure.error.as_str()))
+            .collect()
+    }
+
+    async fn assert_published(service: &Nirvana, slots: &[&slot::Model]) {
+        for slot in slots {
+            let entry = entry(service, slot).await.unwrap();
+            assert!(entry.published_at.is_some());
+            assert_eq!(entry.error, None);
+        }
+    }
+
     #[tokio::test]
     async fn find_publishable_selects_stopped_unpublished_slots_in_range() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "Test Jira", "KAR-1").await;
-        let before = add_slot(&service, &ticket, 1000, Some(2000)).await;
-        let overlapping = add_slot(&service, &ticket, 2500, Some(3500)).await;
-        let published = add_slot(&service, &ticket, 3500, Some(4000)).await;
-        let failed = add_slot(&service, &ticket, 4000, Some(4500)).await;
-        let stuck = add_slot(&service, &ticket, 4500, Some(4600)).await;
-        let pending = add_slot(&service, &ticket, 4600, Some(4700)).await;
-        add_slot(&service, &ticket, 5000, None).await;
-        let now = Utc::now().timestamp();
-        add_entry(&service, &published, &ticket, Some(4000), None, 4000).await;
-        add_entry(&service, &failed, &ticket, None, Some("error"), now).await;
-        add_entry(&service, &stuck, &ticket, None, None, now - STUCK_AFTER - 1).await;
-        add_entry(&service, &pending, &ticket, None, None, now).await;
+        let mut service = TestService::new(&[Jira]).await;
+        service.use_connection(Some(Jira));
+        let ticket = service.seed_ticket("KAR-1", "Title", 0, 0).await;
         let connection_id = ticket.connection_id.unwrap();
+        let before = service.seed_slot(&ticket, 1000, Some(2000)).await;
+        let overlapping = service.seed_slot(&ticket, 2500, Some(3500)).await;
+        let published = service.seed_slot(&ticket, 3500, Some(4000)).await;
+        let failed = service.seed_slot(&ticket, 4000, Some(4500)).await;
+        let stuck = service.seed_slot(&ticket, 4500, Some(4600)).await;
+        let pending = service.seed_slot(&ticket, 4600, Some(4700)).await;
+        service.seed_slot(&ticket, 5000, None).await;
+        let now = Utc::now().timestamp();
+        service
+            .seed_publish_entry(&published, connection_id, Some(4000), None, 4000)
+            .await;
+        service
+            .seed_publish_entry(&failed, connection_id, None, Some("error"), now)
+            .await;
+        service
+            .seed_publish_entry(&stuck, connection_id, None, None, now - STUCK_AFTER - 1)
+            .await;
+        service
+            .seed_publish_entry(&pending, connection_id, None, None, now)
+            .await;
 
         let slots = find_publishable(
             &service.db,
@@ -490,11 +424,11 @@ mod tests {
 
     #[tokio::test]
     async fn find_publishable_skips_other_connections() {
-        let service = test_service().await;
-        add_linear(&service, false).await;
-        let ticket = add_ticket(&service, "Test Linear", "NIR-1").await;
-        add_slot(&service, &ticket, 1000, Some(2000)).await;
-        let jira = service.get_connection("Test Jira").await.unwrap();
+        let mut service = TestService::new(&[Jira, Linear]).await;
+        service.use_connection(Some(Linear));
+        let ticket = service.seed_ticket("NIR-1", "Title", 0, 0).await;
+        service.seed_slot(&ticket, 1000, Some(2000)).await;
+        let jira = service.connection(Jira).await;
 
         let slots = find_publishable(
             &service.db,
@@ -512,9 +446,10 @@ mod tests {
 
     #[tokio::test]
     async fn claim_inserts_pending_entries_once() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "Test Jira", "KAR-1").await;
-        let slot = add_slot(&service, &ticket, 1000, Some(2000)).await;
+        let mut service = TestService::new(&[Jira]).await;
+        service.use_connection(Some(Jira));
+        let ticket = service.seed_ticket("KAR-1", "Title", 0, 0).await;
+        let slot = service.seed_slot(&ticket, 1000, Some(2000)).await;
         let select = || {
             find_publishable(
                 &service.db,
@@ -539,15 +474,23 @@ mod tests {
 
     #[tokio::test]
     async fn claim_resets_failed_and_stuck_entries_only_on_retry() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "Test Jira", "KAR-1").await;
-        let failed = add_slot(&service, &ticket, 1000, Some(2000)).await;
-        let stuck = add_slot(&service, &ticket, 2000, Some(3000)).await;
-        let pending = add_slot(&service, &ticket, 3000, Some(4000)).await;
+        let mut service = TestService::new(&[Jira]).await;
+        service.use_connection(Some(Jira));
+        let ticket = service.seed_ticket("KAR-1", "Title", 0, 0).await;
+        let connection_id = ticket.connection_id.unwrap();
+        let failed = service.seed_slot(&ticket, 1000, Some(2000)).await;
+        let stuck = service.seed_slot(&ticket, 2000, Some(3000)).await;
+        let pending = service.seed_slot(&ticket, 3000, Some(4000)).await;
         let now = Utc::now().timestamp();
-        add_entry(&service, &failed, &ticket, None, Some("error"), 0).await;
-        add_entry(&service, &stuck, &ticket, None, None, now - STUCK_AFTER - 1).await;
-        add_entry(&service, &pending, &ticket, None, None, now).await;
+        service
+            .seed_publish_entry(&failed, connection_id, None, Some("error"), 0)
+            .await;
+        service
+            .seed_publish_entry(&stuck, connection_id, None, None, now - STUCK_AFTER - 1)
+            .await;
+        service
+            .seed_publish_entry(&pending, connection_id, None, None, now)
+            .await;
         let slots = || {
             let slots = [&failed, &stuck, &pending].map(|model| Slot {
                 model: model.clone(),
@@ -572,11 +515,14 @@ mod tests {
 
     #[tokio::test]
     async fn store_result_marks_entry_ok_or_failed() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "Test Jira", "KAR-1").await;
-        let slot = add_slot(&service, &ticket, 1000, Some(2000)).await;
+        let mut service = TestService::new(&[Jira]).await;
+        service.use_connection(Some(Jira));
+        let ticket = service.seed_ticket("KAR-1", "Title", 0, 0).await;
         let connection_id = ticket.connection_id.unwrap();
-        add_entry(&service, &slot, &ticket, None, None, 0).await;
+        let slot = service.seed_slot(&ticket, 1000, Some(2000)).await;
+        service
+            .seed_publish_entry(&slot, connection_id, None, None, 0)
+            .await;
 
         let error = "network error".to_string();
         store_result(&service.db, slot.id, connection_id, Some(&error))
@@ -595,9 +541,10 @@ mod tests {
 
     #[tokio::test]
     async fn store_result_fails_without_entry() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "Test Jira", "KAR-1").await;
-        let slot = add_slot(&service, &ticket, 1000, Some(2000)).await;
+        let mut service = TestService::new(&[Jira]).await;
+        service.use_connection(Some(Jira));
+        let ticket = service.seed_ticket("KAR-1", "Title", 0, 0).await;
+        let slot = service.seed_slot(&ticket, 1000, Some(2000)).await;
 
         let err = store_result(&service.db, slot.id, ticket.connection_id.unwrap(), None)
             .await
@@ -611,9 +558,10 @@ mod tests {
 
     #[tokio::test]
     async fn publish_slots_stores_failure_of_short_jira_worklog() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "Test Jira", "KAR-1").await;
-        let slot = add_slot(&service, &ticket, 1000, Some(1059)).await;
+        let mut service = TestService::new(&[Jira]).await;
+        service.use_connection(Some(Jira));
+        let ticket = service.seed_ticket("KAR-1", "Title", 0, 0).await;
+        let slot = service.seed_slot(&ticket, 1000, Some(1059)).await;
 
         let result = service
             .publish_slots(None, None, None, false)
@@ -637,11 +585,160 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn publish_slots_publishes_to_jira_and_linear() {
+        let mut service = TestService::new(&[Jira, Linear]).await;
+        service
+            .edit_settings(Linear, Some(true), None)
+            .await
+            .unwrap();
+        service.start_mock().await;
+        service.use_connection(Some(Jira));
+        let jira = service.seed_ticket("KAR-1", "Title", 0, 0).await;
+        let jira_slot = service.seed_slot(&jira, 1000, Some(4600)).await;
+        service.mock_worklog("KAR-1", 3600).await;
+        service.use_connection(Some(Linear));
+        let linear = service.seed_ticket("NIR-1", "Title", 0, 0).await;
+        let linear_slot = service.seed_slot(&linear, 5000, Some(5600)).await;
+        service.mock_comment("NIR-1", "10m").await;
+
+        let result = service
+            .publish_slots(None, None, None, false)
+            .await
+            .unwrap();
+
+        assert!(result.failed.is_empty());
+        assert_eq!(ids(&result.published), [jira_slot.id, linear_slot.id]);
+        assert_published(&service, &[&jira_slot, &linear_slot]).await;
+    }
+
+    #[tokio::test]
+    async fn publish_slots_stores_failure_of_missing_ticket() {
+        let mut service = TestService::new(&[Jira]).await;
+        service.start_mock().await;
+        service.use_connection(Some(Jira));
+        let ticket = service.seed_ticket("KAR-1", "Title", 0, 0).await;
+        let slot = service.seed_slot(&ticket, 1000, Some(4600)).await;
+
+        let result = service
+            .publish_slots(None, None, None, false)
+            .await
+            .unwrap();
+
+        assert!(result.published.is_empty());
+        assert_eq!(result.failed.len(), 1);
+        let error = "ticket not found: KAR-1";
+        assert_eq!(result.failed[0].error, error);
+        let entry = entry(&service, &slot).await.unwrap();
+        assert_eq!(
+            (entry.published_at, entry.error.as_deref()),
+            (None, Some(error))
+        );
+    }
+
+    #[tokio::test]
+    async fn publish_slots_stores_result_of_each_squashed_group() {
+        let mut service = TestService::new(&[Jira]).await;
+        service.edit_settings(Jira, None, Some(true)).await.unwrap();
+        service.start_mock().await;
+        service.use_connection(Some(Jira));
+        let found = service.seed_ticket("KAR-1", "Title", 0, 0).await;
+        let missing = service.seed_ticket("KAR-2", "Title", 0, 0).await;
+        let found_first = service
+            .seed_slot(&found, local(10, 9), Some(local(10, 9) + 600))
+            .await;
+        let found_second = service
+            .seed_slot(&found, local(10, 10), Some(local(10, 10) + 600))
+            .await;
+        let missing_first = service
+            .seed_slot(&missing, local(10, 11), Some(local(10, 11) + 600))
+            .await;
+        let missing_second = service
+            .seed_slot(&missing, local(10, 12), Some(local(10, 12) + 600))
+            .await;
+        service.mock_worklog("KAR-1", 1200).await;
+
+        let result = service
+            .publish_slots(None, None, None, false)
+            .await
+            .unwrap();
+
+        assert_eq!(ids(&result.published), [found_first.id, found_second.id]);
+        let error = "ticket not found: KAR-2";
+        assert_eq!(
+            failures(&result),
+            [(missing_first.id, error), (missing_second.id, error)]
+        );
+        assert_published(&service, &[&found_first, &found_second]).await;
+        for slot in [&missing_first, &missing_second] {
+            let entry = entry(&service, slot).await.unwrap();
+            assert_eq!(
+                (entry.published_at, entry.error.as_deref()),
+                (None, Some(error))
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn publish_slots_retry_publishes_failed_slot() {
+        let mut service = TestService::new(&[Jira]).await;
+        service.start_mock().await;
+        service.use_connection(Some(Jira));
+        let ticket = service.seed_ticket("KAR-1", "Title", 0, 0).await;
+        let slot = service.seed_slot(&ticket, 1000, Some(4600)).await;
+        let failed = service
+            .publish_slots(None, None, None, false)
+            .await
+            .unwrap();
+        assert_eq!(failed.failed.len(), 1);
+        service.mock_worklog("KAR-1", 3600).await;
+
+        let result = service.publish_slots(None, None, None, true).await.unwrap();
+
+        assert!(result.failed.is_empty());
+        assert_eq!(ids(&result.published), [slot.id]);
+        let entry = entry(&service, &slot).await.unwrap();
+        assert!(entry.published_at.is_some());
+        assert_eq!(entry.error, None);
+    }
+
+    #[tokio::test]
+    async fn publish_slots_stores_failure_of_missing_credential_on_every_slot() {
+        let mut service = TestService::new(&[KeyringJira]).await;
+        service.clear_keyring();
+        service.use_connection(Some(KeyringJira));
+        let ticket = service.seed_ticket("KAR-1", "Title", 0, 0).await;
+        let first = service.seed_slot(&ticket, 1000, Some(4600)).await;
+        let second = service.seed_slot(&ticket, 5000, Some(8600)).await;
+
+        let result = service
+            .publish_slots(None, None, None, false)
+            .await
+            .unwrap();
+
+        assert!(result.published.is_empty());
+        let error = format!(
+            "no keyring entry for connection {}",
+            ticket.connection_id.unwrap()
+        );
+        assert_eq!(
+            failures(&result),
+            [(first.id, error.as_str()), (second.id, error.as_str())]
+        );
+        for slot in [&first, &second] {
+            let entry = entry(&service, slot).await.unwrap();
+            assert_eq!(
+                (entry.published_at, entry.error.as_deref()),
+                (None, Some(error.as_str()))
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn publish_slots_skips_connections_with_publish_disabled() {
-        let service = test_service().await;
-        add_linear(&service, false).await;
-        let ticket = add_ticket(&service, "Test Linear", "NIR-1").await;
-        let slot = add_slot(&service, &ticket, 1000, Some(2000)).await;
+        let mut service = TestService::new(&[Jira, Linear]).await;
+        service.use_connection(Some(Linear));
+        let ticket = service.seed_ticket("NIR-1", "Title", 0, 0).await;
+        let slot = service.seed_slot(&ticket, 1000, Some(2000)).await;
 
         let result = service
             .publish_slots(None, None, None, false)
@@ -654,10 +751,11 @@ mod tests {
 
     #[tokio::test]
     async fn publish_slots_without_connections_publishes_nothing() {
-        let service = test_service().await;
-        let ticket = add_ticket(&service, "Test Jira", "KAR-1").await;
-        add_slot(&service, &ticket, 1000, Some(2000)).await;
-        service.delete_connection("Test Jira", false).await.unwrap();
+        let mut service = TestService::new(&[Jira]).await;
+        service.use_connection(Some(Jira));
+        let ticket = service.seed_ticket("KAR-1", "Title", 0, 0).await;
+        service.seed_slot(&ticket, 1000, Some(2000)).await;
+        service.delete_connection(Jira.name(), false).await.unwrap();
 
         let result = service
             .publish_slots(None, None, None, false)
@@ -676,31 +774,35 @@ mod tests {
 
     #[tokio::test]
     async fn publish_slots_rejects_target_with_publish_disabled() {
-        let service = test_service().await;
-        add_linear(&service, false).await;
+        let service = TestService::new(&[Jira, Linear]).await;
 
         let err = service
-            .publish_slots(None, None, Some("Test Linear"), false)
+            .publish_slots(None, None, Some(Linear.name()), false)
             .await
             .unwrap_err();
 
         assert!(matches!(
             err,
-            NirvanaError::Domain(DomainError::PublishDisabled(name)) if name == "Test Linear"
+            NirvanaError::Domain(DomainError::PublishDisabled(name)) if name == Linear.name()
         ));
     }
 
     #[tokio::test]
     async fn publish_slots_limits_to_target() {
-        let service = test_service().await;
-        add_linear(&service, true).await;
-        let jira = add_ticket(&service, "Test Jira", "KAR-1").await;
-        let jira_slot = add_slot(&service, &jira, 1000, Some(1030)).await;
-        let linear = add_ticket(&service, "Test Linear", "NIR-1").await;
-        let linear_slot = add_slot(&service, &linear, 2000, Some(3000)).await;
+        let mut service = TestService::new(&[Jira, Linear]).await;
+        service
+            .edit_settings(Linear, Some(true), None)
+            .await
+            .unwrap();
+        service.use_connection(Some(Jira));
+        let jira = service.seed_ticket("KAR-1", "Title", 0, 0).await;
+        let jira_slot = service.seed_slot(&jira, 1000, Some(1030)).await;
+        service.use_connection(Some(Linear));
+        let linear = service.seed_ticket("NIR-1", "Title", 0, 0).await;
+        let linear_slot = service.seed_slot(&linear, 2000, Some(3000)).await;
 
         let result = service
-            .publish_slots(None, None, Some("Test Jira"), false)
+            .publish_slots(None, None, Some(Jira.name()), false)
             .await
             .unwrap();
 
@@ -711,13 +813,22 @@ mod tests {
 
     #[tokio::test]
     async fn squash_groups_slots_by_ticket_and_local_day() {
-        let service = test_service().await;
-        let first = add_ticket(&service, "Test Jira", "KAR-1").await;
-        let second = add_ticket(&service, "Test Jira", "KAR-2").await;
-        let morning = add_slot(&service, &first, local(10, 0), Some(local(10, 1))).await;
-        let evening = add_slot(&service, &first, local(10, 23), Some(local(11, 1))).await;
-        let next_day = add_slot(&service, &first, local(11, 9), Some(local(11, 10))).await;
-        let other = add_slot(&service, &second, local(10, 9), Some(local(10, 10))).await;
+        let mut service = TestService::new(&[Jira]).await;
+        service.use_connection(Some(Jira));
+        let first = service.seed_ticket("KAR-1", "Title", 0, 0).await;
+        let second = service.seed_ticket("KAR-2", "Title", 0, 0).await;
+        let morning = service
+            .seed_slot(&first, local(10, 0), Some(local(10, 1)))
+            .await;
+        let evening = service
+            .seed_slot(&first, local(10, 23), Some(local(11, 1)))
+            .await;
+        let next_day = service
+            .seed_slot(&first, local(11, 9), Some(local(11, 10)))
+            .await;
+        let other = service
+            .seed_slot(&second, local(10, 9), Some(local(10, 10)))
+            .await;
         let slots = [
             (&morning, &first),
             (&evening, &first),
@@ -743,58 +854,59 @@ mod tests {
 
     #[tokio::test]
     async fn publish_slots_squashes_and_stores_result_on_every_slot() {
-        let service = test_service().await;
-        enable_jira_squash(&service).await;
-        let ticket = add_ticket(&service, "Test Jira", "KAR-1").await;
-        let first = add_slot(&service, &ticket, local(10, 9), Some(local(10, 9) + 20)).await;
-        let second = add_slot(&service, &ticket, local(10, 10), Some(local(10, 10) + 20)).await;
-        let next_day = add_slot(&service, &ticket, local(11, 9), Some(local(11, 9) + 30)).await;
+        let mut service = TestService::new(&[Jira]).await;
+        service.edit_settings(Jira, None, Some(true)).await.unwrap();
+        service.start_mock().await;
+        service.use_connection(Some(Jira));
+        let ticket = service.seed_ticket("KAR-1", "Title", 0, 0).await;
+        let first = service
+            .seed_slot(&ticket, local(10, 9), Some(local(10, 9) + 1200))
+            .await;
+        let second = service
+            .seed_slot(&ticket, local(10, 10), Some(local(10, 10) + 1200))
+            .await;
+        let next_day = service
+            .seed_slot(&ticket, local(11, 9), Some(local(11, 9) + 1800))
+            .await;
+        service.mock_worklog("KAR-1", 2400).await;
+        service.mock_worklog("KAR-1", 1800).await;
 
         let result = service
             .publish_slots(None, None, None, false)
             .await
             .unwrap();
 
-        assert!(result.published.is_empty());
-        let squashed = "worklog of 40 s is under the 60 s Jira accepts";
-        let single = "worklog of 30 s is under the 60 s Jira accepts";
-        let failed: Vec<(i64, &str)> = result
-            .failed
-            .iter()
-            .map(|failure| (failure.slot.model.id, failure.error.as_str()))
-            .collect();
-        assert_eq!(
-            failed,
-            [
-                (first.id, squashed),
-                (second.id, squashed),
-                (next_day.id, single)
-            ]
-        );
-        for (slot, error) in [(&first, squashed), (&second, squashed), (&next_day, single)] {
-            let entry = entry(&service, slot).await.unwrap();
-            assert_eq!(entry.error.as_deref(), Some(error));
-        }
+        assert!(result.failed.is_empty());
+        assert_eq!(ids(&result.published), [first.id, second.id, next_day.id]);
+        assert_published(&service, &[&first, &second, &next_day]).await;
     }
 
     #[tokio::test]
     async fn publish_slots_squash_skips_published_slots_on_retry() {
-        let service = test_service().await;
-        enable_jira_squash(&service).await;
-        let ticket = add_ticket(&service, "Test Jira", "KAR-1").await;
-        let published = add_slot(&service, &ticket, local(10, 9), Some(local(10, 9) + 50)).await;
-        let failed = add_slot(&service, &ticket, local(10, 10), Some(local(10, 10) + 30)).await;
-        add_entry(&service, &published, &ticket, Some(1000), None, 1000).await;
-        add_entry(&service, &failed, &ticket, None, Some("error"), 1000).await;
+        let mut service = TestService::new(&[Jira]).await;
+        service.edit_settings(Jira, None, Some(true)).await.unwrap();
+        service.start_mock().await;
+        service.use_connection(Some(Jira));
+        let ticket = service.seed_ticket("KAR-1", "Title", 0, 0).await;
+        let connection_id = ticket.connection_id.unwrap();
+        let published = service
+            .seed_slot(&ticket, local(10, 9), Some(local(10, 9) + 3000))
+            .await;
+        let failed = service
+            .seed_slot(&ticket, local(10, 10), Some(local(10, 10) + 1800))
+            .await;
+        service
+            .seed_publish_entry(&published, connection_id, Some(1000), None, 1000)
+            .await;
+        service
+            .seed_publish_entry(&failed, connection_id, None, Some("error"), 1000)
+            .await;
+        service.mock_worklog("KAR-1", 1800).await;
 
         let result = service.publish_slots(None, None, None, true).await.unwrap();
 
-        assert_eq!(result.failed.len(), 1);
-        assert_eq!(result.failed[0].slot.model.id, failed.id);
-        assert_eq!(
-            result.failed[0].error,
-            "worklog of 30 s is under the 60 s Jira accepts"
-        );
+        assert!(result.failed.is_empty());
+        assert_eq!(ids(&result.published), [failed.id]);
         let entry = entry(&service, &published).await.unwrap();
         assert_eq!((entry.published_at, entry.error), (Some(1000), None));
     }

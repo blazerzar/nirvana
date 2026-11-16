@@ -49,13 +49,13 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
-      - run: cargo build --workspace --locked
+      - run: cargo build --workspace --release --locked
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: nirvana-${{ matrix.name }}
           path: |
-            target/debug/nirvana
-            target/debug/nirvana.exe
+            target/release/nirvana
+            target/release/nirvana.exe
           retention-days: 7
 
   coverage:

@@ -22,19 +22,19 @@ pub(crate) async fn list() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let rows: Vec<[String; 3]> = credentials
-        .into_iter()
-        .map(|credential| {
-            let store = credential.location.store().to_string();
-            let account = match credential.location {
-                SecretLocation::Plaintext => String::new(),
-                SecretLocation::Keyring { account } => account,
-            };
-            [credential.connection, store, account]
-        })
-        .collect();
+    let rows: Vec<[String; 3]> = credentials.into_iter().map(row).collect();
 
     table::print(&term, &COLUMNS, &rows)
+}
+
+fn row(credential: Credential) -> [String; 3] {
+    let store = credential.location.store().to_string();
+    let account = match credential.location {
+        SecretLocation::Plaintext => String::new(),
+        SecretLocation::Keyring { account } => account,
+        SecretLocation::Env { variable } => variable,
+    };
+    [credential.connection, store, account]
 }
 
 pub(crate) async fn update(name: Option<String>, token: Option<String>) -> anyhow::Result<()> {
@@ -135,6 +135,7 @@ async fn select_credential(
     }
 
     let mut credentials = service.list_credentials().await?;
+    credentials.retain(|credential| credential.location.store() != SecretStore::Env);
 
     let term = Term::stdout();
     if credentials.is_empty() {
@@ -167,4 +168,24 @@ fn print_no_credentials(term: &Term) -> std::io::Result<()> {
         "Credentials are added with connections: {}",
         style("nirvana connection add").bold()
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn env_row_shows_variable() {
+        let credential = Credential {
+            connection: "Env Linear".to_string(),
+            location: SecretLocation::Env {
+                variable: "NIRVANA_TEST_TOKEN".to_string(),
+            },
+        };
+
+        assert_eq!(
+            row(credential),
+            ["Env Linear", "env", "NIRVANA_TEST_TOKEN"].map(String::from)
+        );
+    }
 }

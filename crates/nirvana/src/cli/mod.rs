@@ -306,7 +306,12 @@ enum Connection {
         #[arg(long, requires = "name")]
         credential: Option<String>,
         /// Where to store the token
-        #[arg(long, value_parser = storage_parser(), requires = "name")]
+        #[arg(
+            long,
+            value_parser = storage_parser(),
+            requires = "name",
+            requires_if("env", "credential")
+        )]
         storage: Option<SecretStore>,
     },
     /// Edit a connection's name, host or identity
@@ -680,6 +685,36 @@ mod tests {
             mask_secrets(args(&["credential", "update", "jira", "--token=secret"])),
             args(&["credential", "update", "jira", "--token=***"])
         );
+    }
+
+    #[test]
+    fn env_storage_requires_credential() {
+        let add = [
+            "nirvana",
+            "connection",
+            "add",
+            "ci",
+            "--kind",
+            "linear",
+            "--host",
+            "linear.app",
+        ];
+
+        let parse = |extra: &[&str]| {
+            Cli::try_parse_from(add.iter().chain(extra))
+                .map(|_| ())
+                .map_err(|e| e.kind())
+        };
+
+        assert_eq!(
+            parse(&["--storage", "env"]),
+            Err(clap::error::ErrorKind::MissingRequiredArgument)
+        );
+        assert_eq!(
+            parse(&["--storage", "env", "--credential", "NIRVANA_X"]),
+            Ok(())
+        );
+        assert_eq!(parse(&["--storage", "plaintext"]), Ok(()));
     }
 
     #[test]

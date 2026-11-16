@@ -255,7 +255,7 @@ logged from the start.
 
 - [x] Refactor test helpers (factories) for unit tests.
 - [x] Add linear connection to test service.
-- [ ] Add the `env` secret store for e2e tests: the credentials
+- [x] Add the `env` secret store for e2e tests: the credentials
       row holds the name of the environment variable with the token, which
       must start with `NIRVANA_`. Hidden from `--help` and the interactive
       picker, available in all builds.

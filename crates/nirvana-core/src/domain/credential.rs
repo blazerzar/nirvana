@@ -5,6 +5,7 @@ pub use nirvana_entity::credential::SecretStore;
 pub enum SecretLocation {
     Plaintext,
     Keyring { account: String },
+    Env { variable: String },
 }
 
 impl SecretLocation {
@@ -12,6 +13,7 @@ impl SecretLocation {
         match self {
             Self::Plaintext => SecretStore::Plaintext,
             Self::Keyring { .. } => SecretStore::Keyring,
+            Self::Env { .. } => SecretStore::Env,
         }
     }
 }

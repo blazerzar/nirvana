@@ -30,37 +30,40 @@ const UNREACHABLE_HOST: &str = "http://127.0.0.1:9";
 /// A connection of the test service.
 #[derive(Clone, Copy)]
 pub(super) enum TestConnection {
-    /// "Test Linear".
     Linear,
-    /// "Test Jira", a Jira Cloud connection.
     Jira,
-    /// "Test Jira DC", a Jira Data Center connection.
     JiraDc,
-    /// "Keyring Linear", with its token in the keyring.
     KeyringLinear,
-    /// "Keyring Jira", a Jira Cloud connection with its token in the keyring.
     KeyringJira,
+    EnvLinear,
 }
 
 impl TestConnection {
-    pub(super) fn name(self) -> &'static str {
+    /// Returns the name, token, kind and secret store of the connection.
+    fn spec(self) -> (&'static str, &'static str, Kind, SecretStore) {
+        use Kind::{JiraCloud, JiraDc, Linear};
+        use SecretStore::{Env, Keyring, Plaintext};
+
         match self {
-            Self::Linear => "Test Linear",
-            Self::Jira => "Test Jira",
-            Self::JiraDc => "Test Jira DC",
-            Self::KeyringLinear => "Keyring Linear",
-            Self::KeyringJira => "Keyring Jira",
+            Self::Linear => ("Test Linear", "linear-token", Linear, Plaintext),
+            Self::Jira => ("Test Jira", "jira-token", JiraCloud, Plaintext),
+            Self::JiraDc => ("Test Jira DC", "jira-dc-token", JiraDc, Plaintext),
+            Self::KeyringLinear => ("Keyring Linear", "keyring-linear-token", Linear, Keyring),
+            Self::KeyringJira => ("Keyring Jira", "keyring-jira-token", JiraCloud, Keyring),
+            Self::EnvLinear => ("Env Linear", "NIRVANA_TEST_TOKEN", Linear, Env),
         }
     }
 
+    pub(super) fn name(self) -> &'static str {
+        self.spec().0
+    }
+
     pub(super) fn token(self) -> &'static str {
-        match self {
-            Self::Linear => "linear-token",
-            Self::Jira => "jira-token",
-            Self::JiraDc => "jira-dc-token",
-            Self::KeyringLinear => "keyring-linear-token",
-            Self::KeyringJira => "keyring-jira-token",
-        }
+        self.spec().1
+    }
+
+    fn identity(self) -> Option<String> {
+        (self.spec().2 == Kind::JiraCloud).then(|| "tester@example.com".to_string())
     }
 }
 
@@ -137,26 +140,14 @@ impl TestService {
 
     /// Returns the data `connection` is seeded with.
     pub(super) fn connection_data(&self, connection: TestConnection) -> ConnectionData {
-        let (kind, identity) = match connection {
-            TestConnection::Linear | TestConnection::KeyringLinear => (Kind::Linear, None),
-            TestConnection::Jira | TestConnection::KeyringJira => {
-                (Kind::JiraCloud, Some("tester@example.com".to_string()))
-            }
-            TestConnection::JiraDc => (Kind::JiraDc, None),
-        };
-        let secret_store = match connection {
-            TestConnection::Linear | TestConnection::Jira | TestConnection::JiraDc => {
-                SecretStore::Plaintext
-            }
-            TestConnection::KeyringLinear | TestConnection::KeyringJira => SecretStore::Keyring,
-        };
+        let (name, token, kind, secret_store) = connection.spec();
         ConnectionData {
-            name: connection.name().to_string(),
+            name: name.to_string(),
             kind,
             host: self.host(),
-            identity,
+            identity: connection.identity(),
             secret_store,
-            token: connection.token().into(),
+            token: token.into(),
         }
     }
 

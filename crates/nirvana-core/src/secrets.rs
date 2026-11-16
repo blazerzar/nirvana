@@ -8,7 +8,10 @@
 //!   with a random 8 hex digit key. The token is stored in the OS keyring
 //!   under service `nirvana` and that account (Keychain on macOS, Credential
 //!   Manager on Windows, Secret Service on Linux).
-//! - `env`: not supported yet.
+//! - `env`: the name of the environment variable holding the token, which
+//!   is `NIRVANA_` followed by uppercase letters, digits and underscores. The
+//!   name is checked when adding and when reading a connection. An empty
+//!   variable counts as not set.
 //!
 //! The token of an existing connection can be updated in place, or moved
 //! between `plaintext` and `keyring`. The keyring is written before the row,
@@ -18,6 +21,7 @@
 //! including the `StoreFactory` that creates the store and dropping the store,
 //! runs in `spawn_blocking`.
 
+use std::env;
 use std::sync::Arc;
 
 use keyring_core::CredentialStore;
@@ -38,6 +42,7 @@ type Store = windows_native_keyring_store::store::Store;
 type Store = zbus_secret_service_keyring_store::store::Store;
 
 pub(crate) const KEYRING_SERVICE: &str = "nirvana";
+const ENV_PREFIX: &str = "NIRVANA_";
 
 pub(crate) type StoreFactory =
     Arc<dyn Fn() -> keyring_core::Result<Arc<CredentialStore>> + Send + Sync>;
@@ -59,6 +64,10 @@ pub enum SecretError {
     KeyringUnavailable(String),
     #[error("no keyring entry for connection {connection_id}")]
     MissingEntry { connection_id: i64 },
+    #[error("environment variable name must match {ENV_PREFIX}[A-Z0-9_]+")]
+    InvalidEnvName,
+    #[error("environment variable {0} is not set or empty")]
+    MissingEnv(String),
     #[error("unsupported secret store: {0}")]
     UnsupportedStore(SecretStore),
     #[error(transparent)]
@@ -95,7 +104,8 @@ fn vendor_name(vendor: &str) -> String {
 
 /// Returns the `credential` column value for a new connection. For
 /// `keyring` the token is saved in the keyring under
-/// `nirvana_<profile>_<connection>_<key>` and that account is returned.
+/// `nirvana_<profile>_<connection>_<key>` and that account is returned. For
+/// `env` the token is the name of the environment variable.
 pub(crate) async fn store_secret(
     keyring: &StoreFactory,
     profile: &str,
@@ -109,7 +119,25 @@ pub(crate) async fn store_secret(
             let account = keyring_account(profile, connection);
             Ok(set_in_keychain(keyring, account, token).await?)
         }
-        SecretStore::Env => Err(SecretError::UnsupportedStore(store).into()),
+        SecretStore::Env => {
+            let name = token.expose_secret();
+            check_env_name(name)?;
+            Ok(name.to_string())
+        }
+    }
+}
+
+fn check_env_name(name: &str) -> Result<(), SecretError> {
+    match name.strip_prefix(ENV_PREFIX) {
+        Some(rest)
+            if !rest.is_empty()
+                && rest
+                    .bytes()
+                    .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_') =>
+        {
+            Ok(())
+        }
+        _ => Err(SecretError::InvalidEnvName),
     }
 }
 
@@ -139,7 +167,7 @@ pub(crate) async fn set_in_keychain(
 }
 
 /// Returns the token of a connection, reading it from the keyring for
-/// `keyring` credentials.
+/// `keyring` credentials and from the environment for `env` credentials.
 pub(crate) async fn read_credential(
     keyring: &StoreFactory,
     connection_id: i64,
@@ -157,11 +185,16 @@ pub(crate) async fn read_credential(
         SecretStore::Keyring => {
             read_from_keychain(keyring, connection_id, credential.credential).await?
         }
-        SecretStore::Env => {
-            return Err(SecretError::UnsupportedStore(credential.secret_store).into());
-        }
+        SecretStore::Env => read_env(&credential.credential, |name| env::var(name).ok())?,
     };
     Ok(token.into())
+}
+
+fn read_env(name: &str, var: impl Fn(&str) -> Option<String>) -> Result<String, SecretError> {
+    check_env_name(name)?;
+    var(name)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| SecretError::MissingEnv(name.to_string()))
 }
 
 pub(crate) async fn read_from_keychain(
@@ -280,5 +313,45 @@ mod tests {
         .unwrap();
 
         assert_eq!(secret, "not-so-secret-token");
+    }
+
+    #[test]
+    fn env_reads_set_variable() {
+        let token = read_env("NIRVANA_TOKEN", |name| {
+            (name == "NIRVANA_TOKEN").then(|| "env-token".to_string())
+        });
+
+        assert_eq!(token.unwrap(), "env-token");
+    }
+
+    #[test]
+    fn env_reports_missing_variable() {
+        for value in [None, Some(String::new())] {
+            let err = read_env("NIRVANA_TOKEN", |_| value.clone()).unwrap_err();
+
+            assert!(
+                matches!(&err, SecretError::MissingEnv(name) if name == "NIRVANA_TOKEN"),
+                "{err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn env_name_is_nirvana_prefix_with_uppercase_digits_and_underscores() {
+        for name in ["NIRVANA_TOKEN", "NIRVANA_JIRA_2"] {
+            assert!(check_env_name(name).is_ok(), "{name}");
+        }
+        for name in [
+            "HOME",
+            "NIRVANA_",
+            "NIRVANA_TOKEN ",
+            "NIRVANA_token",
+            "NIRVANA_A=B",
+        ] {
+            assert!(
+                matches!(check_env_name(name), Err(SecretError::InvalidEnvName)),
+                "{name}"
+            );
+        }
     }
 }

@@ -25,8 +25,7 @@ impl Nirvana {
     /// # Errors
     ///
     /// Returns an error if no profile is active, the config is unavailable, a
-    /// connection has no credential or uses an unsupported secret store, or
-    /// the database query fails.
+    /// connection has no credential or the database query fails.
     pub async fn list_credentials(&self) -> Result<Vec<Credential>, NirvanaError> {
         let profile = self.find_active_profile().await?;
         ConnectionEntity::find()
@@ -38,7 +37,7 @@ impl Nirvana {
             .into_iter()
             .map(|(connection, credential)| {
                 let credential = credential.ok_or(DomainError::MissingCredential(connection.id))?;
-                to_credential(connection, credential)
+                Ok(to_credential(connection, credential))
             })
             .collect()
     }
@@ -49,12 +48,12 @@ impl Nirvana {
     /// # Errors
     ///
     /// Returns an error if no profile is active, the config is unavailable,
-    /// the connection does not exist or has no credential, its secret store is
-    /// unsupported, or the database query fails.
+    /// the connection does not exist or has no credential, or the database
+    /// query fails.
     pub async fn get_credential(&self, name: &str) -> Result<Credential, NirvanaError> {
         let profile = self.find_active_profile().await?;
         let (connection, credential) = self.find_credential(profile.id, name).await?;
-        to_credential(connection, credential)
+        Ok(to_credential(connection, credential))
     }
 
     /// Replaces the token of the connection named `name` in the active
@@ -158,23 +157,20 @@ impl Nirvana {
     }
 }
 
-fn to_credential(
-    connection: connection::Model,
-    credential: credential::Model,
-) -> Result<Credential, NirvanaError> {
+fn to_credential(connection: connection::Model, credential: credential::Model) -> Credential {
     let location = match credential.secret_store {
         SecretStore::Plaintext => SecretLocation::Plaintext,
         SecretStore::Keyring => SecretLocation::Keyring {
             account: credential.credential,
         },
-        SecretStore::Env => {
-            return Err(SecretError::UnsupportedStore(credential.secret_store).into());
-        }
+        SecretStore::Env => SecretLocation::Env {
+            variable: credential.credential,
+        },
     };
-    Ok(Credential {
+    Credential {
         connection: connection.name,
         location,
-    })
+    }
 }
 
 async fn set_credential(
@@ -197,15 +193,17 @@ mod tests {
     use sea_orm::ConnectionTrait;
 
     use super::*;
+    use crate::domain::ConnectionData;
     use crate::secrets::read_credential;
     use crate::service::test_service::TestConnection::{
-        Jira, JiraDc, KeyringJira, KeyringLinear, Linear,
+        EnvLinear, Jira, JiraDc, KeyringJira, KeyringLinear, Linear,
     };
     use crate::service::test_service::{TestConnection, TestService};
 
     const PLAINTEXT_CONNECTIONS: [TestConnection; 3] = [Jira, JiraDc, Linear];
     const KEYRING_CONNECTIONS: [TestConnection; 2] = [KeyringJira, KeyringLinear];
-    const CONNECTIONS: [TestConnection; 5] = [Jira, KeyringJira, JiraDc, Linear, KeyringLinear];
+    const CONNECTIONS: [TestConnection; 6] =
+        [Jira, KeyringJira, JiraDc, Linear, KeyringLinear, EnvLinear];
 
     async fn credential_row(
         service: &TestService,
@@ -227,7 +225,9 @@ mod tests {
                 assert_account(&account, connection);
                 SecretLocation::Keyring { account }
             }
-            SecretStore::Env => unreachable!(),
+            SecretStore::Env => SecretLocation::Env {
+                variable: credential_row(service, connection).await.credential,
+            },
         };
         Credential {
             connection: connection.name().to_string(),
@@ -343,14 +343,11 @@ mod tests {
 
     #[tokio::test]
     async fn update_credential_rejects_env() {
-        let service = TestService::new(&[Jira]).await;
-        let row = credential_row(&service, Jira).await;
-        set_credential(&service.db, row, SecretStore::Env, "NIRVANA_TOKEN".into())
-            .await
-            .unwrap();
+        let service = TestService::new(&[EnvLinear]).await;
+        let row = credential_row(&service, EnvLinear).await;
 
         let err = service
-            .update_credential(Jira.name(), "new-token".into())
+            .update_credential(EnvLinear.name(), "new-token".into())
             .await
             .unwrap_err();
 
@@ -358,6 +355,7 @@ mod tests {
             err,
             NirvanaError::Secret(SecretError::UnsupportedStore(SecretStore::Env))
         ));
+        assert_eq!(credential_row(&service, EnvLinear).await, row);
     }
 
     #[tokio::test]
@@ -436,7 +434,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn move_credential_rejects_env() {
+    async fn move_credential_rejects_to_env() {
         let service = TestService::new(&[Jira]).await;
         let row = credential_row(&service, Jira).await;
 
@@ -450,6 +448,77 @@ mod tests {
             NirvanaError::Secret(SecretError::UnsupportedStore(SecretStore::Env))
         ));
         assert_eq!(credential_row(&service, Jira).await, row);
+    }
+
+    #[tokio::test]
+    async fn move_credential_rejects_from_env() {
+        let service = TestService::new(&[EnvLinear]).await;
+        let row = credential_row(&service, EnvLinear).await;
+
+        for to in [SecretStore::Plaintext, SecretStore::Keyring] {
+            let err = service
+                .move_credential(EnvLinear.name(), to)
+                .await
+                .unwrap_err();
+
+            assert!(
+                matches!(
+                    err,
+                    NirvanaError::Secret(SecretError::UnsupportedStore(SecretStore::Env))
+                ),
+                "{to}"
+            );
+            assert_eq!(credential_row(&service, EnvLinear).await, row, "{to}");
+        }
+        assert!(service.keyring_passwords().is_empty());
+    }
+
+    #[tokio::test]
+    async fn add_connection_stores_env_variable_name() {
+        let service = TestService::new(&[EnvLinear]).await;
+
+        let row = credential_row(&service, EnvLinear).await;
+
+        assert_eq!(row.secret_store, SecretStore::Env);
+        assert_eq!(row.credential, "NIRVANA_TEST_TOKEN");
+    }
+
+    #[tokio::test]
+    async fn add_connection_rejects_env_variable_without_prefix() {
+        let service = TestService::new(&[]).await;
+
+        let err = service
+            .add_connection(ConnectionData {
+                token: "HOME".into(),
+                ..service.connection_data(EnvLinear)
+            })
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(err, NirvanaError::Secret(SecretError::InvalidEnvName)),
+            "{err:?}"
+        );
+        assert!(service.list_connections().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn read_credential_rejects_env_variable_without_prefix() {
+        let service = TestService::new(&[Jira]).await;
+        let row = credential_row(&service, Jira).await;
+        let id = row.connection_id;
+        set_credential(&service.db, row, SecretStore::Env, "HOME".into())
+            .await
+            .unwrap();
+
+        let err = read_credential(&service.keyring, id, &service.db)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(err, NirvanaError::Secret(SecretError::InvalidEnvName)),
+            "{err:?}"
+        );
     }
 
     #[tokio::test]

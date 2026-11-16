@@ -53,7 +53,7 @@ async fn ticket_keys(service: &Nirvana, connection: TicketConnection) -> Vec<Str
 
 #[tokio::test]
 async fn add_edit_and_move_credential() {
-    let Setup { service, .. } = setup().await;
+    let Setup { service, _dir } = setup().await;
     let added = service
         .add_connection(jira_cloud(SecretStore::Keyring))
         .await
@@ -124,7 +124,7 @@ async fn add_edit_and_move_credential() {
 
 #[tokio::test]
 async fn connections_belong_to_their_profile() {
-    let Setup { mut service, .. } = setup().await;
+    let Setup { mut service, _dir } = setup().await;
     service.add_connection(linear("Linear")).await.unwrap();
     service
         .store_test_ticket("Linear", "NIR-1", "Fix login")
@@ -167,7 +167,7 @@ async fn connections_belong_to_their_profile() {
 
 #[tokio::test]
 async fn delete_connection_keeps_or_deletes_tickets() {
-    let Setup { service, .. } = setup().await;
+    let Setup { service, _dir } = setup().await;
     let now = Utc::now().timestamp();
     service.add_connection(linear("Linear")).await.unwrap();
     service
@@ -224,7 +224,7 @@ async fn delete_connection_keeps_or_deletes_tickets() {
 
 #[tokio::test]
 async fn connection_names_are_unique_per_profile() {
-    let Setup { service, .. } = setup().await;
+    let Setup { service, _dir } = setup().await;
     for name in ["Linear", "Other"] {
         service.add_connection(linear(name)).await.unwrap();
     }

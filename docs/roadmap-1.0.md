@@ -227,7 +227,7 @@ logged from the start.
       Linear connection is added.
 - [x] Reimplement publishing: a slot is published to its ticket's
       connection when that connection has `publish` enabled. Jira as
-      worklogs, Linear as comments (`Worklog <start>-<stop> (<duration>)`).
+      worklogs, Linear as comments (`Logged <duration>, started <date time offset>.`).
 - [x] Squash per ticket per local day when `squash` is enabled. A slot
       belongs to the day it started on. The worklog or comment starts at
       the earliest slot start of the day and lasts the summed duration.
@@ -262,9 +262,11 @@ logged from the start.
 - [ ] Add e2e tests for nirvana: run the built release binary in CI against
       the real Jira and Linear APIs, with tokens from GitHub secrets through
       the `env` secret store.
-- [ ] Add core integration tests for `ticket load` and `ticket sync` using
-      mocks, for Linear and Jira. They pass the mock URL in directly. Use
-      wiremock as a dev-dependency.
+- [x] Add core integration tests for `ticket load` and `ticket sync` using
+      mocks, for Linear and Jira. They pass the mock URL in directly. The
+      wiremock mocks are shared with unit tests through `test-support`.
+- [ ] Add core integration tests for publishing using mocks, for Linear and
+      Jira: publish state of sent and failed slots and retry.
 
 ## Nirvana API
 

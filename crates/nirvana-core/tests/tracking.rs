@@ -58,7 +58,7 @@ fn summary(slots: &[(Slot, PublishState)]) -> Vec<(&str, i64, Option<i64>)> {
 
 #[tokio::test]
 async fn start_switch_stop_resume() {
-    let Setup { service, now, .. } = setup().await;
+    let Setup { service, now, _dir } = setup().await;
     let (t0, t1, t2, t3, t4) = (now - 3600, now - 2400, now - 1800, now - 1200, now - 600);
 
     let first = service.start_slot("NIR-1", Some(t0), None).await.unwrap();
@@ -109,7 +109,7 @@ async fn start_switch_stop_resume() {
 
 #[tokio::test]
 async fn edit_and_delete() {
-    let Setup { service, now, .. } = setup().await;
+    let Setup { service, now, _dir } = setup().await;
     let added = service
         .add_slot("NIR-1", now - 3600, now - 1800, None)
         .await
@@ -151,7 +151,7 @@ async fn edit_and_delete() {
 
 #[tokio::test]
 async fn list_ranges() {
-    let Setup { service, now, .. } = setup().await;
+    let Setup { service, now, _dir } = setup().await;
     let (h, m) = (3600, 60);
     for (key, started_at, stopped_at) in [
         ("NIR-1", now - 5 * h, now - 4 * h),

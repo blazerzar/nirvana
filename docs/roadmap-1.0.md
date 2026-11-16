@@ -265,7 +265,7 @@ logged from the start.
 - [x] Add core integration tests for `ticket load` and `ticket sync` using
       mocks, for Linear and Jira. They pass the mock URL in directly. The
       wiremock mocks are shared with unit tests through `test-support`.
-- [ ] Add core integration tests for publishing using mocks, for Linear and
+- [x] Add core integration tests for publishing using mocks, for Linear and
       Jira: publish state of sent and failed slots and retry.
 
 ## Nirvana API

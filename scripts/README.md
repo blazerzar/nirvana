@@ -30,18 +30,27 @@ never touches your real data. Dev mode is on in debug builds or with
 
 Secrets come from [Infisical](https://infisical.com). Log in with
 `infisical login`. The project is set in `.infisical.yaml` in the repository
-root. Each connection kind has its own folder:
+root. Each connection kind has its own folder, and the e2e tests have `/e2e`:
 
 | Folder        | Secrets                      |
 | ------------- | ---------------------------- |
 | `/jira-cloud` | `HOST`, `EMAIL`, `API_TOKEN` |
 | `/jira-dc`    | `HOST`, `PAT`                |
 | `/linear`     | `API_KEY`                    |
+| `/e2e`        | `NIRVANA_E2E_*`, see below   |
 
 `HOST` is the instance host without a scheme, e.g. `yourcompany.atlassian.net`.
 Jira Cloud API tokens are generated at
 https://id.atlassian.com/manage-profile/security/api-tokens. Linear API keys
 are generated at https://linear.app/settings/account/security.
+
+`/e2e` holds the secrets of the e2e tests (`mise run test-e2e`):
+
+- `NIRVANA_E2E_JIRA_HOST`, `NIRVANA_E2E_JIRA_EMAIL` and
+  `NIRVANA_E2E_JIRA_TOKEN`: the same as in `/jira-cloud`.
+- `NIRVANA_E2E_LINEAR_TOKEN`: the same as `API_KEY` in `/linear`.
+- `NIRVANA_E2E_JIRA_PROJECT` and `NIRVANA_E2E_LINEAR_TEAM`: the Jira project
+  key and the Linear team key the tests create their issues in.
 
 ## Adding scripts
 

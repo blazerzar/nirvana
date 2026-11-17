@@ -39,6 +39,7 @@ Tool versions are pinned in `mise.toml` (`mise install`). Git hooks run through
 | Run all checks | `mise run lint` |
 | Fix formatting | `mise run fix` |
 | Test coverage (HTML in `target/llvm-cov/html`) | `mise run coverage` |
+| E2E tests against Jira Cloud and Linear | `mise run test-e2e` |
 
 - Formatting: `cargo +$NIGHTLY_TOOLCHAIN fmt` (Rust, pinned nightly rustfmt
   for import grouping, installed by `mise run setup`), dprint (TOML, YAML,

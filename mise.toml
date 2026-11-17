@@ -54,6 +54,14 @@ run = "cargo test --workspace"
 description = "Run keyring tests against the OS keyring (manual, on full machines)"
 run = "cargo test -p nirvana-core native_keyring -- --ignored --test-threads=1"
 
+[tasks.test-e2e]
+description = "Run e2e tests against Jira Cloud and Linear (secrets from Infisical)"
+env = { NIRVANA_E2E_BIN = "{{config_root}}/target/release/nirvana" }
+run = [
+  "cargo build --release --locked -p nirvana",
+  "infisical run --silent --path=/e2e -- cargo test --locked -p nirvana --test e2e -- --ignored",
+]
+
 [tasks.coverage]
 description = "Run tests with coverage and write HTML and LCOV reports to target/llvm-cov"
 depends = ["setup-coverage"]

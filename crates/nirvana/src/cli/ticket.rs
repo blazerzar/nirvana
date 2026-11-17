@@ -107,7 +107,9 @@ pub(crate) async fn delete(
     let service = Nirvana::new().await?;
     let term = Term::stdout();
     let ticket = match service.delete_ticket(target.clone(), with_slots).await {
-        Err(NirvanaError::Domain(DomainError::TicketHasSlots(key, slots))) => {
+        Err(NirvanaError::Domain(DomainError::TicketHasSlots(key, slots)))
+            if Term::stderr().is_term() =>
+        {
             let slots = if slots == 1 {
                 "1 slot".to_string()
             } else {

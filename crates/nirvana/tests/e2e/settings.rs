@@ -1,17 +1,15 @@
-use crate::helpers::{Config, Jira, Linear, Nirvana, at, comment, day, row, timestamp, title};
+use crate::helpers::{E2e, at, comment, day, row, timestamp};
 
 #[tokio::test]
 #[ignore]
 async fn publish_settings() {
-    const TEST: &str = "publish_settings";
-    let config = Config::from_env();
-    let (jira, linear) = (Jira::new(&config), Linear::new(&config));
+    let e2e = E2e::connected("publish_settings");
+    let (jira, linear, nirvana) = (&e2e.jira, &e2e.linear, &e2e.nirvana);
     let d = day(1);
 
-    let j1 = jira.create_issue(&title(TEST, "J1")).await;
-    let l1 = linear.create_issue(&title(TEST, "L1")).await;
+    let j1 = e2e.jira_issue("J1").await;
+    let l1 = e2e.linear_issue("L1").await;
 
-    let nirvana = Nirvana::connected(&config);
     assert_eq!(nirvana.get("jira", "publish"), "true");
     assert_eq!(nirvana.get("jira", "squash"), "false");
     assert_eq!(nirvana.get("linear", "publish"), "false");

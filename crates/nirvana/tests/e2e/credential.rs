@@ -1,20 +1,19 @@
-use crate::helpers::{Config, Nirvana, line_with};
+use crate::helpers::{E2e, line_with};
 
 #[tokio::test]
 #[ignore]
 async fn lists_credentials() {
-    let config = Config::from_env();
+    let e2e = E2e::new("lists_credentials");
+    let (config, nirvana) = (&e2e.config, &e2e.nirvana);
 
-    let nirvana = Nirvana::new();
-    nirvana.setup();
     let credentials = nirvana.run(&["credential", "list"]);
     assert!(
         credentials.contains("No credentials found"),
         "{credentials}"
     );
 
-    nirvana.add_jira(&config);
-    nirvana.add_linear(&config);
+    nirvana.add_jira(config);
+    nirvana.add_linear(config);
     let credentials = nirvana.run(&["credential", "list"]);
     let lines: Vec<Vec<&str>> = credentials
         .lines()
@@ -33,9 +32,8 @@ async fn lists_credentials() {
 #[tokio::test]
 #[ignore]
 async fn env_credentials_cannot_be_updated_or_moved() {
-    let config = Config::from_env();
-
-    let nirvana = Nirvana::connected(&config);
+    let e2e = E2e::connected("env_credentials_cannot_be_updated_or_moved");
+    let nirvana = &e2e.nirvana;
 
     nirvana.fail(
         &[

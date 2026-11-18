@@ -1,29 +1,25 @@
-use crate::helpers::{
-    Config, Jira, Linear, Nirvana, at, day, first_column, line_with, shown, sorted, title,
-};
+use crate::helpers::{E2e, at, day, first_column, line_with, shown, sorted};
 
 #[tokio::test]
 #[ignore]
 async fn syncs_ticket_titles() {
-    const TEST: &str = "syncs_ticket_titles";
-    let config = Config::from_env();
-    let (jira, linear) = (Jira::new(&config), Linear::new(&config));
+    let e2e = E2e::connected("syncs_ticket_titles");
+    let (jira, linear, nirvana) = (&e2e.jira, &e2e.linear, &e2e.nirvana);
     let d = day(1);
 
-    let j1 = jira.create_issue(&title(TEST, "J1")).await;
-    let j2 = jira.create_issue(&title(TEST, "J2")).await;
-    let l1 = linear.create_issue(&title(TEST, "L1")).await;
+    let j1 = e2e.jira_issue("J1").await;
+    let j2 = e2e.jira_issue("J2").await;
+    let l1 = e2e.linear_issue("L1").await;
 
-    let nirvana = Nirvana::connected(&config);
     nirvana.run(&["ticket", "load", &j1]);
     nirvana.run(&["add", &l1, "--start", &at(d, "09:00"), "--duration", "30m"]);
 
-    let (j1_renamed, l1_renamed) = (title(TEST, "J1 renamed"), title(TEST, "L1 renamed"));
+    let (j1_renamed, l1_renamed) = (e2e.title("J1 renamed"), e2e.title("L1 renamed"));
     jira.rename_issue(&j1, &j1_renamed).await;
     linear.rename_issue(&l1, &l1_renamed).await;
     let tickets = nirvana.run(&["ticket", "list"]);
     for name in ["J1", "L1"] {
-        assert!(tickets.contains(&shown(&title(TEST, name))), "{tickets}");
+        assert!(tickets.contains(&shown(&e2e.title(name))), "{tickets}");
     }
 
     let synced = nirvana.run(&["ticket", "sync", &j1]);
@@ -42,7 +38,7 @@ async fn syncs_ticket_titles() {
     let tickets = nirvana.run(&["ticket", "list"]);
     for (old, new) in [("J1", &j1_renamed), ("L1", &l1_renamed)] {
         assert!(tickets.contains(&shown(new)), "{tickets}");
-        assert!(!tickets.contains(&shown(&title(TEST, old))), "{tickets}");
+        assert!(!tickets.contains(&shown(&e2e.title(old))), "{tickets}");
     }
     let slots = nirvana.run(&["list", "--from", &at(d, "00:00"), "--to", &at(d, "23:59")]);
     assert!(slots.contains(&shown(&l1_renamed)), "{slots}");
@@ -51,17 +47,15 @@ async fn syncs_ticket_titles() {
 #[tokio::test]
 #[ignore]
 async fn loads_and_lists_tickets() {
-    const TEST: &str = "loads_and_lists_tickets";
-    let config = Config::from_env();
-    let (jira, linear) = (Jira::new(&config), Linear::new(&config));
+    let e2e = E2e::connected("loads_and_lists_tickets");
+    let (config, nirvana) = (&e2e.config, &e2e.nirvana);
 
-    let j1 = jira.create_issue(&title(TEST, "J1")).await;
-    let j2 = jira.create_issue(&title(TEST, "J2")).await;
-    let l1 = linear.create_issue(&title(TEST, "L1")).await;
+    let j1 = e2e.jira_issue("J1").await;
+    let j2 = e2e.jira_issue("J2").await;
+    let l1 = e2e.linear_issue("L1").await;
 
-    let nirvana = Nirvana::connected(&config);
     let loaded = nirvana.run(&["ticket", "load", &j1]);
-    assert!(loaded.contains(&title(TEST, "J1")), "{loaded}");
+    assert!(loaded.contains(&e2e.title("J1")), "{loaded}");
     nirvana.run(&["ticket", "load", &l1, "--connection", "linear"]);
     nirvana.fail(
         &["ticket", "load", &j2, "--connection", "linear"],
@@ -74,7 +68,7 @@ async fn loads_and_lists_tickets() {
 
     let tickets = nirvana.run(&["ticket", "list"]);
     for name in ["J1", "J2", "L1"] {
-        assert!(tickets.contains(&shown(&title(TEST, name))), "{tickets}");
+        assert!(tickets.contains(&shown(&e2e.title(name))), "{tickets}");
     }
     let jira_tickets = nirvana.run(&["ticket", "list", "--connection", "jira"]);
     assert_eq!(
@@ -104,16 +98,14 @@ async fn loads_and_lists_tickets() {
 #[tokio::test]
 #[ignore]
 async fn deletes_tickets() {
-    const TEST: &str = "deletes_tickets";
-    let config = Config::from_env();
-    let (jira, linear) = (Jira::new(&config), Linear::new(&config));
+    let e2e = E2e::connected("deletes_tickets");
+    let nirvana = &e2e.nirvana;
     let d = day(1);
 
-    let j1 = jira.create_issue(&title(TEST, "J1")).await;
-    let j2 = jira.create_issue(&title(TEST, "J2")).await;
-    let l1 = linear.create_issue(&title(TEST, "L1")).await;
+    let j1 = e2e.jira_issue("J1").await;
+    let j2 = e2e.jira_issue("J2").await;
+    let l1 = e2e.linear_issue("L1").await;
 
-    let nirvana = Nirvana::connected(&config);
     nirvana.run(&["ticket", "load", &j1]);
     nirvana.run(&["ticket", "load", &l1]);
     nirvana.run(&["add", &j2, "--start", &at(d, "09:00"), "--duration", "30m"]);

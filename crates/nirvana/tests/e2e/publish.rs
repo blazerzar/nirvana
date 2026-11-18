@@ -1,20 +1,16 @@
 use chrono::Days;
 
-use crate::helpers::{
-    Config, Jira, Linear, Nirvana, all_published, at, comment, day, row, sorted, timestamp, title,
-};
+use crate::helpers::{E2e, all_published, at, comment, day, row, sorted, timestamp};
 
 #[tokio::test]
 #[ignore]
 async fn publishes_a_range() {
-    const TEST: &str = "publishes_a_range";
-    let config = Config::from_env();
-    let jira = Jira::new(&config);
+    let e2e = E2e::connected("publishes_a_range");
+    let (jira, nirvana) = (&e2e.jira, &e2e.nirvana);
     let (d2, d) = (day(2), day(1));
 
-    let j1 = jira.create_issue(&title(TEST, "J1")).await;
+    let j1 = e2e.jira_issue("J1").await;
 
-    let nirvana = Nirvana::connected(&config);
     nirvana.run(&["add", &j1, "--start", &at(d2, "09:00"), "--duration", "30m"]);
     nirvana.run(&["add", &j1, "--start", &at(d, "09:00"), "--duration", "30m"]);
     nirvana.run(&["add", &j1, "--start", &at(d, "11:00"), "--duration", "15m"]);
@@ -60,17 +56,15 @@ async fn publishes_a_range() {
 #[tokio::test]
 #[ignore]
 async fn jira_and_linear_publish_together() {
-    const TEST: &str = "jira_and_linear_publish_together";
-    let config = Config::from_env();
-    let (jira, linear) = (Jira::new(&config), Linear::new(&config));
+    let e2e = E2e::connected("jira_and_linear_publish_together");
+    let (jira, linear, nirvana) = (&e2e.jira, &e2e.linear, &e2e.nirvana);
     let d = day(1);
 
-    let j1 = jira.create_issue(&title(TEST, "J1")).await;
-    let j2 = jira.create_issue(&title(TEST, "J2")).await;
-    let l1 = linear.create_issue(&title(TEST, "L1")).await;
-    let l2 = linear.create_issue(&title(TEST, "L2")).await;
+    let j1 = e2e.jira_issue("J1").await;
+    let j2 = e2e.jira_issue("J2").await;
+    let l1 = e2e.linear_issue("L1").await;
+    let l2 = e2e.linear_issue("L2").await;
 
-    let nirvana = Nirvana::connected(&config);
     nirvana.set("jira", "publish", "true");
     nirvana.set("jira", "squash", "true");
     nirvana.set("linear", "publish", "true");
@@ -125,16 +119,14 @@ async fn jira_and_linear_publish_together() {
 #[tokio::test]
 #[ignore]
 async fn jira_squashes_per_ticket_and_day() {
-    const TEST: &str = "jira_squashes_per_ticket_and_day";
-    let config = Config::from_env();
-    let jira = Jira::new(&config);
+    let e2e = E2e::connected("jira_squashes_per_ticket_and_day");
+    let (jira, nirvana) = (&e2e.jira, &e2e.nirvana);
     let (d2, d) = (day(2), day(1));
 
-    let j1 = jira.create_issue(&title(TEST, "J1")).await;
-    let j2 = jira.create_issue(&title(TEST, "J2")).await;
-    let j3 = jira.create_issue(&title(TEST, "J3")).await;
+    let j1 = e2e.jira_issue("J1").await;
+    let j2 = e2e.jira_issue("J2").await;
+    let j3 = e2e.jira_issue("J3").await;
 
-    let nirvana = Nirvana::connected(&config);
     nirvana.set("jira", "publish", "true");
     nirvana.set("jira", "squash", "true");
 
@@ -190,16 +182,14 @@ async fn jira_squashes_per_ticket_and_day() {
 #[tokio::test]
 #[ignore]
 async fn linear_squashes_per_ticket_and_day() {
-    const TEST: &str = "linear_squashes_per_ticket_and_day";
-    let config = Config::from_env();
-    let linear = Linear::new(&config);
+    let e2e = E2e::connected("linear_squashes_per_ticket_and_day");
+    let (linear, nirvana) = (&e2e.linear, &e2e.nirvana);
     let (d2, d) = (day(2), day(1));
 
-    let l1 = linear.create_issue(&title(TEST, "L1")).await;
-    let l2 = linear.create_issue(&title(TEST, "L2")).await;
-    let l3 = linear.create_issue(&title(TEST, "L3")).await;
+    let l1 = e2e.linear_issue("L1").await;
+    let l2 = e2e.linear_issue("L2").await;
+    let l3 = e2e.linear_issue("L3").await;
 
-    let nirvana = Nirvana::connected(&config);
     nirvana.set("linear", "publish", "true");
     nirvana.set("linear", "squash", "true");
 

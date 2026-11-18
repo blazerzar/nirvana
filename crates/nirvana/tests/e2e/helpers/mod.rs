@@ -1,16 +1,16 @@
 mod config;
+mod e2e;
 mod jira;
 mod linear;
 mod nirvana;
 mod time;
 
 use std::fmt::Debug;
-use std::sync::LazyLock;
 use std::time::Duration;
-use std::{env, panic, thread};
+use std::{panic, thread};
 
-use chrono::Local;
 pub use config::Config;
+pub use e2e::E2e;
 pub use jira::Jira;
 pub use linear::{Linear, comment};
 pub use nirvana::{Nirvana, Row};
@@ -53,20 +53,6 @@ async fn assert_fetched<T: PartialEq + Debug>(
         actual = fetch().await;
     }
     assert_eq!(actual, expected, "{key}");
-}
-
-/// Returns a unique issue title for issue `name` of `test` in this run.
-pub fn title(test: &str, name: &str) -> String {
-    static RUN: LazyLock<String> = LazyLock::new(|| {
-        env::var("GITHUB_RUN_ID")
-            .unwrap_or_else(|_| Local::now().format("%Y%m%d%H%M%S").to_string())
-    });
-    let run = &*RUN;
-    format!(
-        "[e2e] {name} {}-{} {run} {test}",
-        env::consts::OS,
-        env::consts::ARCH
-    )
 }
 
 /// Returns the part of `title` that tables show before truncating it.

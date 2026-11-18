@@ -1,13 +1,12 @@
-use crate::helpers::{Config, Jira, Linear, Nirvana, at, day, line_with, row, title};
+use crate::helpers::{E2e, at, day, line_with, row};
 
 #[tokio::test]
 #[ignore]
 async fn jira_connects() {
-    let config = Config::from_env();
+    let e2e = E2e::new("jira_connects");
+    let (config, nirvana) = (&e2e.config, &e2e.nirvana);
 
-    let nirvana = Nirvana::new();
-    nirvana.setup();
-    nirvana.add_jira(&config);
+    nirvana.add_jira(config);
     let credentials = nirvana.run(&["credential", "list"]);
     let jira = line_with(&credentials, "jira");
     assert!(jira.contains("env"), "{credentials}");
@@ -18,11 +17,10 @@ async fn jira_connects() {
 #[tokio::test]
 #[ignore]
 async fn linear_connects() {
-    let config = Config::from_env();
+    let e2e = E2e::new("linear_connects");
+    let (config, nirvana) = (&e2e.config, &e2e.nirvana);
 
-    let nirvana = Nirvana::new();
-    nirvana.setup();
-    nirvana.add_linear(&config);
+    nirvana.add_linear(config);
     let credentials = nirvana.run(&["credential", "list"]);
     let linear = line_with(&credentials, "linear");
     assert!(linear.contains("env"), "{credentials}");
@@ -33,9 +31,8 @@ async fn linear_connects() {
 #[tokio::test]
 #[ignore]
 async fn lists_connections() {
-    let config = Config::from_env();
-
-    let nirvana = Nirvana::connected(&config);
+    let e2e = E2e::connected("lists_connections");
+    let (config, nirvana) = (&e2e.config, &e2e.nirvana);
 
     let connections = nirvana.run(&["connection", "list"]);
 
@@ -52,9 +49,8 @@ async fn lists_connections() {
 #[tokio::test]
 #[ignore]
 async fn tests_all_connections() {
-    let config = Config::from_env();
-
-    let nirvana = Nirvana::connected(&config);
+    let e2e = E2e::connected("tests_all_connections");
+    let nirvana = &e2e.nirvana;
 
     let tested = nirvana.run(&["connection", "test", "--all"]);
     assert_eq!(tested.lines().count(), 2, "{tested}");
@@ -66,9 +62,8 @@ async fn tests_all_connections() {
 #[tokio::test]
 #[ignore]
 async fn edits_connections() {
-    let config = Config::from_env();
-
-    let nirvana = Nirvana::connected(&config);
+    let e2e = E2e::connected("edits_connections");
+    let (config, nirvana) = (&e2e.config, &e2e.nirvana);
 
     nirvana.run(&[
         "connection",
@@ -123,15 +118,13 @@ async fn edits_connections() {
 #[tokio::test]
 #[ignore]
 async fn deletes_connections() {
-    const TEST: &str = "deletes_connections";
-    let config = Config::from_env();
-    let (jira, linear) = (Jira::new(&config), Linear::new(&config));
+    let e2e = E2e::connected("deletes_connections");
+    let nirvana = &e2e.nirvana;
     let d = day(1);
 
-    let j1 = jira.create_issue(&title(TEST, "J1")).await;
-    let l1 = linear.create_issue(&title(TEST, "L1")).await;
+    let j1 = e2e.jira_issue("J1").await;
+    let l1 = e2e.linear_issue("L1").await;
 
-    let nirvana = Nirvana::connected(&config);
     nirvana.run(&["add", &j1, "--start", &at(d, "09:00"), "--duration", "30m"]);
     nirvana.run(&["add", &l1, "--start", &at(d, "10:00"), "--duration", "30m"]);
 

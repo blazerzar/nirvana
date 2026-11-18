@@ -88,16 +88,6 @@ impl Nirvana {
         ]);
     }
 
-    /// Returns a profile with the Jira connection `jira` and the Linear
-    /// connection `linear`.
-    pub fn connected(config: &Config) -> Self {
-        let nirvana = Self::new();
-        nirvana.setup();
-        nirvana.add_jira(config);
-        nirvana.add_linear(config);
-        nirvana
-    }
-
     pub fn get(&self, connection: &str, key: &str) -> String {
         let stdout = self.run(&["settings", "get", "--connection", connection, key]);
         stdout.trim().to_string()

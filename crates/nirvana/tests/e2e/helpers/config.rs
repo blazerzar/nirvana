@@ -7,6 +7,7 @@ pub struct Config {
     pub jira_project: String,
     pub linear_token: String,
     pub linear_team: String,
+    pub linear_workspace: String,
 }
 
 impl Config {
@@ -19,6 +20,7 @@ impl Config {
             jira_project: var("NIRVANA_E2E_JIRA_PROJECT"),
             linear_token: var("NIRVANA_E2E_LINEAR_TOKEN"),
             linear_team: var("NIRVANA_E2E_LINEAR_TEAM"),
+            linear_workspace: var("NIRVANA_E2E_LINEAR_WORKSPACE"),
         }
     }
 }

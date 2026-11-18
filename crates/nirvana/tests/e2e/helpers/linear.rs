@@ -46,19 +46,6 @@ impl Linear {
         json["data"].clone()
     }
 
-    /// Returns the workspace URL key, fetched once per run.
-    pub async fn workspace(&self) -> &'static str {
-        static WORKSPACE: OnceCell<String> = OnceCell::const_new();
-        WORKSPACE
-            .get_or_init(|| async {
-                let data = self
-                    .query("query { organization { urlKey } }", json!({}))
-                    .await;
-                data["organization"]["urlKey"].as_str().unwrap().to_string()
-            })
-            .await
-    }
-
     /// Returns the ID of the team, fetched once per run.
     async fn team_id(&self) -> &'static str {
         static TEAM_ID: OnceCell<String> = OnceCell::const_new();

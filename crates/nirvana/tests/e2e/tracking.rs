@@ -61,7 +61,7 @@ async fn edits_adds_and_deletes_slots() {
     let j2 = jira.create_issue(&title(TEST, "J2")).await;
     let l1 = linear.create_issue(&title(TEST, "L1")).await;
 
-    let nirvana = Nirvana::connected(&config, linear.workspace().await);
+    let nirvana = Nirvana::connected(&config);
 
     nirvana.run(&["add", &j1, "--start", &at(d, "09:00"), "--duration", "1h"]);
     let (add_start, add_stop) = (at(d, "10:00"), at(d, "10:30"));
@@ -113,7 +113,7 @@ async fn lists_slots() {
     let j2 = jira.create_issue(&title(TEST, "J2")).await;
     let l1 = linear.create_issue(&title(TEST, "L1")).await;
 
-    let nirvana = Nirvana::connected(&config, linear.workspace().await);
+    let nirvana = Nirvana::connected(&config);
     let empty = nirvana.run(&["list"]);
     assert!(empty.contains("No slots in this range"), "{empty}");
 
@@ -167,7 +167,7 @@ async fn tracks_tickets_of_a_connection() {
     let j2 = jira.create_issue(&title(TEST, "J2")).await;
     let l1 = linear.create_issue(&title(TEST, "L1")).await;
 
-    let nirvana = Nirvana::connected(&config, linear.workspace().await);
+    let nirvana = Nirvana::connected(&config);
 
     let start = ["start", &j1, "--at", &at(d, "09:00")];
     nirvana.fail(

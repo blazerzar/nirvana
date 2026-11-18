@@ -71,8 +71,8 @@ impl Nirvana {
         ]);
     }
 
-    pub fn add_linear(&self, url_key: &str) {
-        let host = format!("linear.app/{url_key}");
+    pub fn add_linear(&self, config: &Config) {
+        let host = format!("linear.app/{}", config.linear_workspace);
         self.run(&[
             "connection",
             "add",
@@ -89,12 +89,12 @@ impl Nirvana {
     }
 
     /// Returns a profile with the Jira connection `jira` and the Linear
-    /// connection `linear` in the workspace `url_key`.
-    pub fn connected(config: &Config, url_key: &str) -> Self {
+    /// connection `linear`.
+    pub fn connected(config: &Config) -> Self {
         let nirvana = Self::new();
         nirvana.setup();
         nirvana.add_jira(config);
-        nirvana.add_linear(url_key);
+        nirvana.add_linear(config);
         nirvana
     }
 

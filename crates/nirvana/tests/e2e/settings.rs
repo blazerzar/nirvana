@@ -11,7 +11,7 @@ async fn publish_settings() {
     let j1 = jira.create_issue(&title(TEST, "J1")).await;
     let l1 = linear.create_issue(&title(TEST, "L1")).await;
 
-    let nirvana = Nirvana::connected(&config, linear.workspace().await);
+    let nirvana = Nirvana::connected(&config);
     assert_eq!(nirvana.get("jira", "publish"), "true");
     assert_eq!(nirvana.get("jira", "squash"), "false");
     assert_eq!(nirvana.get("linear", "publish"), "false");

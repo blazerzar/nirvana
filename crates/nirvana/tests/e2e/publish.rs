@@ -9,12 +9,12 @@ use crate::helpers::{
 async fn publishes_a_range() {
     const TEST: &str = "publishes_a_range";
     let config = Config::from_env();
-    let (jira, linear) = (Jira::new(&config), Linear::new(&config));
+    let jira = Jira::new(&config);
     let (d2, d) = (day(2), day(1));
 
     let j1 = jira.create_issue(&title(TEST, "J1")).await;
 
-    let nirvana = Nirvana::connected(&config, linear.workspace().await);
+    let nirvana = Nirvana::connected(&config);
     nirvana.run(&["add", &j1, "--start", &at(d2, "09:00"), "--duration", "30m"]);
     nirvana.run(&["add", &j1, "--start", &at(d, "09:00"), "--duration", "30m"]);
     nirvana.run(&["add", &j1, "--start", &at(d, "11:00"), "--duration", "15m"]);
@@ -70,7 +70,7 @@ async fn jira_and_linear_publish_together() {
     let l1 = linear.create_issue(&title(TEST, "L1")).await;
     let l2 = linear.create_issue(&title(TEST, "L2")).await;
 
-    let nirvana = Nirvana::connected(&config, linear.workspace().await);
+    let nirvana = Nirvana::connected(&config);
     nirvana.set("jira", "publish", "true");
     nirvana.set("jira", "squash", "true");
     nirvana.set("linear", "publish", "true");
@@ -127,14 +127,14 @@ async fn jira_and_linear_publish_together() {
 async fn jira_squashes_per_ticket_and_day() {
     const TEST: &str = "jira_squashes_per_ticket_and_day";
     let config = Config::from_env();
-    let (jira, linear) = (Jira::new(&config), Linear::new(&config));
+    let jira = Jira::new(&config);
     let (d2, d) = (day(2), day(1));
 
     let j1 = jira.create_issue(&title(TEST, "J1")).await;
     let j2 = jira.create_issue(&title(TEST, "J2")).await;
     let j3 = jira.create_issue(&title(TEST, "J3")).await;
 
-    let nirvana = Nirvana::connected(&config, linear.workspace().await);
+    let nirvana = Nirvana::connected(&config);
     nirvana.set("jira", "publish", "true");
     nirvana.set("jira", "squash", "true");
 
@@ -199,7 +199,7 @@ async fn linear_squashes_per_ticket_and_day() {
     let l2 = linear.create_issue(&title(TEST, "L2")).await;
     let l3 = linear.create_issue(&title(TEST, "L3")).await;
 
-    let nirvana = Nirvana::connected(&config, linear.workspace().await);
+    let nirvana = Nirvana::connected(&config);
     nirvana.set("linear", "publish", "true");
     nirvana.set("linear", "squash", "true");
 

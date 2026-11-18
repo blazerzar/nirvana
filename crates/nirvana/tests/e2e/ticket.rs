@@ -14,7 +14,7 @@ async fn syncs_ticket_titles() {
     let j2 = jira.create_issue(&title(TEST, "J2")).await;
     let l1 = linear.create_issue(&title(TEST, "L1")).await;
 
-    let nirvana = Nirvana::connected(&config, linear.workspace().await);
+    let nirvana = Nirvana::connected(&config);
     nirvana.run(&["ticket", "load", &j1]);
     nirvana.run(&["add", &l1, "--start", &at(d, "09:00"), "--duration", "30m"]);
 
@@ -59,7 +59,7 @@ async fn loads_and_lists_tickets() {
     let j2 = jira.create_issue(&title(TEST, "J2")).await;
     let l1 = linear.create_issue(&title(TEST, "L1")).await;
 
-    let nirvana = Nirvana::connected(&config, linear.workspace().await);
+    let nirvana = Nirvana::connected(&config);
     let loaded = nirvana.run(&["ticket", "load", &j1]);
     assert!(loaded.contains(&title(TEST, "J1")), "{loaded}");
     nirvana.run(&["ticket", "load", &l1, "--connection", "linear"]);
@@ -113,7 +113,7 @@ async fn deletes_tickets() {
     let j2 = jira.create_issue(&title(TEST, "J2")).await;
     let l1 = linear.create_issue(&title(TEST, "L1")).await;
 
-    let nirvana = Nirvana::connected(&config, linear.workspace().await);
+    let nirvana = Nirvana::connected(&config);
     nirvana.run(&["ticket", "load", &j1]);
     nirvana.run(&["ticket", "load", &l1]);
     nirvana.run(&["add", &j2, "--start", &at(d, "09:00"), "--duration", "30m"]);

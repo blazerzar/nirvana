@@ -1,10 +1,9 @@
-use crate::helpers::{Config, Linear, Nirvana, line_with};
+use crate::helpers::{Config, Nirvana, line_with};
 
 #[tokio::test]
 #[ignore]
 async fn lists_credentials() {
     let config = Config::from_env();
-    let linear = Linear::new(&config);
 
     let nirvana = Nirvana::new();
     nirvana.setup();
@@ -15,7 +14,7 @@ async fn lists_credentials() {
     );
 
     nirvana.add_jira(&config);
-    nirvana.add_linear(linear.workspace().await);
+    nirvana.add_linear(&config);
     let credentials = nirvana.run(&["credential", "list"]);
     let lines: Vec<Vec<&str>> = credentials
         .lines()
@@ -35,9 +34,8 @@ async fn lists_credentials() {
 #[ignore]
 async fn env_credentials_cannot_be_updated_or_moved() {
     let config = Config::from_env();
-    let linear = Linear::new(&config);
 
-    let nirvana = Nirvana::connected(&config, linear.workspace().await);
+    let nirvana = Nirvana::connected(&config);
 
     nirvana.fail(
         &[

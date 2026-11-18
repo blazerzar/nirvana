@@ -19,11 +19,10 @@ async fn jira_connects() {
 #[ignore]
 async fn linear_connects() {
     let config = Config::from_env();
-    let linear = Linear::new(&config);
 
     let nirvana = Nirvana::new();
     nirvana.setup();
-    nirvana.add_linear(linear.workspace().await);
+    nirvana.add_linear(&config);
     let credentials = nirvana.run(&["credential", "list"]);
     let linear = line_with(&credentials, "linear");
     assert!(linear.contains("env"), "{credentials}");
@@ -35,10 +34,8 @@ async fn linear_connects() {
 #[ignore]
 async fn lists_connections() {
     let config = Config::from_env();
-    let linear = Linear::new(&config);
 
-    let workspace = linear.workspace().await;
-    let nirvana = Nirvana::connected(&config, workspace);
+    let nirvana = Nirvana::connected(&config);
 
     let connections = nirvana.run(&["connection", "list"]);
 
@@ -46,7 +43,7 @@ async fn lists_connections() {
     assert!(jira_connection.starts_with("jira"), "{connections}");
     assert!(jira_connection.contains("env"), "{connections}");
 
-    let linear_host = format!("linear.app/{workspace}");
+    let linear_host = format!("linear.app/{}", config.linear_workspace);
     let linear_connection = line_with(&connections, &linear_host);
     assert!(linear_connection.starts_with("linear"), "{connections}");
     assert!(linear_connection.contains("env"), "{connections}");
@@ -56,9 +53,8 @@ async fn lists_connections() {
 #[ignore]
 async fn tests_all_connections() {
     let config = Config::from_env();
-    let linear = Linear::new(&config);
 
-    let nirvana = Nirvana::connected(&config, linear.workspace().await);
+    let nirvana = Nirvana::connected(&config);
 
     let tested = nirvana.run(&["connection", "test", "--all"]);
     assert_eq!(tested.lines().count(), 2, "{tested}");
@@ -71,9 +67,8 @@ async fn tests_all_connections() {
 #[ignore]
 async fn edits_connections() {
     let config = Config::from_env();
-    let linear = Linear::new(&config);
 
-    let nirvana = Nirvana::connected(&config, linear.workspace().await);
+    let nirvana = Nirvana::connected(&config);
 
     nirvana.run(&[
         "connection",
@@ -136,7 +131,7 @@ async fn deletes_connections() {
     let j1 = jira.create_issue(&title(TEST, "J1")).await;
     let l1 = linear.create_issue(&title(TEST, "L1")).await;
 
-    let nirvana = Nirvana::connected(&config, linear.workspace().await);
+    let nirvana = Nirvana::connected(&config);
     nirvana.run(&["add", &j1, "--start", &at(d, "09:00"), "--duration", "30m"]);
     nirvana.run(&["add", &l1, "--start", &at(d, "10:00"), "--duration", "30m"]);
 

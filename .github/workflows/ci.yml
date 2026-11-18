@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [dev-1.0]
 
@@ -72,7 +73,7 @@ jobs:
 
   e2e:
     needs: build
-    if: github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
+    if: github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && contains(github.event.pull_request.labels.*.name, 'e2e'))
     strategy:
       fail-fast: false
       matrix:

@@ -100,3 +100,34 @@ async fn loads_and_lists_tickets() {
     let id = line_with(&with_ids, &l1).split_whitespace().next().unwrap();
     assert!(id.parse::<i64>().is_ok(), "{with_ids}");
 }
+
+#[tokio::test]
+#[ignore]
+async fn deletes_tickets() {
+    const TEST: &str = "deletes_tickets";
+    let config = Config::from_env();
+    let (jira, linear) = (Jira::new(&config), Linear::new(&config));
+    let d = day(1);
+
+    let j1 = jira.create_issue(&title(TEST, "J1")).await;
+    let j2 = jira.create_issue(&title(TEST, "J2")).await;
+    let l1 = linear.create_issue(&title(TEST, "L1")).await;
+
+    let nirvana = Nirvana::connected(&config, linear.workspace().await);
+    nirvana.run(&["ticket", "load", &j1]);
+    nirvana.run(&["ticket", "load", &l1]);
+    nirvana.run(&["add", &j2, "--start", &at(d, "09:00"), "--duration", "30m"]);
+
+    nirvana.run(&["ticket", "delete", &j1]);
+    let has_slots = format!("ticket {j2} has 1 slots");
+    nirvana.fail(&["ticket", "delete", &j2], &has_slots);
+    assert_eq!(nirvana.list_rows(d).len(), 1);
+    nirvana.run(&["ticket", "delete", &j2, "--with-slots"]);
+    assert!(nirvana.list_rows(d).is_empty());
+
+    let with_ids = nirvana.run(&["ticket", "list", "--show-ids"]);
+    let id = line_with(&with_ids, &l1).split_whitespace().next().unwrap();
+    nirvana.run(&["ticket", "delete", "--id", id]);
+    let tickets = nirvana.run(&["ticket", "list"]);
+    assert!(tickets.contains("No tickets found"), "{tickets}");
+}

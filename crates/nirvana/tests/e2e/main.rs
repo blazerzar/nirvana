@@ -4,8 +4,13 @@
 //! its path in `NIRVANA_E2E_BIN`. The other `NIRVANA_E2E_*` variables come
 //! from the Infisical `/e2e` folder.
 
+mod config;
+mod connection;
+mod credential;
 mod helpers;
 mod info;
+mod logs;
+mod profile;
 mod publish;
 mod settings;
 mod ticket;

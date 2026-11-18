@@ -259,8 +259,8 @@ logged from the start.
       row holds the name of the environment variable with the token, which
       must start with `NIRVANA_`. Hidden from `--help` and the interactive
       picker, available in all builds.
-- [ ] Add e2e tests for nirvana: run the built release binary in CI against
-      the real Jira and Linear APIs, with tokens from GitHub secrets through
+- [x] Add e2e tests for nirvana: run the built release binary in CI against
+      the real Jira and Linear APIs, with tokens from Infisical through
       the `env` secret store.
 - [x] Add core integration tests for `ticket load` and `ticket sync` using
       mocks, for Linear and Jira. They pass the mock URL in directly. The

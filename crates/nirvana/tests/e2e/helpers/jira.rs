@@ -1,16 +1,21 @@
+use std::mem;
+use std::sync::Mutex;
+
 use chrono::DateTime;
 use reqwest::{Method, RequestBuilder};
 use serde_json::{Value, json};
 use tokio::sync::OnceCell;
 
-use crate::helpers::Config;
+use crate::helpers::{Config, run_cleanup};
 
+/// Jira client that deletes the issues it created when dropped.
 pub struct Jira {
     client: reqwest::Client,
     url: String,
     email: String,
     token: String,
     project: String,
+    issues: Mutex<Vec<String>>,
 }
 
 impl Jira {
@@ -21,6 +26,7 @@ impl Jira {
             email: config.jira_email.clone(),
             token: config.jira_token.clone(),
             project: config.jira_project.clone(),
+            issues: Mutex::default(),
         }
     }
 
@@ -79,7 +85,9 @@ impl Jira {
                 }
             })))
             .await;
-        issue["key"].as_str().unwrap().to_string()
+        let key = issue["key"].as_str().unwrap().to_string();
+        self.issues.lock().unwrap().push(key.clone());
+        key
     }
 
     pub async fn rename_issue(&self, key: &str, summary: &str) {
@@ -113,5 +121,28 @@ impl Jira {
             .collect();
         worklogs.sort();
         worklogs
+    }
+}
+
+impl Drop for Jira {
+    fn drop(&mut self) {
+        let keys = mem::take(self.issues.get_mut().unwrap());
+        if keys.is_empty() {
+            return;
+        }
+        let jira = Self {
+            client: reqwest::Client::new(),
+            url: self.url.clone(),
+            email: self.email.clone(),
+            token: self.token.clone(),
+            project: self.project.clone(),
+            issues: Mutex::default(),
+        };
+        run_cleanup(async move {
+            for key in keys {
+                jira.send(jira.request(Method::DELETE, &format!("issue/{key}")))
+                    .await;
+            }
+        });
     }
 }

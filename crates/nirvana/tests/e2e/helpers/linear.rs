@@ -1,15 +1,20 @@
+use std::mem;
+use std::sync::Mutex;
+
 use chrono::{DateTime, Local, NaiveDate};
 use serde_json::{Value, json};
 use tokio::sync::OnceCell;
 
-use crate::helpers::{Config, at, timestamp};
+use crate::helpers::{Config, at, run_cleanup, timestamp};
 
 const API_URL: &str = "https://api.linear.app/graphql";
 
+/// Linear client that deletes the issues it created when dropped.
 pub struct Linear {
     client: reqwest::Client,
     token: String,
     team: String,
+    issues: Mutex<Vec<String>>,
 }
 
 impl Linear {
@@ -18,6 +23,7 @@ impl Linear {
             client: reqwest::Client::new(),
             token: config.linear_token.clone(),
             team: config.linear_team.clone(),
+            issues: Mutex::default(),
         }
     }
 
@@ -80,10 +86,12 @@ impl Linear {
                 json!({ "teamId": self.team_id().await, "title": title }),
             )
             .await;
-        data["issueCreate"]["issue"]["identifier"]
+        let identifier = data["issueCreate"]["issue"]["identifier"]
             .as_str()
             .unwrap()
-            .to_string()
+            .to_string();
+        self.issues.lock().unwrap().push(identifier.clone());
+        identifier
     }
 
     pub async fn rename_issue(&self, identifier: &str, title: &str) {
@@ -111,6 +119,31 @@ impl Linear {
             .collect();
         comments.sort();
         comments
+    }
+}
+
+impl Drop for Linear {
+    fn drop(&mut self) {
+        let identifiers = mem::take(self.issues.get_mut().unwrap());
+        if identifiers.is_empty() {
+            return;
+        }
+        let linear = Self {
+            client: reqwest::Client::new(),
+            token: self.token.clone(),
+            team: self.team.clone(),
+            issues: Mutex::default(),
+        };
+        run_cleanup(async move {
+            for identifier in identifiers {
+                linear
+                    .query(
+                        "mutation($id: String!) { issueDelete(id: $id) { success } }",
+                        json!({ "id": identifier }),
+                    )
+                    .await;
+            }
+        });
     }
 }
 

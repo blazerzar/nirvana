@@ -4,8 +4,8 @@ mod linear;
 mod nirvana;
 mod time;
 
-use std::env;
 use std::sync::LazyLock;
+use std::{env, panic, thread};
 
 use chrono::Local;
 pub use config::Config;
@@ -13,6 +13,26 @@ pub use jira::Jira;
 pub use linear::{Linear, comment};
 pub use nirvana::{Nirvana, Row};
 pub use time::{at, day, timestamp};
+use tokio::runtime;
+
+/// Runs `cleanup` on a new thread and runtime, so `Drop` can wait for async
+/// work inside a test runtime. A failed cleanup panics, unless the test
+/// already panicked.
+fn run_cleanup(cleanup: impl Future<Output = ()> + Send + 'static) {
+    let result = thread::spawn(|| {
+        runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(cleanup)
+    })
+    .join();
+    if let Err(error) = result
+        && !thread::panicking()
+    {
+        panic::resume_unwind(error);
+    }
+}
 
 /// Returns a unique issue title for issue `name` of `test` in this run.
 pub fn title(test: &str, name: &str) -> String {

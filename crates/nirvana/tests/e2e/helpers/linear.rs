@@ -5,7 +5,7 @@ use chrono::{DateTime, Local, NaiveDate};
 use serde_json::{Value, json};
 use tokio::sync::OnceCell;
 
-use crate::helpers::{Config, at, run_cleanup, timestamp};
+use crate::helpers::{Config, assert_fetched, at, run_cleanup, timestamp};
 
 const API_URL: &str = "https://api.linear.app/graphql";
 
@@ -103,8 +103,16 @@ impl Linear {
         .await;
     }
 
+    /// Asserts that the sorted comment bodies of `identifier` are `expected`.
+    pub async fn assert_comments(&self, identifier: &str, expected: &[String]) {
+        assert_fetched(identifier, expected, async || {
+            self.comments(identifier).await
+        })
+        .await;
+    }
+
     /// Returns the comment bodies of `identifier`, sorted.
-    pub async fn comments(&self, identifier: &str) -> Vec<String> {
+    async fn comments(&self, identifier: &str) -> Vec<String> {
         let data = self
             .query(
                 "query($id: String!) { issue(id: $id) { comments { nodes { body } } } }",

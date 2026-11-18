@@ -6,7 +6,7 @@ use reqwest::{Method, RequestBuilder};
 use serde_json::{Value, json};
 use tokio::sync::OnceCell;
 
-use crate::helpers::{Config, run_cleanup};
+use crate::helpers::{Config, assert_fetched, run_cleanup};
 
 /// Jira client that deletes the issues it created when dropped.
 pub struct Jira {
@@ -98,8 +98,14 @@ impl Jira {
         .await;
     }
 
+    /// Asserts that the sorted start timestamps and seconds of the worklogs of
+    /// `key` are `expected`.
+    pub async fn assert_worklogs(&self, key: &str, expected: &[(i64, i64)]) {
+        assert_fetched(key, expected, async || self.worklogs(key).await).await;
+    }
+
     /// Returns the start timestamp and seconds of each worklog of `key`, sorted.
-    pub async fn worklogs(&self, key: &str) -> Vec<(i64, i64)> {
+    async fn worklogs(&self, key: &str) -> Vec<(i64, i64)> {
         let response = self
             .send(self.request(Method::GET, &format!("issue/{key}/worklog")))
             .await;

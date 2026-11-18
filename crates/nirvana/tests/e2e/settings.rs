@@ -36,8 +36,9 @@ async fn publish_settings() {
     );
     let published = nirvana.run(&["publish", "--all"]);
     assert!(published.contains("Published 1 slot (30m)"), "{published}");
-    assert_eq!(jira.worklogs(&j1).await, [(timestamp(d, "09:00"), 1800)]);
-    assert!(linear.comments(&l1).await.is_empty());
+    jira.assert_worklogs(&j1, &[(timestamp(d, "09:00"), 1800)])
+        .await;
+    linear.assert_comments(&l1, &[]).await;
     assert_eq!(
         nirvana.list_rows(d),
         [row(&j1, at(d, "09:00"), "✓"), row(&l1, at(d, "10:00"), "")]
@@ -55,8 +56,11 @@ async fn publish_settings() {
     );
     let published = nirvana.run(&["publish", "--all"]);
     assert!(published.contains("Published 1 slot (30m)"), "{published}");
-    assert_eq!(linear.comments(&l1).await, [comment(d, "10:00", "30m")]);
-    assert_eq!(jira.worklogs(&j1).await, [(timestamp(d, "09:00"), 1800)]);
+    linear
+        .assert_comments(&l1, &[comment(d, "10:00", "30m")])
+        .await;
+    jira.assert_worklogs(&j1, &[(timestamp(d, "09:00"), 1800)])
+        .await;
     assert_eq!(
         nirvana.list_rows(d),
         [

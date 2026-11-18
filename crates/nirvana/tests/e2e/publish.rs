@@ -27,7 +27,8 @@ async fn publishes_a_range() {
         &at(d, "10:00"),
     ]);
     assert!(published.contains("Published 1 slot (30m)"), "{published}");
-    assert_eq!(jira.worklogs(&j1).await, [(timestamp(d, "09:00"), 1800)]);
+    jira.assert_worklogs(&j1, &[(timestamp(d, "09:00"), 1800)])
+        .await;
     assert_eq!(nirvana.list_rows(d2), [row(&j1, at(d2, "09:00"), "")]);
 
     let published = nirvana.run(&[
@@ -43,14 +44,15 @@ async fn publishes_a_range() {
 
     let published = nirvana.run(&["publish", "--all"]);
     assert!(published.contains("Published 1 slot (30m)"), "{published}");
-    assert_eq!(
-        jira.worklogs(&j1).await,
-        [
+    jira.assert_worklogs(
+        &j1,
+        &[
             (timestamp(d2, "09:00"), 1800),
             (timestamp(d, "09:00"), 1800),
             (timestamp(d, "11:00"), 900),
-        ]
-    );
+        ],
+    )
+    .await;
     assert!(all_published(nirvana.list_rows(d2)));
     assert!(all_published(nirvana.list_rows(d)));
 }
@@ -89,10 +91,10 @@ async fn jira_and_linear_publish_together() {
     );
     let j1_worklogs = vec![(timestamp(d, "09:00"), 3600)];
     let j2_worklogs = vec![(timestamp(d, "11:45"), 1800)];
-    assert_eq!(jira.worklogs(&j1).await, j1_worklogs);
-    assert_eq!(jira.worklogs(&j2).await, j2_worklogs);
-    assert!(linear.comments(&l1).await.is_empty());
-    assert!(linear.comments(&l2).await.is_empty());
+    jira.assert_worklogs(&j1, &j1_worklogs).await;
+    jira.assert_worklogs(&j2, &j2_worklogs).await;
+    linear.assert_comments(&l1, &[]).await;
+    linear.assert_comments(&l2, &[]).await;
     for (key, _, marker) in nirvana.list_rows(d) {
         let expected = if key == j1 || key == j2 { "✓" } else { "" };
         assert_eq!(marker, expected, "{key}");
@@ -103,13 +105,17 @@ async fn jira_and_linear_publish_together() {
         published.contains("Published 3 slots (1h 20m)"),
         "{published}"
     );
-    assert_eq!(linear.comments(&l1).await, [comment(d, "09:40", "30m")]);
-    assert_eq!(
-        linear.comments(&l2).await,
-        sorted([comment(d, "10:30", "30m"), comment(d, "11:25", "20m")])
-    );
-    assert_eq!(jira.worklogs(&j1).await, j1_worklogs);
-    assert_eq!(jira.worklogs(&j2).await, j2_worklogs);
+    linear
+        .assert_comments(&l1, &[comment(d, "09:40", "30m")])
+        .await;
+    linear
+        .assert_comments(
+            &l2,
+            &sorted([comment(d, "10:30", "30m"), comment(d, "11:25", "20m")]),
+        )
+        .await;
+    jira.assert_worklogs(&j1, &j1_worklogs).await;
+    jira.assert_worklogs(&j2, &j2_worklogs).await;
     assert!(all_published(nirvana.list_rows(d)));
 
     let published = nirvana.run(&["publish", "--all"]);
@@ -158,9 +164,10 @@ async fn jira_squashes_per_ticket_and_day() {
         (timestamp(d2, "10:00"), 3600),
         (timestamp(d, "09:20"), 1800),
     ];
-    assert_eq!(jira.worklogs(&j1).await, j1_worklogs);
-    assert_eq!(jira.worklogs(&j2).await, j2_worklogs);
-    assert_eq!(jira.worklogs(&j3).await, [(timestamp(d, "11:00"), 1800)]);
+    jira.assert_worklogs(&j1, &j1_worklogs).await;
+    jira.assert_worklogs(&j2, &j2_worklogs).await;
+    jira.assert_worklogs(&j3, &[(timestamp(d, "11:00"), 1800)])
+        .await;
     for day in [d2, d] {
         assert!(all_published(nirvana.list_rows(day)));
     }
@@ -168,15 +175,16 @@ async fn jira_squashes_per_ticket_and_day() {
     nirvana.run(&["add", &j3, "--start", &at(d, "12:00"), "--duration", "10m"]);
     let published = nirvana.run(&["publish", "--all"]);
     assert!(published.contains("Published 1 slot (10m)"), "{published}");
-    assert_eq!(
-        jira.worklogs(&j3).await,
-        [(timestamp(d, "11:00"), 1800), (timestamp(d, "12:00"), 600)]
-    );
+    jira.assert_worklogs(
+        &j3,
+        &[(timestamp(d, "11:00"), 1800), (timestamp(d, "12:00"), 600)],
+    )
+    .await;
 
     let published = nirvana.run(&["publish", "--all"]);
     assert!(published.contains("Nothing to publish"), "{published}");
-    assert_eq!(jira.worklogs(&j1).await, j1_worklogs);
-    assert_eq!(jira.worklogs(&j2).await, j2_worklogs);
+    jira.assert_worklogs(&j1, &j1_worklogs).await;
+    jira.assert_worklogs(&j2, &j2_worklogs).await;
 }
 
 #[tokio::test]
@@ -215,9 +223,11 @@ async fn linear_squashes_per_ticket_and_day() {
 
     let l1_comments = sorted([comment(d2, "09:00", "45m"), comment(d, "09:00", "1h 15m")]);
     let l2_comments = sorted([comment(d2, "10:00", "1h"), comment(d, "09:20", "30m")]);
-    assert_eq!(linear.comments(&l1).await, l1_comments);
-    assert_eq!(linear.comments(&l2).await, l2_comments);
-    assert_eq!(linear.comments(&l3).await, [comment(d, "11:00", "30m")]);
+    linear.assert_comments(&l1, &l1_comments).await;
+    linear.assert_comments(&l2, &l2_comments).await;
+    linear
+        .assert_comments(&l3, &[comment(d, "11:00", "30m")])
+        .await;
     for day in [d2, d] {
         assert!(all_published(nirvana.list_rows(day)));
     }
@@ -225,13 +235,15 @@ async fn linear_squashes_per_ticket_and_day() {
     nirvana.run(&["add", &l3, "--start", &at(d, "12:00"), "--duration", "10m"]);
     let published = nirvana.run(&["publish", "--all"]);
     assert!(published.contains("Published 1 slot (10m)"), "{published}");
-    assert_eq!(
-        linear.comments(&l3).await,
-        sorted([comment(d, "11:00", "30m"), comment(d, "12:00", "10m")])
-    );
+    linear
+        .assert_comments(
+            &l3,
+            &sorted([comment(d, "11:00", "30m"), comment(d, "12:00", "10m")]),
+        )
+        .await;
 
     let published = nirvana.run(&["publish", "--all"]);
     assert!(published.contains("Nothing to publish"), "{published}");
-    assert_eq!(linear.comments(&l1).await, l1_comments);
-    assert_eq!(linear.comments(&l2).await, l2_comments);
+    linear.assert_comments(&l1, &l1_comments).await;
+    linear.assert_comments(&l2, &l2_comments).await;
 }

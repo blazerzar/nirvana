@@ -4,7 +4,9 @@ mod linear;
 mod nirvana;
 mod time;
 
+use std::fmt::Debug;
 use std::sync::LazyLock;
+use std::time::Duration;
 use std::{env, panic, thread};
 
 use chrono::Local;
@@ -14,6 +16,7 @@ pub use linear::{Linear, comment};
 pub use nirvana::{Nirvana, Row};
 pub use time::{at, day, timestamp};
 use tokio::runtime;
+use tokio::time::sleep;
 
 /// Runs `cleanup` on a new thread and runtime, so `Drop` can wait for async
 /// work inside a test runtime. A failed cleanup panics, unless the test
@@ -32,6 +35,24 @@ fn run_cleanup(cleanup: impl Future<Output = ()> + Send + 'static) {
     {
         panic::resume_unwind(error);
     }
+}
+
+/// Asserts that `fetch` returns `expected` for `key`, fetching up to 3 times
+/// 1 second apart.
+async fn assert_fetched<T: PartialEq + Debug>(
+    key: &str,
+    expected: &[T],
+    fetch: impl AsyncFn() -> Vec<T>,
+) {
+    let mut actual = fetch().await;
+    for _ in 1..3 {
+        if actual == expected {
+            return;
+        }
+        sleep(Duration::from_secs(1)).await;
+        actual = fetch().await;
+    }
+    assert_eq!(actual, expected, "{key}");
 }
 
 /// Returns a unique issue title for issue `name` of `test` in this run.

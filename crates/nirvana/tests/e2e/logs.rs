@@ -13,5 +13,5 @@ async fn manages_logs() {
 
     nirvana.run(&["logs", "clear", "-y"]);
     let logs = nirvana.run(&["logs", "view"]);
-    assert!(!logs.contains("\"create\""), "{logs}");
+    assert!(!logs.contains("profile created"), "{logs}");
 }

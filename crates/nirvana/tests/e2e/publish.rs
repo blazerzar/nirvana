@@ -65,7 +65,6 @@ async fn jira_and_linear_publish_together() {
     let l1 = e2e.linear_issue("L1").await;
     let l2 = e2e.linear_issue("L2").await;
 
-    nirvana.set("jira", "publish", "true");
     nirvana.set("jira", "squash", "true");
     nirvana.set("linear", "publish", "true");
 
@@ -127,7 +126,6 @@ async fn jira_squashes_per_ticket_and_day() {
     let j2 = e2e.jira_issue("J2").await;
     let j3 = e2e.jira_issue("J3").await;
 
-    nirvana.set("jira", "publish", "true");
     nirvana.set("jira", "squash", "true");
 
     nirvana.run(&["start", &j1, "--at", &at(d2, "09:00")]);

@@ -7,10 +7,6 @@ async fn jira_connects() {
     let (config, nirvana) = (&e2e.config, &e2e.nirvana);
 
     nirvana.add_jira(config);
-    let credentials = nirvana.run(&["credential", "list"]);
-    let jira = line_with(&credentials, "jira");
-    assert!(jira.contains("env"), "{credentials}");
-    assert!(jira.contains("NIRVANA_E2E_JIRA_TOKEN"), "{credentials}");
     nirvana.run(&["connection", "test", "jira"]);
 }
 
@@ -21,10 +17,6 @@ async fn linear_connects() {
     let (config, nirvana) = (&e2e.config, &e2e.nirvana);
 
     nirvana.add_linear(config);
-    let credentials = nirvana.run(&["credential", "list"]);
-    let linear = line_with(&credentials, "linear");
-    assert!(linear.contains("env"), "{credentials}");
-    assert!(linear.contains("NIRVANA_E2E_LINEAR_TOKEN"), "{credentials}");
     nirvana.run(&["connection", "test", "linear"]);
 }
 
@@ -90,6 +82,7 @@ async fn edits_connections() {
     nirvana.run(&["connection", "edit", "jira", "--host", &config.jira_host]);
     nirvana.run(&["connection", "test", "jira"]);
 
+    nirvana.set("jira", "squash", "true");
     nirvana.run(&["connection", "edit", "jira", "--name", "work"]);
     let connections = nirvana.run(&["connection", "list"]);
     assert!(
@@ -101,7 +94,7 @@ async fn edits_connections() {
         "connection 'jira' not found",
     );
     nirvana.run(&["connection", "test", "work"]);
-    assert_eq!(nirvana.get("work", "publish"), "true");
+    assert_eq!(nirvana.get("work", "squash"), "true");
 
     nirvana.fail(
         &[

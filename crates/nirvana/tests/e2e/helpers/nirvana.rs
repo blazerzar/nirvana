@@ -31,11 +31,14 @@ impl Nirvana {
         String::from_utf8(assert.get_output().stdout.clone()).unwrap()
     }
 
-    /// Runs `args` and asserts exit code 1 with `error` in stderr.
-    pub fn fail(&self, args: &[&str], error: &str) {
+    /// Runs `args`, asserts exit code 1 with `error` in stderr and returns
+    /// stdout.
+    pub fn fail(&self, args: &[&str], error: &str) -> String {
         let assert = self.assert(args).code(1);
-        let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
+        let output = assert.get_output();
+        let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(stderr.contains(error), "{stderr}");
+        String::from_utf8(output.stdout.clone()).unwrap()
     }
 
     fn assert(&self, args: &[&str]) -> Assert {

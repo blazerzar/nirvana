@@ -1,4 +1,4 @@
-use crate::helpers::{E2e, at, comment, day, row, timestamp};
+use crate::helpers::{E2e, at, comment, day, line_with, row, timestamp};
 
 #[tokio::test]
 #[ignore]
@@ -14,6 +14,15 @@ async fn publish_settings() {
     assert_eq!(nirvana.get("jira", "squash"), "false");
     assert_eq!(nirvana.get("linear", "publish"), "false");
     assert_eq!(nirvana.get("linear", "squash"), "false");
+    let settings = nirvana.run(&["settings", "get", "--connection", "jira"]);
+    assert!(
+        line_with(&settings, "publish").ends_with("true"),
+        "{settings}"
+    );
+    assert!(
+        line_with(&settings, "squash").ends_with("false"),
+        "{settings}"
+    );
 
     nirvana.fail(
         &["settings", "set", "--connection", "jira", "unknown", "true"],

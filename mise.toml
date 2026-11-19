@@ -85,6 +85,11 @@ run = [
   "cargo +$NIGHTLY_TOOLCHAIN llvm-cov report --release --lcov --output-path target/llvm-cov/lcov.info",
 ]
 
+[tasks.coverage-clean]
+description = "Clean old coverage profiles"
+tools = { "aqua:taiki-e/cargo-llvm-cov" = "0.9.1" }
+run = "cargo +$NIGHTLY_TOOLCHAIN llvm-cov clean --workspace"
+
 [tasks.check]
 description = "Type-check all crates"
 run = "cargo check --workspace"

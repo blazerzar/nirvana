@@ -4,6 +4,8 @@ use crate::helpers::Nirvana;
 #[ignore]
 async fn manages_config() {
     let nirvana = Nirvana::new();
+    let config = nirvana.run(&["config", "get"]);
+    assert!(config.contains("No config values set"), "{config}");
     nirvana.setup();
 
     let config = nirvana.run(&["config", "get"]);

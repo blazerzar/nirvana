@@ -1,6 +1,6 @@
 use chrono::Days;
 
-use crate::helpers::{E2e, all_published, at, comment, day, row, sorted, timestamp};
+use crate::helpers::{E2e, all_published, at, comment, day, line_with, row, sorted, timestamp};
 
 #[tokio::test]
 #[ignore]
@@ -234,4 +234,40 @@ async fn linear_squashes_per_ticket_and_day() {
     assert!(published.contains("Nothing to publish"), "{published}");
     linear.assert_comments(&l1, &l1_comments).await;
     linear.assert_comments(&l2, &l2_comments).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn retries_failed_slots() {
+    let e2e = E2e::connected("retries_failed_slots");
+    let (config, jira, nirvana) = (&e2e.config, &e2e.jira, &e2e.nirvana);
+    let d = day(1);
+
+    let j1 = e2e.jira_issue("J1").await;
+
+    nirvana.run(&["add", &j1, "--start", &at(d, "09:00"), "--duration", "30m"]);
+    let id = &nirvana.slot_ids(d)[0];
+
+    nirvana.run(&["connection", "edit", "jira", "--host", "http://127.0.0.1:9"]);
+    let failed = nirvana.fail(&["publish", "--all"], "1 of 1 slot failed to publish");
+    assert!(failed.contains(&format!("✗ {j1}")), "{failed}");
+    assert_eq!(nirvana.list_rows(d), [row(&j1, at(d, "09:00"), "×")]);
+    let slot = nirvana.run(&["show", id, "--show-errors"]);
+    assert!(line_with(&slot, "failed").starts_with("jira"), "{slot}");
+    assert!(slot.contains("jira: network error"), "{slot}");
+
+    let published = nirvana.run(&["publish", "--all"]);
+    assert!(published.contains("Nothing to publish"), "{published}");
+
+    nirvana.run(&["connection", "edit", "jira", "--host", &config.jira_host]);
+    let published = nirvana.run(&["publish", "--all", "--retry"]);
+    assert!(published.contains("Published 1 slot (30m)"), "{published}");
+    jira.assert_worklogs(&j1, &[(timestamp(d, "09:00"), 1800)])
+        .await;
+    assert_eq!(nirvana.list_rows(d), [row(&j1, at(d, "09:00"), "✓")]);
+    let slot = nirvana.run(&["show", id]);
+    assert!(line_with(&slot, "published").starts_with("jira"), "{slot}");
+
+    nirvana.run(&["delete", id, "-y"]);
+    assert!(nirvana.list_rows(d).is_empty());
 }

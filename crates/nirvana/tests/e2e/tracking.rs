@@ -11,6 +11,18 @@ async fn jira_tracks_slots() {
     let j2 = e2e.jira_issue("J2").await;
     let j3 = e2e.jira_issue("J3").await;
 
+    let start = nirvana.run(&["start"]);
+    assert!(start.contains("No tickets found"), "{start}");
+    let stop = nirvana.run(&["stop"]);
+    assert!(stop.contains("Not tracking"), "{stop}");
+    let commands: [&[&str]; 4] = [&["start", &j1], &["stop"], &["resume"], &["switch"]];
+    for command in commands {
+        nirvana.fail(
+            &[command, &["--at", "bogus"]].concat(),
+            "invalid time 'bogus'",
+        );
+    }
+
     nirvana.add_jira(config);
 
     let tracking_j1 = format!("Tracking ticket {j1} {} ", e2e.title("J1"));
@@ -70,6 +82,8 @@ async fn edits_adds_and_deletes_slots() {
     nirvana.run(&["edit", "--at", &at(d, "10:10"), "--ticket", &j2]);
     let id = &nirvana.slot_ids(d)[2];
     nirvana.run(&["edit", id, "--duration", "30m"]);
+    let edited = nirvana.run(&["edit", "--at", &at(d, "09:30"), "--stop", "09:45"]);
+    assert!(edited.trim_end().ends_with(" 30m"), "{edited}");
 
     nirvana.run(&["add", &l1, "--start", &at(d, "13:00"), "--duration", "20m"]);
     nirvana.run(&["delete", "--at", &at(d, "13:10"), "-y"]);

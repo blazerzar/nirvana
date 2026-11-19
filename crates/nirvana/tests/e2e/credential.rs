@@ -49,6 +49,10 @@ async fn env_credentials_cannot_be_updated_or_moved() {
         &["credential", "move", "jira", "--to", "plaintext"],
         "unsupported secret store: env",
     );
+    for command in ["update", "move"] {
+        let output = nirvana.run(&["credential", command]);
+        assert!(output.contains("No credentials found"), "{output}");
+    }
 
     let credentials = nirvana.run(&["credential", "list"]);
     for (connection, variable) in [
@@ -61,4 +65,45 @@ async fn env_credentials_cannot_be_updated_or_moved() {
             "{credentials}"
         );
     }
+}
+
+#[tokio::test]
+#[ignore]
+async fn updates_plaintext_credentials() {
+    let e2e = E2e::new("updates_plaintext_credentials");
+    let (config, nirvana) = (&e2e.config, &e2e.nirvana);
+
+    let host = format!("linear.app/{}", config.linear_workspace);
+    nirvana.run(&[
+        "connection",
+        "add",
+        "linear",
+        "--kind",
+        "linear",
+        "--host",
+        &host,
+        "--credential",
+        "lin_api_e2e_first",
+        "--storage",
+        "plaintext",
+    ]);
+    let credentials = nirvana.run(&["credential", "list"]);
+    let line: Vec<&str> = line_with(&credentials, "linear")
+        .split_whitespace()
+        .collect();
+    assert_eq!(line, ["linear", "plaintext"], "{credentials}");
+    nirvana.fail(&["connection", "test", "linear"], "authentication failed");
+
+    let updated = nirvana.run(&[
+        "credential",
+        "update",
+        "linear",
+        "--token",
+        "lin_api_e2e_second",
+    ]);
+    assert!(
+        updated.contains("Updated credential of linear"),
+        "{updated}"
+    );
+    nirvana.fail(&["connection", "test", "linear"], "authentication failed");
 }

@@ -1,4 +1,4 @@
-use crate::helpers::{E2e, at, day, line_with, row};
+use crate::helpers::{E2e, Nirvana, at, day, line_with, row};
 
 #[tokio::test]
 #[ignore]
@@ -49,6 +49,36 @@ async fn tests_all_connections() {
     for connection in ["jira", "linear"] {
         assert!(line_with(&tested, connection).starts_with('✓'), "{tested}");
     }
+
+    nirvana.run(&["connection", "edit", "jira", "--host", "http://127.0.0.1:9"]);
+    let tested = nirvana.fail(
+        &["connection", "test", "--all"],
+        "1 of 2 connection tests failed",
+    );
+    assert!(line_with(&tested, "jira").starts_with('✗'), "{tested}");
+    assert!(line_with(&tested, "linear").starts_with('✓'), "{tested}");
+}
+
+#[tokio::test]
+#[ignore]
+async fn commands_without_connections() {
+    let nirvana = Nirvana::new();
+    nirvana.setup();
+
+    let commands: [&[&str]; 4] = [
+        &["connection", "test"],
+        &["connection", "test", "--all"],
+        &["connection", "edit"],
+        &["connection", "delete"],
+    ];
+    for command in commands {
+        let output = nirvana.run(command);
+        assert!(output.contains("No connections found"), "{output}");
+    }
+    nirvana.fail(
+        &["connection", "delete", "nope", "-y"],
+        "connection 'nope' not found",
+    );
 }
 
 #[tokio::test]

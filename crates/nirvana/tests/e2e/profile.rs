@@ -7,12 +7,31 @@ async fn manages_profiles() {
     let nirvana = Nirvana::new();
 
     nirvana.fail(&["status"], "no active profile");
+    let commands: [&[&str]; 4] = [
+        &["profile", "list"],
+        &["profile", "switch"],
+        &["profile", "delete"],
+        &["profile", "rename"],
+    ];
+    for command in commands {
+        let output = nirvana.run(command);
+        assert!(output.contains("No profiles found"), "{output}");
+    }
     nirvana.setup();
     let status = nirvana.run(&["status"]);
     assert!(status.contains("Not tracking"), "{status}");
     nirvana.fail(
         &["profile", "create", "e2e"],
         "profile 'e2e' already exists",
+    );
+    let switched = nirvana.run(&["profile", "switch", "e2e"]);
+    assert!(
+        switched.contains("Profile e2e is already active"),
+        "{switched}"
+    );
+    nirvana.fail(
+        &["profile", "delete", "nope", "-y"],
+        "profile 'nope' not found",
     );
 
     nirvana.run(&["profile", "create", "other"]);

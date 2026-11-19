@@ -16,7 +16,7 @@ use nirvana_entity::{publish_entry, slot, ticket};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ConnectionTrait, DatabaseConnection, EntityTrait, ExprTrait, QueryFilter, QueryOrder, Set,
-    TransactionTrait, TryInsertResult,
+    SqliteTransactionMode, TransactionOptions, TransactionTrait, TryInsertResult,
 };
 use tokio::task::JoinSet;
 use tracing::debug;
@@ -72,8 +72,7 @@ impl Nirvana {
         };
 
         let connection_ids = connections.iter().map(|connection| connection.model.id);
-        let slots = find_publishable(&self.db, profile.id, from, to, connection_ids, retry).await?;
-        let mut claimed = claim(&self.db, slots, retry).await?;
+        let mut claimed = claim(&self.db, profile.id, from, to, connection_ids, retry).await?;
         debug!(
             claimed = claimed.values().map(Vec::len).sum::<usize>(),
             retry, "publishing slots"
@@ -212,15 +211,27 @@ async fn find_publishable(
     Ok(groups)
 }
 
-/// Claims the slots, grouped by their ticket's connection, in one transaction
-/// and returns the claimed ones. A slot without an entry gets a pending one,
-/// and with `retry` a failed or stuck entry is reset to pending. Slots claimed
-/// by another publish are skipped.
+/// Finds the [publishable](find_publishable) slots and claims them in one
+/// immediate transaction, so they cannot change between the read and the
+/// claim, and returns the claimed ones grouped by their ticket's connection.
+/// A slot without an entry gets a pending one, and with `retry` a failed or
+/// stuck entry is reset to pending. Slots claimed by another publish are
+/// skipped.
 async fn claim(
     db: &DatabaseConnection,
-    mut slots: HashMap<i64, Vec<Slot>>,
+    profile_id: i64,
+    from: Option<i64>,
+    to: Option<i64>,
+    connection_ids: impl IntoIterator<Item = i64>,
     retry: bool,
 ) -> Result<HashMap<i64, Vec<Slot>>, NirvanaError> {
+    let txn = db
+        .begin_with_options(TransactionOptions {
+            sqlite_transaction_mode: Some(SqliteTransactionMode::Immediate),
+            ..Default::default()
+        })
+        .await?;
+    let mut slots = find_publishable(&txn, profile_id, from, to, connection_ids, retry).await?;
     let targets: Vec<(i64, i64)> = slots
         .iter()
         .flat_map(|(&connection_id, slots)| {
@@ -232,7 +243,6 @@ async fn claim(
     }
 
     let now = Utc::now().timestamp();
-    let txn = db.begin().await?;
     let inserted =
         publish_entry::Entity::insert_many(targets.iter().map(|&(slot_id, connection_id)| {
             publish_entry::ActiveModel {
@@ -450,23 +460,22 @@ mod tests {
         service.use_connection(Some(Jira));
         let ticket = service.seed_ticket("KAR-1", "Title", 0, 0).await;
         let slot = service.seed_slot(&ticket, 1000, Some(2000)).await;
-        let select = || {
-            find_publishable(
+        let connection_id = ticket.connection_id.unwrap();
+        let claim = || {
+            claim(
                 &service.db,
                 ticket.profile_id,
                 None,
                 None,
-                [ticket.connection_id.unwrap()],
+                [connection_id],
                 false,
             )
         };
-        let slots = select().await.unwrap();
-        let concurrent = select().await.unwrap();
 
-        let claimed = claim(&service.db, slots, false).await.unwrap();
-        let claimed_again = claim(&service.db, concurrent, false).await.unwrap();
+        let claimed = claim().await.unwrap();
+        let claimed_again = claim().await.unwrap();
 
-        assert_eq!(ids(&claimed[&ticket.connection_id.unwrap()]), [slot.id]);
+        assert_eq!(ids(&claimed[&connection_id]), [slot.id]);
         assert!(claimed_again.is_empty());
         let entry = entry(&service, &slot).await.unwrap();
         assert_eq!((entry.published_at, entry.error), (None, None));
@@ -490,21 +499,22 @@ mod tests {
         service
             .seed_publish_entry(&pending, Jira, None, None, now)
             .await;
-        let slots = || {
-            let slots = [&failed, &stuck, &pending].map(|model| Slot {
-                model: model.clone(),
-                ticket: ticket.clone(),
-            });
-            HashMap::from([(ticket.connection_id.unwrap(), slots.into())])
+        let connection_id = ticket.connection_id.unwrap();
+        let claim = |retry| {
+            claim(
+                &service.db,
+                ticket.profile_id,
+                None,
+                None,
+                [connection_id],
+                retry,
+            )
         };
 
-        assert!(claim(&service.db, slots(), false).await.unwrap().is_empty());
-        let claimed = claim(&service.db, slots(), true).await.unwrap();
+        assert!(claim(false).await.unwrap().is_empty());
+        let claimed = claim(true).await.unwrap();
 
-        assert_eq!(
-            ids(&claimed[&ticket.connection_id.unwrap()]),
-            [failed.id, stuck.id]
-        );
+        assert_eq!(ids(&claimed[&connection_id]), [failed.id, stuck.id]);
         for slot in [&failed, &stuck] {
             let entry = entry(&service, slot).await.unwrap();
             assert_eq!(entry.error, None);

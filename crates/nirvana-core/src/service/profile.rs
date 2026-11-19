@@ -30,7 +30,7 @@ impl Nirvana {
             Some(_) if self.config()?.core.profile.as_deref() == Some(name) => Ok(false),
             Some(profile) => {
                 self.config_mut()?.core.profile = Some(profile.name);
-                self.config()?.save(&self.paths)?;
+                self.config()?.save(&self.paths).await?;
                 Ok(true)
             }
             None => Err(DomainError::ProfileNotFound(name.to_owned()).into()),
@@ -109,7 +109,7 @@ impl Nirvana {
         }
         let active = resolve(&self.db, None).await?;
         self.config_mut()?.core.profile.clone_from(&active);
-        self.config()?.save(&self.paths)?;
+        self.config()?.save(&self.paths).await?;
         Ok(active)
     }
 
@@ -176,7 +176,7 @@ impl Nirvana {
 
         if self.config()?.core.profile.as_deref() == Some(name) {
             self.config_mut()?.core.profile = Some(renamed.name);
-            self.config()?.save(&self.paths)?;
+            self.config()?.save(&self.paths).await?;
         }
         Ok(())
     }
@@ -316,7 +316,7 @@ mod tests {
             service.config().unwrap().core.profile.as_deref(),
             Some("work")
         );
-        let saved = AppConfig::load(&service.paths).unwrap();
+        let saved = AppConfig::load(&service.paths).await.unwrap();
         assert_eq!(saved.core.profile.as_deref(), Some("work"));
     }
 
@@ -401,7 +401,7 @@ mod tests {
         assert_eq!(active, None);
         assert!(profile_names(&service).await.is_empty());
         assert_eq!(service.config().unwrap().core.profile, None);
-        let saved = AppConfig::load(&service.paths).unwrap();
+        let saved = AppConfig::load(&service.paths).await.unwrap();
         assert_eq!(saved.core.profile, None);
     }
 
@@ -419,7 +419,7 @@ mod tests {
             service.config().unwrap().core.profile.as_deref(),
             Some("personal")
         );
-        let saved = AppConfig::load(&service.paths).unwrap();
+        let saved = AppConfig::load(&service.paths).await.unwrap();
         assert_eq!(saved.core.profile.as_deref(), Some("personal"));
     }
 

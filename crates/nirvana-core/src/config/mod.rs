@@ -14,10 +14,9 @@
 //! A legacy format without `schema_version` is detected by its module.
 //! A file in an older format is backed up and rewritten on load.
 
-use std::fs;
-
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tokio::fs;
 use tracing::info;
 
 use crate::paths::{AppPaths, backup_path};
@@ -107,7 +106,10 @@ impl Default for AppConfig {
 /// Used to build the log filter before [`AppConfig::load`] runs, so it does
 /// not migrate the file or report errors. `load` reports them.
 pub(crate) fn log_level(paths: &AppPaths) -> Option<LogLevel> {
-    let table: toml::Table = fs::read_to_string(&paths.config_file).ok()?.parse().ok()?;
+    let table: toml::Table = std::fs::read_to_string(&paths.config_file)
+        .ok()?
+        .parse()
+        .ok()?;
     if table.get("schema_version")?.as_integer()? != CURRENT_SCHEMA_VERSION {
         return None;
     }
@@ -129,18 +131,19 @@ impl AppConfig {
     /// A missing file gives the defaults and nothing is written. A file in an
     /// older format is copied to `data_dir/backup` and rewritten in the
     /// current format with only non-default values.
-    pub(crate) fn load(paths: &AppPaths) -> Result<Self, ConfigError> {
-        if !paths.config_file.exists() {
+    pub(crate) async fn load(paths: &AppPaths) -> Result<Self, ConfigError> {
+        if !fs::try_exists(&paths.config_file).await? {
             return Ok(Self::default());
         }
-        let table: toml::Table = fs::read_to_string(&paths.config_file)?.parse()?;
+        let table: toml::Table = fs::read_to_string(&paths.config_file).await?.parse()?;
         let schema = Schema::of(&table)?;
         let config = Self::parse(schema, table)?;
         if schema.is_legacy() {
-            let backup_path = backup_path(&paths.config_file, &paths.data_dir.join("backup"))?;
-            fs::copy(&paths.config_file, &backup_path)?;
+            let backup_path =
+                backup_path(&paths.config_file, &paths.data_dir.join("backup")).await?;
+            fs::copy(&paths.config_file, &backup_path).await?;
             info!("config backed up to {}", backup_path.display());
-            config.write(paths, &toml::Table::new())?;
+            config.write(paths, &toml::Table::new()).await?;
             info!("config migrated from {schema:?} to schema version {CURRENT_SCHEMA_VERSION}");
         }
         Ok(config)
@@ -152,14 +155,18 @@ impl AppConfig {
     /// A key is written only if its value differs from the default or the key
     /// is already present in the file. `schema_version` is always written. A
     /// file that cannot be read is overwritten.
-    pub(crate) fn save(&self, paths: &AppPaths) -> Result<(), ConfigError> {
-        self.write(paths, &existing_table(paths))
+    pub(crate) async fn save(&self, paths: &AppPaths) -> Result<(), ConfigError> {
+        self.write(paths, &existing_table(paths).await).await
     }
 
     /// Writes the config like [`save`](Self::save), as if `key`
     /// (`section.key`) was not present in the file.
-    pub(crate) fn save_without(&self, paths: &AppPaths, key: &str) -> Result<(), ConfigError> {
-        let mut existing = existing_table(paths);
+    pub(crate) async fn save_without(
+        &self,
+        paths: &AppPaths,
+        key: &str,
+    ) -> Result<(), ConfigError> {
+        let mut existing = existing_table(paths).await;
         if let Some((section, name)) = key.split_once('.')
             && let Some(section) = existing
                 .get_mut(section)
@@ -167,27 +174,27 @@ impl AppConfig {
         {
             section.remove(name);
         }
-        self.write(paths, &existing)
+        self.write(paths, &existing).await
     }
 
     /// Returns the table [`save`](Self::save) would write, given the
     /// [`defaults_table`].
-    pub(crate) fn saved_table(
+    pub(crate) async fn saved_table(
         &self,
         paths: &AppPaths,
         defaults: &toml::Table,
     ) -> Result<toml::Table, ConfigError> {
-        self.table_without_defaults(&existing_table(paths), defaults)
+        self.table_without_defaults(&existing_table(paths).await, defaults)
     }
 
     /// Writes the config like [`save`](Self::save), keeping default values
     /// only for keys present in `existing`.
-    fn write(&self, paths: &AppPaths, existing: &toml::Table) -> Result<(), ConfigError> {
+    async fn write(&self, paths: &AppPaths, existing: &toml::Table) -> Result<(), ConfigError> {
         let table = self.table_without_defaults(existing, &defaults_table()?)?;
-        fs::create_dir_all(&paths.config_dir)?;
+        fs::create_dir_all(&paths.config_dir).await?;
         let temp_file = paths.config_file.with_extension("toml.tmp");
-        fs::write(&temp_file, toml::to_string_pretty(&table)?)?;
-        fs::rename(&temp_file, &paths.config_file)?;
+        fs::write(&temp_file, toml::to_string_pretty(&table)?).await?;
+        fs::rename(&temp_file, &paths.config_file).await?;
         Ok(())
     }
 
@@ -227,8 +234,9 @@ pub(crate) fn defaults_table() -> Result<toml::Table, ConfigError> {
 
 /// Returns the content of `config.toml`, or an empty table if it cannot be
 /// read.
-fn existing_table(paths: &AppPaths) -> toml::Table {
+async fn existing_table(paths: &AppPaths) -> toml::Table {
     fs::read_to_string(&paths.config_file)
+        .await
         .ok()
         .and_then(|content| content.parse().ok())
         .unwrap_or_default()
@@ -316,6 +324,8 @@ fn default_idle_threshold_secs() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
 
     const FIXTURE_010: &str = include_str!("../../tests/fixtures/v0_3_0/config_010.toml");
@@ -477,28 +487,28 @@ level = "debug"
     ///
     /// `file_before_save` is the content of `config.toml` before saving, `None`
     /// means the file does not exist yet.
-    fn save_and_read(config: &AppConfig, file_before_save: Option<&str>) -> toml::Table {
+    async fn save_and_read(config: &AppConfig, file_before_save: Option<&str>) -> toml::Table {
         let dir = tempfile::tempdir().unwrap();
         let paths = AppPaths::in_dir(dir.path());
         if let Some(content) = file_before_save {
             fs::write(&paths.config_file, content).unwrap();
         }
-        config.save(&paths).unwrap();
+        config.save(&paths).await.unwrap();
         fs::read_to_string(&paths.config_file)
             .unwrap()
             .parse()
             .unwrap()
     }
 
-    #[test]
-    fn saves_only_schema_version_for_defaults() {
-        let saved = save_and_read(&AppConfig::default(), None);
+    #[tokio::test]
+    async fn saves_only_schema_version_for_defaults() {
+        let saved = save_and_read(&AppConfig::default(), None).await;
 
         assert_eq!(saved, "schema_version = 2".parse().unwrap());
     }
 
-    #[test]
-    fn saves_non_default_values() {
+    #[tokio::test]
+    async fn saves_non_default_values() {
         let config = AppConfig {
             core: CoreConfig {
                 profile: Some("work".into()),
@@ -514,7 +524,7 @@ level = "debug"
             ..AppConfig::default()
         };
 
-        let saved = save_and_read(&config, None);
+        let saved = save_and_read(&config, None).await;
 
         assert_eq!(
             saved,
@@ -535,8 +545,8 @@ level = "warn"
         );
     }
 
-    #[test]
-    fn keeps_default_values_already_in_file() {
+    #[tokio::test]
+    async fn keeps_default_values_already_in_file() {
         let saved = save_and_read(
             &AppConfig::default(),
             Some(
@@ -547,7 +557,8 @@ schema_version = 2
 enabled = true
 "#,
             ),
-        );
+        )
+        .await;
 
         assert_eq!(
             saved,
@@ -562,8 +573,8 @@ enabled = true
         );
     }
 
-    #[test]
-    fn writes_default_values_when_key_already_in_file() {
+    #[tokio::test]
+    async fn writes_default_values_when_key_already_in_file() {
         let saved = save_and_read(
             &AppConfig::default(),
             Some(
@@ -574,7 +585,8 @@ schema_version = 2
 enabled = false
 "#,
             ),
-        );
+        )
+        .await;
 
         assert_eq!(
             saved,
@@ -598,20 +610,20 @@ enabled = true
     }
 
     /// Writes `content` to `config.toml` in `dir` and loads it.
-    fn load_file(
+    async fn load_file(
         dir: &std::path::Path,
         content: &str,
     ) -> (AppPaths, Result<AppConfig, ConfigError>) {
         let paths = AppPaths::in_dir(dir);
         fs::write(&paths.config_file, content).unwrap();
-        let result = AppConfig::load(&paths);
+        let result = AppConfig::load(&paths).await;
         (paths, result)
     }
 
-    #[test]
-    fn loading_030_fixture_backs_it_up() {
+    #[tokio::test]
+    async fn loading_030_fixture_backs_it_up() {
         let dir = tempfile::tempdir().unwrap();
-        let (paths, result) = load_file(dir.path(), FIXTURE_030);
+        let (paths, result) = load_file(dir.path(), FIXTURE_030).await;
         result.unwrap();
 
         let backups = backups(&paths);
@@ -621,10 +633,10 @@ enabled = true
         assert_eq!(fs::read(&backups[0]).unwrap(), FIXTURE_030.as_bytes());
     }
 
-    #[test]
-    fn loading_030_fixture_rewrites_only_non_default_values() {
+    #[tokio::test]
+    async fn loading_030_fixture_rewrites_only_non_default_values() {
         let dir = tempfile::tempdir().unwrap();
-        let (paths, result) = load_file(dir.path(), FIXTURE_030);
+        let (paths, result) = load_file(dir.path(), FIXTURE_030).await;
         result.unwrap();
 
         let saved: toml::Table = fs::read_to_string(&paths.config_file)
@@ -648,23 +660,23 @@ threshold_secs = 600
         );
     }
 
-    #[test]
-    fn reloading_migrated_config_skips_backup_and_rewrite() {
+    #[tokio::test]
+    async fn reloading_migrated_config_skips_backup_and_rewrite() {
         let dir = tempfile::tempdir().unwrap();
-        let (paths, result) = load_file(dir.path(), FIXTURE_030);
+        let (paths, result) = load_file(dir.path(), FIXTURE_030).await;
         let migrated = result.unwrap();
         let content = fs::read_to_string(&paths.config_file).unwrap();
 
         assert_eq!(backups(&paths).len(), 1);
-        assert_eq!(AppConfig::load(&paths).unwrap(), migrated);
+        assert_eq!(AppConfig::load(&paths).await.unwrap(), migrated);
         assert_eq!(backups(&paths).len(), 1);
         assert_eq!(fs::read_to_string(&paths.config_file).unwrap(), content);
     }
 
-    #[test]
-    fn loading_010_fixture_backs_it_up_and_writes_defaults() {
+    #[tokio::test]
+    async fn loading_010_fixture_backs_it_up_and_writes_defaults() {
         let dir = tempfile::tempdir().unwrap();
-        let (paths, result) = load_file(dir.path(), FIXTURE_010);
+        let (paths, result) = load_file(dir.path(), FIXTURE_010).await;
 
         assert_eq!(result.unwrap(), AppConfig::default());
         assert_eq!(backups(&paths).len(), 1);
@@ -677,10 +689,10 @@ threshold_secs = 600
         );
     }
 
-    #[test]
-    fn parse_error_leaves_file_untouched() {
+    #[tokio::test]
+    async fn parse_error_leaves_file_untouched() {
         let dir = tempfile::tempdir().unwrap();
-        let (paths, result) = load_file(dir.path(), "not = [valid");
+        let (paths, result) = load_file(dir.path(), "not = [valid").await;
 
         assert!(matches!(result, Err(ConfigError::Parse(_))));
         assert_eq!(
@@ -690,10 +702,10 @@ threshold_secs = 600
         assert!(backups(&paths).is_empty());
     }
 
-    #[test]
-    fn unsupported_schema_version_fails_and_leaves_file_untouched() {
+    #[tokio::test]
+    async fn unsupported_schema_version_fails_and_leaves_file_untouched() {
         let dir = tempfile::tempdir().unwrap();
-        let (paths, result) = load_file(dir.path(), "schema_version = 3");
+        let (paths, result) = load_file(dir.path(), "schema_version = 3").await;
 
         assert!(matches!(result, Err(ConfigError::UnsupportedSchema(_))));
         assert_eq!(
@@ -703,10 +715,10 @@ threshold_secs = 600
         assert!(backups(&paths).is_empty());
     }
 
-    #[test]
-    fn comment_only_file_gives_defaults_and_writes_nothing() {
+    #[tokio::test]
+    async fn comment_only_file_gives_defaults_and_writes_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        let (paths, result) = load_file(dir.path(), "# theme = \"dark\"\n");
+        let (paths, result) = load_file(dir.path(), "# theme = \"dark\"\n").await;
 
         assert_eq!(result.unwrap(), AppConfig::default());
         assert_eq!(
@@ -716,18 +728,18 @@ threshold_secs = 600
         assert!(backups(&paths).is_empty());
     }
 
-    #[test]
-    fn missing_file_gives_defaults_and_writes_nothing() {
+    #[tokio::test]
+    async fn missing_file_gives_defaults_and_writes_nothing() {
         let dir = tempfile::tempdir().unwrap();
         let paths = AppPaths::in_dir(dir.path());
 
-        assert_eq!(AppConfig::load(&paths).unwrap(), AppConfig::default());
+        assert_eq!(AppConfig::load(&paths).await.unwrap(), AppConfig::default());
         assert!(!paths.config_file.exists());
         assert!(!paths.data_dir.join("backup").exists());
     }
 
-    #[test]
-    fn overwrites_unreadable_file() {
+    #[tokio::test]
+    async fn overwrites_unreadable_file() {
         let config = AppConfig {
             core: CoreConfig {
                 profile: Some("work".into()),
@@ -735,7 +747,7 @@ threshold_secs = 600
             ..AppConfig::default()
         };
 
-        let saved = save_and_read(&config, Some("not = [valid"));
+        let saved = save_and_read(&config, Some("not = [valid")).await;
 
         assert_eq!(
             saved,

@@ -30,10 +30,10 @@ impl From<DbErr> for DbError {
 /// pending migrations. An existing database is backed up to `backup/` next to
 /// it before migrating.
 pub(crate) async fn open(db_file: &Path) -> Result<DatabaseConnection, DbError> {
-    let exists = db_file.exists();
+    let exists = tokio::fs::try_exists(db_file).await?;
 
     let parent = db_file.parent().ok_or(DbError::InvalidDbPath)?;
-    std::fs::create_dir_all(parent)?;
+    tokio::fs::create_dir_all(parent).await?;
 
     let options = SqliteConnectOptions::new()
         .filename(db_file)
@@ -68,7 +68,7 @@ async fn backup(db: &DatabaseConnection, db_file: &Path) -> Result<PathBuf, DbEr
         .parent()
         .ok_or(DbError::InvalidDbPath)?
         .join("backup");
-    let backup_path = paths::backup_path(db_file, &backup_dir)?;
+    let backup_path = paths::backup_path(db_file, &backup_dir).await?;
 
     let p = backup_path.to_str().ok_or(DbError::InvalidDbPath)?;
     db.execute_raw(raw_sql!(Sqlite, "VACUUM INTO {p}")).await?;

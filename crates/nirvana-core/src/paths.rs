@@ -31,7 +31,7 @@
 //! `NIRVANA_DATA_DIR` and `NIRVANA_LOG_DIR`.
 
 use std::path::{Path, PathBuf};
-use std::{env, fs, io};
+use std::{env, io};
 
 use directories::ProjectDirs;
 
@@ -140,7 +140,7 @@ impl AppPaths {
 /// it does not exist.
 ///
 /// For example `nirvana.db` gives `backup/nirvana.db.20261019-203400.bak`.
-pub(crate) fn backup_path(file: &Path, backup_dir: &Path) -> io::Result<PathBuf> {
+pub(crate) async fn backup_path(file: &Path, backup_dir: &Path) -> io::Result<PathBuf> {
     let stamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
     let mut name = file
         .file_name()
@@ -148,7 +148,7 @@ pub(crate) fn backup_path(file: &Path, backup_dir: &Path) -> io::Result<PathBuf>
         .to_os_string();
     name.push(format!(".{stamp}.bak"));
 
-    fs::create_dir_all(backup_dir)?;
+    tokio::fs::create_dir_all(backup_dir).await?;
     Ok(backup_dir.join(name))
 }
 

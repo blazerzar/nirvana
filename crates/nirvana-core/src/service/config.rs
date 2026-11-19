@@ -7,7 +7,6 @@ use crate::config::{self, AppConfig, ConfigError, KEYS};
 use crate::domain::ConfigEntry;
 use crate::errors::{DomainError, NirvanaError};
 use crate::logging;
-use crate::paths::AppPaths;
 use crate::service::Nirvana;
 
 const PROFILE_KEY: &str = "core.profile";
@@ -21,7 +20,7 @@ impl Nirvana {
     /// # Errors
     ///
     /// Returns an error if the key is unknown or the config is unavailable.
-    pub fn get_config(&self, key: Option<&str>) -> Result<Vec<ConfigEntry>, NirvanaError> {
+    pub async fn get_config(&self, key: Option<&str>) -> Result<Vec<ConfigEntry>, NirvanaError> {
         let keys: Vec<&'static str> = KEYS
             .iter()
             .copied()
@@ -39,7 +38,7 @@ impl Nirvana {
         }
 
         let defaults = config::defaults_table()?;
-        let values = self.config()?.saved_table(&self.paths, &defaults)?;
+        let values = self.config()?.saved_table(&self.paths, &defaults).await?;
         Ok(keys
             .into_iter()
             .map(|key| ConfigEntry {
@@ -71,13 +70,12 @@ impl Nirvana {
             return Ok(());
         }
 
-        self.edit_config(
-            key,
-            |section, name| {
-                section.insert(name.to_owned(), parse_value(value));
-            },
-            AppConfig::save,
-        )
+        let config = self.edited_config(key, |section, name| {
+            section.insert(name.to_owned(), parse_value(value));
+        })?;
+        config.save(&self.paths).await?;
+        *self.config_mut()? = config;
+        Ok(())
     }
 
     /// Removes the config key `key` (`section.key`) from `config.toml`,
@@ -87,29 +85,26 @@ impl Nirvana {
     ///
     /// Returns an error if the key is unknown or is `core.profile`, or the
     /// config is unavailable or cannot be saved.
-    pub fn unset_config(&mut self, key: &str) -> Result<(), NirvanaError> {
+    pub async fn unset_config(&mut self, key: &str) -> Result<(), NirvanaError> {
         if key == PROFILE_KEY {
             return Err(DomainError::ConfigKeyRequired(key.to_owned()).into());
         }
 
-        self.edit_config(
-            key,
-            |section, name| {
-                section.remove(name);
-            },
-            |config, paths| config.save_without(paths, key),
-        )
+        let config = self.edited_config(key, |section, name| {
+            section.remove(name);
+        })?;
+        config.save_without(&self.paths, key).await?;
+        *self.config_mut()? = config;
+        Ok(())
     }
 
-    /// Applies `edit` to the section table and key name of `key`
-    /// (`section.key`), saves the resulting config with `save` and keeps it
-    /// only if saving succeeds.
-    fn edit_config(
-        &mut self,
+    /// Returns the config with `edit` applied to the section table and key
+    /// name of `key` (`section.key`).
+    fn edited_config(
+        &self,
         key: &str,
         edit: impl FnOnce(&mut toml::Table, &str),
-        save: impl FnOnce(&AppConfig, &AppPaths) -> Result<(), ConfigError>,
-    ) -> Result<(), NirvanaError> {
+    ) -> Result<AppConfig, NirvanaError> {
         let (section, name) = split_key(key)?;
         let mut table = toml::Table::try_from(self.config()?).map_err(ConfigError::from)?;
         let section = table
@@ -117,13 +112,9 @@ impl Nirvana {
             .and_then(toml::Value::as_table_mut)
             .ok_or_else(|| DomainError::UnknownConfigKey(key.to_owned()))?;
         edit(section, name);
-        let config: AppConfig = table
+        table
             .try_into()
-            .map_err(|e| DomainError::InvalidConfigValue(key.to_owned(), e))?;
-
-        save(&config, &self.paths)?;
-        *self.config_mut()? = config;
-        Ok(())
+            .map_err(|e| DomainError::InvalidConfigValue(key.to_owned(), e).into())
     }
 }
 
@@ -182,7 +173,7 @@ mod tests {
         service.set_config("idle.enabled", "false").await.unwrap();
 
         assert_eq!(
-            service.get_config(None).unwrap(),
+            service.get_config(None).await.unwrap(),
             [
                 entry("core.profile", Some("test"), None),
                 entry("gui.theme", None, Some("system")),
@@ -198,9 +189,10 @@ mod tests {
     async fn get_config_selects_section_or_key() {
         let service = TestService::new(&[]).await;
 
-        let keys = |key| -> Vec<&str> {
+        let keys = async |key| -> Vec<&str> {
             service
                 .get_config(Some(key))
+                .await
                 .unwrap()
                 .into_iter()
                 .map(|entry| entry.key)
@@ -208,10 +200,10 @@ mod tests {
         };
 
         assert_eq!(
-            keys("idle"),
+            keys("idle").await,
             ["idle.enabled", "idle.methods", "idle.threshold_secs"]
         );
-        assert_eq!(keys("idle.methods"), ["idle.methods"]);
+        assert_eq!(keys("idle.methods").await, ["idle.methods"]);
     }
 
     #[tokio::test]
@@ -219,7 +211,7 @@ mod tests {
         let service = TestService::new(&[]).await;
 
         for key in ["foo", "idle.foo", "schema_version", ""] {
-            let err = service.get_config(Some(key)).unwrap_err();
+            let err = service.get_config(Some(key)).await.unwrap_err();
             assert!(
                 matches!(&err, NirvanaError::Domain(DomainError::UnknownConfigKey(unknown)) if unknown == key),
                 "{key}: {err}"
@@ -233,7 +225,7 @@ mod tests {
         append_default_theme(&service);
 
         assert_eq!(
-            service.get_config(Some("gui.theme")).unwrap(),
+            service.get_config(Some("gui.theme")).await.unwrap(),
             [entry("gui.theme", Some("system"), Some("system"))]
         );
     }
@@ -253,7 +245,7 @@ mod tests {
             .unwrap();
         service.set_config("log.level", "debug").await.unwrap();
 
-        let saved = AppConfig::load(&service.paths).unwrap();
+        let saved = AppConfig::load(&service.paths).await.unwrap();
         assert_eq!(saved, *service.config().unwrap());
         assert_eq!(saved.gui.theme, Theme::Dark);
         assert_eq!(saved.idle.threshold_secs, 600);
@@ -313,10 +305,10 @@ mod tests {
         service.set_config("gui.theme", "dark").await.unwrap();
         service.set_config("log.level", "debug").await.unwrap();
 
-        service.unset_config("gui.theme").unwrap();
-        service.unset_config("log.level").unwrap();
+        service.unset_config("gui.theme").await.unwrap();
+        service.unset_config("log.level").await.unwrap();
 
-        let saved = AppConfig::load(&service.paths).unwrap();
+        let saved = AppConfig::load(&service.paths).await.unwrap();
         assert_eq!(saved, *service.config().unwrap());
         assert_eq!(saved.gui.theme, Theme::default());
         assert_eq!(saved.log.level, None);
@@ -330,10 +322,10 @@ mod tests {
         let mut service = TestService::new(&[]).await;
         append_default_theme(&service);
 
-        service.unset_config("gui.theme").unwrap();
+        service.unset_config("gui.theme").await.unwrap();
 
         assert_eq!(
-            service.get_config(Some("gui.theme")).unwrap(),
+            service.get_config(Some("gui.theme")).await.unwrap(),
             [entry("gui.theme", None, Some("system"))]
         );
     }
@@ -343,13 +335,13 @@ mod tests {
         let mut service = TestService::new(&[]).await;
 
         for key in ["idle", "idle.foo", "schema_version"] {
-            let err = service.unset_config(key).unwrap_err();
+            let err = service.unset_config(key).await.unwrap_err();
             assert!(
                 matches!(&err, NirvanaError::Domain(DomainError::UnknownConfigKey(unknown)) if unknown == key),
                 "{key}: {err}"
             );
         }
-        let err = service.unset_config(PROFILE_KEY).unwrap_err();
+        let err = service.unset_config(PROFILE_KEY).await.unwrap_err();
         assert!(
             matches!(&err, NirvanaError::Domain(DomainError::ConfigKeyRequired(key)) if key == PROFILE_KEY),
             "{err}"
@@ -369,6 +361,7 @@ mod tests {
 
         assert_eq!(
             AppConfig::load(&service.paths)
+                .await
                 .unwrap()
                 .core
                 .profile

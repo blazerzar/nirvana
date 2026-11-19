@@ -270,7 +270,7 @@ logged from the start.
 
 ## Nirvana API
 
-- [ ] Check for blocking calls inside async code (sync `std::fs` in config,
+- [x] Check for blocking calls inside async code (sync `std::fs` in config,
       storage and logs, `dialoguer` prompts).
 - [ ] Publishing: read the slots to publish inside the claim transaction,
       so a slot edited or deleted between the read and the claim is not

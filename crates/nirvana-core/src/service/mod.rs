@@ -39,7 +39,7 @@ impl Nirvana {
     }
 
     async fn open(paths: AppPaths, keyring: StoreFactory) -> Result<Self, NirvanaError> {
-        let mut config = AppConfig::load(&paths).map_err(Arc::new);
+        let mut config = AppConfig::load(&paths).await.map_err(Arc::new);
         let db = storage::open(&paths.db_file).await?;
         match &mut config {
             Ok(config) => {

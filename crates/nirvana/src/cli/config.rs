@@ -16,7 +16,7 @@ pub(crate) async fn get(
     show_default: bool,
 ) -> anyhow::Result<()> {
     let service = Nirvana::new().await?;
-    let entries = service.get_config(key.as_deref())?;
+    let entries = service.get_config(key.as_deref()).await?;
     let term = Term::stdout();
 
     if key.is_some_and(|key| key.contains('.')) {
@@ -69,7 +69,7 @@ pub(crate) async fn set(key: String, value: String) -> anyhow::Result<()> {
 
 pub(crate) async fn unset(key: String) -> anyhow::Result<()> {
     let mut service = Nirvana::new().await?;
-    service.unset_config(&key)?;
+    service.unset_config(&key).await?;
     info!(%key, "config unset");
 
     Term::stdout().write_line(&format!(

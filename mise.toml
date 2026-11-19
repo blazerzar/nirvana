@@ -79,7 +79,8 @@ depends = ["setup-coverage"]
 tools = { "aqua:taiki-e/cargo-llvm-cov" = "0.9.1" }
 env = { NIRVANA_E2E_BIN = "{{config_root}}/target/llvm-cov-target/release/nirvana" }
 run = [
-  "{% if not get_env(name='CI', default='') %}infisical run --silent --path=/e2e -- {% endif %}cargo +$NIGHTLY_TOOLCHAIN llvm-cov --workspace --locked --release --no-report -- --include-ignored",
+  "cargo +$NIGHTLY_TOOLCHAIN llvm-cov --workspace --locked --release --no-report",
+  "{% if not get_env(name='CI', default='') %}infisical run --silent --path=/e2e -- {% endif %}cargo +$NIGHTLY_TOOLCHAIN llvm-cov -p nirvana --test e2e --locked --release --no-report -- --ignored",
   "cargo +$NIGHTLY_TOOLCHAIN llvm-cov report --release",
   "cargo +$NIGHTLY_TOOLCHAIN llvm-cov report --release --html",
   "cargo +$NIGHTLY_TOOLCHAIN llvm-cov report --release --lcov --output-path target/llvm-cov/lcov.info",

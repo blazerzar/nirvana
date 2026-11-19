@@ -272,15 +272,9 @@ logged from the start.
 
 - [ ] Check for blocking calls inside async code (sync `std::fs` in config,
       storage and logs, `dialoguer` prompts).
-- [ ] Check if we should rework the API interface of the core.
-- [ ] The same goes for DB and config API.
-- [ ] Return the issue URL from core with slots, so frontends do not fetch
-      the active connection and build it themselves.
-- [ ] Separate profile settings from machine settings.
-- [ ] Export logs to CSV and JSON.
-- [ ] Rotate the log file.
-- [ ] Connection health checks (ping every 60 s, latency, auth status).
-- [ ] Change notification so CLI, desktop and web stay in sync.
+- [ ] Publishing: read the slots to publish inside the claim transaction,
+      so a slot edited or deleted between the read and the claim is not
+      sent with stale data and does not fail the whole publish.
 
 ## CICD
 
@@ -306,16 +300,16 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [ ] Analyze design if we should put it in nirvana or core.
 - [ ] Axum server bound to 127.0.0.1, Host and Origin checks, never return tokens.
 - [ ] Default port 5167, configurable.
-- [ ] Publishing: read the slots to publish inside the claim transaction,
-      so a slot edited or deleted between the read and the claim is not
-      sent with stale data and does not fail the whole publish.
-- [ ] Publishing: stay under SQLite's bound variable limit with thousands
-      of slots: claim slots in chunks in `publish --all`, and load the
-      publish entries of `list` without binding every slot ID.
 
 ## GUI
 
 - [ ] Create a GUI application using Iced.
+- [ ] Check if we should rework the API interface of the core.
+- [ ] Return the issue URL from core with slots, so frontends do not fetch
+      the active connection and build it themselves.
+- [ ] Connection health checks (ping every 60 s, latency, auth status),
+      shown as the connection status in the GUI.
+- [ ] Change notification so CLI, desktop and web stay in sync.
 - [ ] We need to support CLI and GUI in the same binary.
 - [ ] We need to make sure such binary works on macOS (.dmg), Windows and Linux.
 - [ ] Start building screens: main (tracking, not tracking), start / switch
@@ -339,6 +333,7 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [ ] Start building screens: setup, week, month, edit drawer, profiles and
       connections, add connection, new profile, settings.
 - [ ] Responsive layouts (below 1200 px and 720 px).
+- [ ] Separate profile settings from machine settings.
 - [ ] Add commands for reading and setting profile settings.
 
 ## CICD
@@ -370,3 +365,13 @@ Leptos or Phoenix, decided at the stage 2 review (analysis in the
 implementation guide). The
 API contract stays language neutral (OpenAPI, upserts by slot uuid) so either
 works.
+
+## Nice to have
+
+Not required for 1.0, picked up when there is time.
+
+- [ ] Export slots to CSV and JSON.
+- [ ] Rotate the log file.
+- [ ] Publishing: stay under SQLite's bound variable limit with thousands
+      of slots: claim slots in chunks in `publish --all`, and load the
+      publish entries of `list` without binding every slot ID.

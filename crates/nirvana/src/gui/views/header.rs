@@ -5,11 +5,12 @@ use iced::alignment::Vertical;
 use iced::widget::text::LineHeight;
 use iced::widget::{column, container, row, rule, svg, text};
 
-use super::theme::Tokens;
-use super::{INTER_BOLD, Message};
+use crate::gui::INTER_BOLD;
+use crate::gui::app::Message;
+use crate::gui::theme::Tokens;
 
 static LOGO: LazyLock<svg::Handle> =
-    LazyLock::new(|| svg::Handle::from_memory(include_bytes!("../../assets/logo.svg")));
+    LazyLock::new(|| svg::Handle::from_memory(include_bytes!("../../../assets/logo.svg")));
 
 pub(super) fn header<'a>(tokens: &'static Tokens) -> Element<'a, Message> {
     let logo = svg(LOGO.clone()).width(24).height(24);

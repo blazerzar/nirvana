@@ -5,7 +5,8 @@ use iced::alignment::Vertical;
 use iced::widget::text::LineHeight;
 use iced::widget::{column, container, row, rule, svg, text};
 
-use super::{BORDER_DEFAULT, INTER_BOLD, Message, TEXT_PRIMARY};
+use super::theme::LIGHT;
+use super::{INTER_BOLD, Message};
 
 static LOGO: LazyLock<svg::Handle> =
     LazyLock::new(|| svg::Handle::from_memory(include_bytes!("../../assets/logo.svg")));
@@ -16,7 +17,7 @@ pub(super) fn header<'a>() -> Element<'a, Message> {
         .font(INTER_BOLD)
         .size(16)
         .line_height(LineHeight::Relative(1.25))
-        .color(TEXT_PRIMARY);
+        .color(LIGHT.text_primary);
 
     let bar = container(row![logo, wordmark].spacing(12).align_y(Vertical::Center))
         .height(52)
@@ -24,7 +25,7 @@ pub(super) fn header<'a>() -> Element<'a, Message> {
         .align_y(Vertical::Center);
 
     let border = rule::horizontal(1).style(|theme| rule::Style {
-        color: BORDER_DEFAULT,
+        color: LIGHT.border_default,
         ..rule::default(theme)
     });
 

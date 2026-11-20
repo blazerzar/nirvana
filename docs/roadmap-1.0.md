@@ -311,7 +311,7 @@ thorough review to make sure we are not bringing any problems into the next stag
       the active connection and build it themselves.
 - [ ] Connection health checks (ping every 60 s, latency, auth status),
       shown as the connection status in the GUI.
-- [ ] Create `Nirvana` once in the GUI boot task, show the window when it is
+- [x] Create `Nirvana` once in the GUI boot task, show the window when it is
       loaded (implementation guide §3 #32).
 - [ ] Change notification so CLI, desktop and web stay in sync: broadcast
       channel in core, local socket from CLI to GUI (implementation guide

@@ -4,8 +4,7 @@ mod views;
 
 use app::Gui;
 use iced::font::{Family, Weight};
-use iced::{Font, Pixels, Settings, Size};
-use nirvana_core::{Nirvana, Theme};
+use iced::{Font, Pixels, Settings};
 
 const INTER_BOLD: Font = Font {
     family: Family::Name("Inter"),
@@ -16,11 +15,9 @@ const INTER_BOLD: Font = Font {
 const JETBRAINS_MONO: Font = Font::with_name("JetBrains Mono");
 
 pub(crate) fn run() -> anyhow::Result<()> {
-    let theme = load_theme()?;
-    iced::application(move || Gui::new(theme), Gui::update, Gui::view)
+    iced::daemon(Gui::new, Gui::update, Gui::view)
         .subscription(Gui::subscription)
         .title("Nirvana")
-        .window_size(Size::new(960.0, 540.0))
         .settings(Settings {
             fonts: vec![
                 include_bytes!("../../assets/fonts/Inter/Bold.ttf").into(),
@@ -35,16 +32,4 @@ pub(crate) fn run() -> anyhow::Result<()> {
         })
         .run()?;
     Ok(())
-}
-
-fn load_theme() -> anyhow::Result<Theme> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
-    let theme = runtime.block_on(async {
-        Nirvana::new()
-            .await
-            .map(|service| service.theme().unwrap_or_default())
-    })?;
-    Ok(theme)
 }

@@ -35,12 +35,11 @@ use crate::cli::time::parse_time;
 #[command(
     name = "nirvana",
     version,
-    arg_required_else_help = true,
     about = "App that gets you to time tracking nirvana"
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Command>,
+    command: Command,
 }
 
 #[derive(Subcommand)]
@@ -537,26 +536,26 @@ pub(crate) async fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Command::Info) => info::run().await,
-        Some(Command::Status) => status::run().await,
-        Some(Command::Start(args)) => start::run(args).await,
-        Some(Command::Stop(args)) => stop::run(args).await,
-        Some(Command::Resume(args)) => resume::run(args).await,
-        Some(Command::Switch(args)) => switch::run(args).await,
-        Some(Command::Add(args)) => add::run(args).await,
-        Some(Command::Edit(args)) => edit::run(args).await,
-        Some(Command::Delete(args)) => delete::run(args).await,
-        Some(Command::List(args)) => list::run(args).await,
-        Some(Command::Show(args)) => show::run(args).await,
-        Some(Command::Publish(args)) => publish::run(args).await,
-        Some(Command::Profile { command }) => match command {
+        Command::Info => info::run().await,
+        Command::Status => status::run().await,
+        Command::Start(args) => start::run(args).await,
+        Command::Stop(args) => stop::run(args).await,
+        Command::Resume(args) => resume::run(args).await,
+        Command::Switch(args) => switch::run(args).await,
+        Command::Add(args) => add::run(args).await,
+        Command::Edit(args) => edit::run(args).await,
+        Command::Delete(args) => delete::run(args).await,
+        Command::List(args) => list::run(args).await,
+        Command::Show(args) => show::run(args).await,
+        Command::Publish(args) => publish::run(args).await,
+        Command::Profile { command } => match command {
             Profile::List => profile::list().await,
             Profile::Create { name, switch } => profile::create(name, switch).await,
             Profile::Switch { name } => profile::switch(name).await,
             Profile::Rename { name, new_name } => profile::rename(name, new_name).await,
             Profile::Delete { name, yes } => profile::delete(name, yes).await,
         },
-        Some(Command::Connection { command }) => match command {
+        Command::Connection { command } => match command {
             Connection::List => connection::list().await,
             Connection::Add {
                 name,
@@ -578,7 +577,7 @@ pub(crate) async fn run() -> anyhow::Result<()> {
             } => connection::delete(name, with_tickets, yes).await,
             Connection::Test { name, all } => connection::test(name, all).await,
         },
-        Some(Command::Ticket { command }) => match command {
+        Command::Ticket { command } => match command {
             Ticket::List {
                 connection,
                 no_connection,
@@ -594,16 +593,16 @@ pub(crate) async fn run() -> anyhow::Result<()> {
             } => ticket::delete(key, connection, id, with_slots).await,
             Ticket::Sync { key, connection } => ticket::sync(key, connection).await,
         },
-        Some(Command::Credential { command }) => match command {
+        Command::Credential { command } => match command {
             Credential::List => credential::list().await,
             Credential::Update { name, token } => credential::update(name, token).await,
             Credential::Move { name, to } => credential::move_to(name, to).await,
         },
-        Some(Command::Logs { command }) => match command {
+        Command::Logs { command } => match command {
             Logs::View { lines, follow } => logs::view(lines, follow).await,
             Logs::Clear { yes } => logs::clear(yes).await,
         },
-        Some(Command::Settings { command }) => match command {
+        Command::Settings { command } => match command {
             Settings::Get { connection, key } => settings::get(connection, key).await,
             Settings::Set {
                 connection,
@@ -611,7 +610,7 @@ pub(crate) async fn run() -> anyhow::Result<()> {
                 value,
             } => settings::set(connection, key, value).await,
         },
-        Some(Command::Config { command }) => match command {
+        Command::Config { command } => match command {
             Config::Get {
                 key,
                 show_unset,
@@ -620,7 +619,6 @@ pub(crate) async fn run() -> anyhow::Result<()> {
             Config::Set { key, value } => config::set(key, value).await,
             Config::Unset { key } => config::unset(key).await,
         },
-        None => Ok(()),
     }
 }
 

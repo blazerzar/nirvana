@@ -3,9 +3,9 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 mod cli;
+mod gui;
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
+fn main() {
     match nirvana_core::file_layer() {
         Ok(layer) => tracing_subscriber::registry().with(layer).init(),
         Err(e) => eprintln!(
@@ -20,7 +20,15 @@ async fn main() {
         default_hook(info);
     }));
 
-    let result = crate::cli::run().await;
+    let result = if std::env::args_os().len() == 1 {
+        crate::gui::run().map_err(anyhow::Error::from)
+    } else {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(anyhow::Error::from)
+            .and_then(|runtime| runtime.block_on(crate::cli::run()))
+    };
 
     if let Err(e) = result {
         if e.downcast_ref::<std::io::Error>()

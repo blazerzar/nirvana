@@ -310,7 +310,7 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [ ] Connection health checks (ping every 60 s, latency, auth status),
       shown as the connection status in the GUI.
 - [ ] Change notification so CLI, desktop and web stay in sync.
-- [ ] We need to support CLI and GUI in the same binary.
+- [x] We need to support CLI and GUI in the same binary.
 - [ ] We need to make sure such binary works on macOS (.dmg), Windows and Linux.
 - [ ] Start building screens: main (tracking, not tracking), start / switch
       form, publish modal, overview, settings, first launch.

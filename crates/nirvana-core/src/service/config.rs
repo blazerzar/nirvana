@@ -3,7 +3,7 @@
 //! Keys are `section.key`, see [`KEYS`]. `core.profile` is changed by
 //! switching the active profile and cannot be unset.
 
-use crate::config::{self, AppConfig, ConfigError, KEYS};
+use crate::config::{self, AppConfig, ConfigError, KEYS, Theme};
 use crate::domain::ConfigEntry;
 use crate::errors::{DomainError, NirvanaError};
 use crate::logging;
@@ -116,6 +116,15 @@ impl Nirvana {
             .try_into()
             .map_err(|e| DomainError::InvalidConfigValue(key.to_owned(), e).into())
     }
+
+    /// Returns `gui.theme`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the config is unavailable.
+    pub fn theme(&self) -> Result<Theme, NirvanaError> {
+        Ok(self.config()?.gui.theme)
+    }
 }
 
 fn split_key(key: &str) -> Result<(&str, &str), DomainError> {
@@ -148,7 +157,7 @@ mod tests {
     use std::io::Write;
 
     use super::*;
-    use crate::config::{LogLevel, Theme};
+    use crate::config::LogLevel;
     use crate::service::test_service::TestService;
 
     fn append_default_theme(service: &TestService) {
@@ -228,6 +237,16 @@ mod tests {
             service.get_config(Some("gui.theme")).await.unwrap(),
             [entry("gui.theme", Some("system"), Some("system"))]
         );
+    }
+
+    #[tokio::test]
+    async fn theme_returns_saved_theme() {
+        let mut service = TestService::new(&[]).await;
+        assert_eq!(service.theme().unwrap(), Theme::System);
+
+        service.set_config("gui.theme", "dark").await.unwrap();
+
+        assert_eq!(service.theme().unwrap(), Theme::Dark);
     }
 
     #[tokio::test]

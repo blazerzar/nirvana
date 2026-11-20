@@ -21,7 +21,7 @@ fn main() {
     }));
 
     let result = if std::env::args_os().len() == 1 {
-        crate::gui::run().map_err(anyhow::Error::from)
+        crate::gui::run()
     } else {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()

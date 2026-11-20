@@ -305,11 +305,18 @@ thorough review to make sure we are not bringing any problems into the next stag
 
 - [ ] Create a GUI application using Iced.
 - [ ] Check if we should rework the API interface of the core.
+- [ ] Core methods that change the config or profile take `&self`
+      (implementation guide §3 #32).
 - [ ] Return the issue URL from core with slots, so frontends do not fetch
       the active connection and build it themselves.
 - [ ] Connection health checks (ping every 60 s, latency, auth status),
       shown as the connection status in the GUI.
-- [ ] Change notification so CLI, desktop and web stay in sync.
+- [ ] Create `Nirvana` once in the GUI boot task, show the window when it is
+      loaded (implementation guide §3 #32).
+- [ ] Change notification so CLI, desktop and web stay in sync: broadcast
+      channel in core, local socket from CLI to GUI (implementation guide
+      §3 #33).
+- [ ] Single instance through the change notification socket.
 - [x] We need to support CLI and GUI in the same binary.
 - [ ] We need to make sure such binary works on macOS (.dmg), Windows and Linux.
 - [ ] Start building screens: main (tracking, not tracking), start / switch

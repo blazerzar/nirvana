@@ -12,6 +12,7 @@ mod secrets;
 mod service;
 mod storage;
 
+pub use config::Theme;
 pub use domain::*;
 pub use errors::{DomainError, NirvanaError};
 pub use logging::file_layer;

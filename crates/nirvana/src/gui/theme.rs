@@ -67,7 +67,6 @@ pub(super) const LIGHT: Tokens = Tokens {
     status_danger: color!(0xB03A22),
 };
 
-#[allow(dead_code)]
 pub(super) const DARK: Tokens = Tokens {
     brand: color!(0xFFCB50),
     accent: color!(0xF0B33A),

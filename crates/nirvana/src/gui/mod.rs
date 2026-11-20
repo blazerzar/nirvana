@@ -17,6 +17,7 @@ const JETBRAINS_MONO: Font = Font::with_name("JetBrains Mono");
 pub(crate) fn run() -> anyhow::Result<()> {
     iced::daemon(Gui::new, Gui::update, Gui::view)
         .subscription(Gui::subscription)
+        .theme(Gui::theme)
         .title("Nirvana")
         .settings(Settings {
             fonts: vec![

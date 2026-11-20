@@ -3,20 +3,19 @@ use iced::{Element, Length};
 
 use super::header::header;
 use crate::gui::app::Message;
-use crate::gui::theme::Tokens;
+use crate::gui::theme::tokens;
 
-pub(in crate::gui) fn main<'a>(
-    tokens: &'static Tokens,
-    error: Option<&'a str>,
-) -> Element<'a, Message> {
+pub(in crate::gui) fn main(error: Option<&str>) -> Element<'_, Message> {
     let error = error.map(|e| {
-        container(text(e).color(tokens.status_danger))
-            .padding(16)
-            .width(Length::Fill)
+        container(text(e).style(|theme| text::Style {
+            color: Some(tokens(theme).status_danger),
+        }))
+        .padding(16)
+        .width(Length::Fill)
     });
-    container(Column::new().push(header(tokens)).push(error))
+    container(Column::new().push(header()).push(error))
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(|_| container::background(tokens.bg_default))
+        .style(|theme| container::background(tokens(theme).bg_default))
         .into()
 }

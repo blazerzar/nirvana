@@ -5,7 +5,6 @@ use iced::{Element, Size, Subscription, Task, keyboard, system, window};
 use nirvana_core::{Nirvana, Theme};
 use tracing::error;
 
-use super::theme::{DARK, LIGHT, Tokens};
 use super::views;
 
 const WINDOW_SIZE: Size = Size::new(960.0, 540.0);
@@ -81,7 +80,15 @@ impl Gui {
 
     pub(super) fn view(&self, _window: window::Id) -> Element<'_, Message> {
         let error = self.nirvana.as_ref().and_then(|n| n.as_ref().err());
-        views::main(self.tokens(), error.map(String::as_str))
+        views::main(error.map(String::as_str))
+    }
+
+    pub(super) fn theme(&self, _window: window::Id) -> Option<iced::Theme> {
+        match self.theme {
+            Theme::System => None,
+            Theme::Light => Some(iced::Theme::Light),
+            Theme::Dark => Some(iced::Theme::Dark),
+        }
     }
 
     fn is_dark(&self) -> bool {
@@ -90,10 +97,6 @@ impl Gui {
             Theme::Light => false,
             Theme::Dark => true,
         }
-    }
-
-    fn tokens(&self) -> &'static Tokens {
-        if self.is_dark() { &DARK } else { &LIGHT }
     }
 }
 

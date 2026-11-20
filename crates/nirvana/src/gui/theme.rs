@@ -1,4 +1,5 @@
-use iced::{Color, color};
+use iced::theme::{Base, Mode};
+use iced::{Color, Theme, color};
 
 #[allow(dead_code)]
 pub(super) struct Tokens {
@@ -34,7 +35,15 @@ pub(super) struct Tokens {
     pub status_danger: Color,
 }
 
-pub(super) const LIGHT: Tokens = Tokens {
+pub(super) fn tokens(theme: &Theme) -> &'static Tokens {
+    if theme.mode() == Mode::Dark {
+        &DARK
+    } else {
+        &LIGHT
+    }
+}
+
+const LIGHT: Tokens = Tokens {
     brand: color!(0xFFCB50),
     accent: color!(0xBE7E12),
     bg_default: color!(0xFFFCF7),
@@ -67,7 +76,7 @@ pub(super) const LIGHT: Tokens = Tokens {
     status_danger: color!(0xB03A22),
 };
 
-pub(super) const DARK: Tokens = Tokens {
+const DARK: Tokens = Tokens {
     brand: color!(0xFFCB50),
     accent: color!(0xF0B33A),
     bg_default: color!(0x181715),

@@ -5,6 +5,7 @@ use iced::alignment::Vertical;
 use iced::widget::text::LineHeight;
 use iced::widget::{column, container, mouse_area, row, rule, svg, text};
 
+use super::border;
 use crate::gui::INTER_BOLD;
 use crate::gui::app::Message;
 use crate::gui::theme::tokens;
@@ -27,10 +28,5 @@ pub(super) fn header<'a>() -> Element<'a, Message> {
         .padding([0, 16])
         .align_y(Vertical::Center);
 
-    let border = rule::horizontal(1).style(|theme| rule::Style {
-        color: tokens(theme).border_default,
-        ..rule::default(theme)
-    });
-
-    column![bar, border].into()
+    column![bar, border(rule::horizontal(1))].into()
 }

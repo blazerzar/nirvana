@@ -1,9 +1,14 @@
-use iced::widget::{Column, container, text};
-use iced::{Element, Length};
+use iced::widget::{Column, container, responsive, row, text};
+use iced::{Element, Length, Size};
 
+use super::bottom_bar::bottom_bar;
 use super::header::header;
+use super::listing::listing;
+use super::tracking::tracking;
 use crate::gui::app::Message;
 use crate::gui::theme::tokens;
+
+pub(in crate::gui) const MAIN_WINDOW_SIZE: Size = Size::new(960.0, 540.0);
 
 pub(in crate::gui) fn main(error: Option<&str>) -> Element<'_, Message> {
     let error = error.map(|e| {
@@ -13,7 +18,13 @@ pub(in crate::gui) fn main(error: Option<&str>) -> Element<'_, Message> {
         .padding(16)
         .width(Length::Fill)
     });
-    container(Column::new().push(header()).push(error))
+    let body = responsive(|size| row![tracking(), listing(size.width)].into());
+    let layout = Column::new()
+        .push(header())
+        .push(error)
+        .push(body)
+        .push(bottom_bar());
+    container(layout)
         .width(Length::Fill)
         .height(Length::Fill)
         .style(|theme| container::background(tokens(theme).bg_default))

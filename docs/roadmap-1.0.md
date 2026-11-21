@@ -321,6 +321,8 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [ ] We need to make sure such binary works on macOS (.dmg), Windows and Linux.
 - [ ] Start building screens: main (tracking, not tracking), start / switch
       form, publish modal, overview, settings, first launch.
+- [ ] Minimum size for the main window, so the listing pane (at least 400px)
+      always fits.
 - [ ] Menu bar support (macOS).
 - [ ] Tray menu support (Windows).
 - [ ] Global shortcuts, launch at login, close to menu bar.

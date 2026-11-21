@@ -10,7 +10,6 @@ use tracing::error;
 use super::views;
 use crate::about;
 
-const MAIN_WINDOW_SIZE: Size = Size::new(960.0, 540.0);
 const INFO_CLICKS: u32 = 5;
 
 pub(super) struct Gui {
@@ -75,7 +74,7 @@ impl Gui {
                     Err(e) => error!("{e}"),
                 }
                 self.nirvana = Some(nirvana);
-                return self.open_window(Window::Main, MAIN_WINDOW_SIZE);
+                return self.open_window(Window::Main, views::MAIN_WINDOW_SIZE);
             }
             Message::Closed(id) => {
                 if let Some(Window::Main) = self.windows.remove(&id) {

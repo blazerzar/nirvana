@@ -3,7 +3,7 @@ use iced::{Element, Length};
 
 use super::{MAIN_WINDOW_SIZE, border};
 use crate::gui::app::Message;
-use crate::gui::theme::tokens;
+use crate::gui::design_system::tokens;
 
 const MIN_WIDTH: f32 = 400.0;
 const WINDOW_SHARE: f32 = MIN_WIDTH / MAIN_WINDOW_SIZE.width;

@@ -8,9 +8,9 @@ use iced::widget::{column, container, mouse_area, row, rule, space, stack, svg, 
 use iced::{Border, Color, Element, Length, Point, Rectangle, Renderer, Size, mouse, padding};
 
 use super::border;
-use crate::gui::INTER_BOLD;
 use crate::gui::app::{Health, Message, Profile, ProfileState};
-use crate::gui::theme::{Tokens, tokens};
+use crate::gui::design_system::font::INTER_BOLD;
+use crate::gui::design_system::{Tokens, tokens};
 
 static LOGO: LazyLock<svg::Handle> =
     LazyLock::new(|| svg::Handle::from_memory(include_bytes!("../../../assets/logo.svg")));

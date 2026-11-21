@@ -3,7 +3,7 @@ use iced::widget::{Column, button, column, container, row, scrollable, text};
 use iced::{Color, Element, Length, Size};
 
 use crate::gui::app::{Info, Message};
-use crate::gui::theme::{Tokens, tokens};
+use crate::gui::design_system::{Tokens, tokens};
 
 const TEXT_SIZE: f32 = 10.0;
 const LINE_HEIGHT: f32 = 1.3;

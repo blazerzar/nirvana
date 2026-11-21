@@ -29,6 +29,7 @@ pub(super) enum Message {
     Info(info::Message),
     Profile(profile::Message),
     Toast(toast::Message),
+    Failed(window::Id, &'static str, String),
 }
 
 impl Gui {
@@ -67,19 +68,22 @@ impl Gui {
                     }
                     Err(e) => {
                         error!("{e}");
-                        self.open_main()
+                        self.open_main().discard()
                     }
                 };
                 self.nirvana = Some(nirvana);
                 return next;
             }
             Message::Closed(id) => {
+                self.toast.close(id);
                 if let Some(Window::Main) = self.windows.remove(id) {
                     return iced::exit();
                 }
             }
             Message::Appearance(message) => self.appearance.update(message),
-            Message::Info(info::Message::Failed(text, e)) => return self.show_error(text, e),
+            Message::Info(info::Message::Failed(text, e, window)) => {
+                return self.show_error(window, text, e);
+            }
             Message::Info(message) => {
                 return self
                     .info
@@ -87,20 +91,24 @@ impl Gui {
                     .map(Message::Info);
             }
             Message::Profile(profile::Message::Failed(e)) => {
-                return Task::batch([self.open_main(), self.show_error(PROFILE_FAILED, e)]);
+                return self
+                    .open_main()
+                    .map(move |window| Message::Failed(window, PROFILE_FAILED, e.clone()));
             }
             Message::Profile(message) => {
                 profile::update(&mut self.profile, message);
-                return self.open_main();
+                return self.open_main().discard();
             }
             Message::Toast(message) => return self.toast.update(message).map(Message::Toast),
+            Message::Failed(window, text, e) => return self.show_error(window, text, e),
         }
         Task::none()
     }
 
-    fn show_error(&mut self, text: &str, detail: String) -> Task<Message> {
+    fn show_error(&mut self, window: window::Id, text: &str, detail: String) -> Task<Message> {
         self.toast
             .update(toast::Message::Show {
+                window,
                 kind: Kind::Error,
                 text: text.to_owned(),
                 detail: Some(detail),
@@ -108,13 +116,11 @@ impl Gui {
             .map(Message::Toast)
     }
 
-    fn open_main(&mut self) -> Task<Message> {
-        if self.windows.has_main() {
-            return Task::none();
+    fn open_main(&mut self) -> Task<window::Id> {
+        match self.windows.main() {
+            Some(id) => Task::done(id),
+            None => self.windows.open(Window::Main, views::MAIN_WINDOW_SIZE),
         }
-        self.windows
-            .open(Window::Main, views::MAIN_WINDOW_SIZE)
-            .discard()
     }
 
     pub(super) fn subscription(&self) -> Subscription<Message> {
@@ -133,7 +139,7 @@ impl Gui {
                 views::main(error.map(String::as_str), self.profile.as_ref())
             }
         };
-        views::with_toast(content, self.toast.current())
+        views::with_toast(content, self.toast.current(window))
     }
 
     pub(super) fn theme(&self, _window: window::Id) -> Option<iced::Theme> {

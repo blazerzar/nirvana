@@ -30,7 +30,7 @@ pub(super) enum Message {
     LogoClicked,
     Loaded(Info),
     ShowLogs,
-    Failed(&'static str, String),
+    Failed(&'static str, String, window::Id),
 }
 
 impl State {
@@ -51,24 +51,21 @@ impl State {
             Message::Loaded(info) => {
                 self.loading = false;
                 let size = views::info_size(&info);
-                let failed = info
-                    .log_file
-                    .as_ref()
-                    .err()
-                    .map(|e| Message::Failed(LOG_FILE_FAILED, e.clone()));
-                return windows
-                    .open(Window::Info(info), size)
-                    .discard()
-                    .chain(failed.map_or_else(Task::none, Task::done));
+                let failed = info.log_file.as_ref().err().cloned();
+                return windows.open(Window::Info(info), size).then(move |window| {
+                    failed.clone().map_or_else(Task::none, |e| {
+                        Task::done(Message::Failed(LOG_FILE_FAILED, e, window))
+                    })
+                });
             }
             Message::ShowLogs => {
-                if let Some(log_file) = windows
+                if let Some((window, Ok(log_file))) = windows
                     .info()
-                    .and_then(|(_, info)| info.log_file.clone().ok())
+                    .map(|(window, info)| (window, info.log_file.clone()))
                 {
-                    return Task::future(open_file(log_file)).then(|opened| {
+                    return Task::future(open_file(log_file)).then(move |opened| {
                         opened.map_or_else(
-                            |e| Task::done(Message::Failed(OPEN_LOGS_FAILED, e)),
+                            |e| Task::done(Message::Failed(OPEN_LOGS_FAILED, e, window)),
                             |()| Task::none(),
                         )
                     });

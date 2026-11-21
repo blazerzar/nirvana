@@ -17,11 +17,10 @@ use crate::gui::components;
 use crate::gui::design_system::tokens;
 use crate::gui::toast::{self, Toast};
 
-const TOAST_BOTTOM: f32 = 76.0;
-
-pub(super) fn with_toast<'a>(
+fn with_toast<'a>(
     content: Element<'a, Message>,
     toast: Option<&'a Toast>,
+    bottom: f32,
 ) -> Element<'a, Message> {
     let layer = toast.map(|toast| {
         container(components::toast(
@@ -30,7 +29,7 @@ pub(super) fn with_toast<'a>(
         ))
         .center_x(Length::Fill)
         .align_bottom(Length::Fill)
-        .padding(Padding::ZERO.bottom(TOAST_BOTTOM))
+        .padding(Padding::ZERO.bottom(bottom))
     });
     stack![content].push(layer).into()
 }

@@ -2,6 +2,7 @@ mod app;
 mod appearance;
 mod components;
 mod design_system;
+mod failure;
 mod info;
 mod profile;
 mod shortcuts;

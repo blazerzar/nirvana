@@ -256,7 +256,9 @@ decisions here (rounding, single active connection, …).
   3px status marker on the left, 16px status icon, message, optional detail
   line, close ×). Centred 76 above the window bottom, 300–500 wide, one at a
   time. Success hides after 4 s, warning after 8 s, error stays until
-  dismissed. No actions and no animation for now.
+  dismissed. No actions and no animation for now. Each window shows its own
+  toast. An error toast shows a short message and, when core tells why, a
+  one-line reason (`gui/failure.rs`). The full error goes to the log.
 - **Overview**: 3 stat cards (today, week, month against a target derived from
   the profile's expected hours per day; the design shows 8h / 40h / 21×8h), each
   with a published (neutral) / unpublished (accent) bar, then a this-week

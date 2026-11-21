@@ -6,13 +6,19 @@ use super::header::header;
 use super::listing::listing;
 use super::setup::{setup, setup_bottom_bar};
 use super::tracking::tracking;
+use super::with_toast;
 use crate::gui::app::Message;
 use crate::gui::design_system::tokens;
 use crate::gui::profile::ProfileState;
+use crate::gui::toast::Toast;
 
 pub(in crate::gui) const MAIN_WINDOW_SIZE: Size = Size::new(960.0, 540.0);
+const TOAST_BOTTOM: f32 = 76.0;
 
-pub(in crate::gui) fn main(profile: Option<&ProfileState>) -> Element<'_, Message> {
+pub(in crate::gui) fn main<'a>(
+    profile: Option<&'a ProfileState>,
+    toast: Option<&'a Toast>,
+) -> Element<'a, Message> {
     let setup_step = profile.and_then(ProfileState::setup_step);
     let body = responsive(move |size| match setup_step {
         Some(step) => setup(size.width, step),
@@ -23,9 +29,9 @@ pub(in crate::gui) fn main(profile: Option<&ProfileState>) -> Element<'_, Messag
         None => bottom_bar(row![]),
     };
     let layout = Column::new().push(header(profile)).push(body).push(bar);
-    container(layout)
+    let content = container(layout)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(|theme| container::background(tokens(theme).bg_default))
-        .into()
+        .style(|theme| container::background(tokens(theme).bg_default));
+    with_toast(content.into(), toast, TOAST_BOTTOM)
 }

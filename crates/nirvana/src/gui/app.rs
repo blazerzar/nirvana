@@ -1,21 +1,18 @@
-use std::error::Error;
-use std::iter;
 use std::sync::Arc;
 
 use iced::{Element, Subscription, Task, keyboard, window};
 use nirvana_core::{Nirvana, NirvanaError};
 use tracing::error;
 
+use super::failure::{Failure, chain};
 use super::profile::{self, ProfileState};
 use super::shortcuts::shortcut;
 use super::toast::{self, Kind};
 use super::windows::{Window, Windows};
 use super::{appearance, info, views};
 
-const PROFILE_FAILED: &str = "couldn't load the profile";
-
 pub(super) struct Gui {
-    nirvana: Option<Result<Arc<Nirvana>, String>>,
+    nirvana: Option<Result<Arc<Nirvana>, Failure>>,
     windows: Windows,
     appearance: appearance::State,
     info: info::State,
@@ -31,7 +28,7 @@ pub(super) enum Message {
     Info(info::Message),
     Profile(profile::Message),
     Toast(toast::Message),
-    Failed(window::Id, String, Option<String>),
+    Failed(window::Id, Failure),
 }
 
 impl Gui {
@@ -56,23 +53,17 @@ impl Gui {
 
     pub(super) fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Loaded(nirvana) => {
-                let next = match &nirvana {
-                    Ok(nirvana) => {
-                        self.appearance
-                            .set_theme(nirvana.theme().unwrap_or_default());
-                        profile::load(nirvana.clone()).map(Message::Profile)
-                    }
-                    Err(e) => {
-                        error!("{e}");
-                        let (text, detail) = (e.to_string(), causes(e.as_ref()));
-                        self.open_main().map(move |window| {
-                            Message::Failed(window, text.clone(), detail.clone())
-                        })
-                    }
-                };
-                self.nirvana = Some(nirvana.map_err(|e| e.to_string()));
-                return next;
+            Message::Loaded(Ok(nirvana)) => {
+                self.appearance
+                    .set_theme(nirvana.theme().unwrap_or_default());
+                self.nirvana = Some(Ok(nirvana.clone()));
+                return profile::load(nirvana).map(Message::Profile);
+            }
+            Message::Loaded(Err(e)) => {
+                error!("{}", chain(e.as_ref()));
+                let failure = Failure::startup(&e);
+                self.nirvana = Some(Err(failure.clone()));
+                return self.show_error_in_main(failure);
             }
             Message::Closed(id) => {
                 self.toast.close(id);
@@ -81,8 +72,8 @@ impl Gui {
                 }
             }
             Message::Appearance(message) => self.appearance.update(message),
-            Message::Info(info::Message::Failed(text, e, window)) => {
-                return self.show_error(window, text.to_owned(), Some(e));
+            Message::Info(info::Message::Failed(failure, window)) => {
+                return self.show_error(window, failure);
             }
             Message::Info(message) => {
                 return self
@@ -91,36 +82,33 @@ impl Gui {
                     .map(Message::Info);
             }
             Message::Profile(profile::Message::Failed(e)) => {
-                return self.open_main().map(move |window| {
-                    Message::Failed(window, PROFILE_FAILED.to_owned(), Some(e.clone()))
-                });
+                error!("{}", chain(e.as_ref()));
+                return self.show_error_in_main(Failure::profile(&e));
             }
             Message::Profile(message) => {
                 profile::update(&mut self.profile, message);
                 return self.open_main().discard();
             }
             Message::Toast(message) => return self.toast.update(message).map(Message::Toast),
-            Message::Failed(window, text, detail) => {
-                return self.show_error(window, text, detail);
-            }
+            Message::Failed(window, failure) => return self.show_error(window, failure),
         }
         Task::none()
     }
 
-    fn show_error(
-        &mut self,
-        window: window::Id,
-        text: String,
-        detail: Option<String>,
-    ) -> Task<Message> {
+    fn show_error(&mut self, window: window::Id, failure: Failure) -> Task<Message> {
         self.toast
             .update(toast::Message::Show {
                 window,
                 kind: Kind::Error,
-                text,
-                detail,
+                text: failure.text.to_owned(),
+                detail: failure.detail,
             })
             .map(Message::Toast)
+    }
+
+    fn show_error_in_main(&mut self, failure: Failure) -> Task<Message> {
+        self.open_main()
+            .map(move |window| Message::Failed(window, failure.clone()))
     }
 
     fn open_main(&mut self) -> Task<window::Id> {
@@ -139,40 +127,14 @@ impl Gui {
     }
 
     pub(super) fn view(&self, window: window::Id) -> Element<'_, Message> {
-        let content = match self.windows.get(window) {
-            Some(Window::Info(info)) => views::info(info),
-            _ => views::main(self.profile.as_ref()),
-        };
-        views::with_toast(content, self.toast.current(window))
+        let toast = self.toast.current(window);
+        match self.windows.get(window) {
+            Some(Window::Info(info)) => views::info(info, toast),
+            _ => views::main(self.profile.as_ref(), toast),
+        }
     }
 
     pub(super) fn theme(&self, _window: window::Id) -> Option<iced::Theme> {
         self.appearance.theme()
-    }
-}
-
-/// Joins the messages of the errors that caused `error`, outermost first.
-fn causes(error: &(dyn Error + 'static)) -> Option<String> {
-    let causes: Vec<_> = iter::successors(error.source(), |&e| e.source())
-        .map(ToString::to_string)
-        .collect();
-    (!causes.is_empty()).then(|| causes.join(": "))
-}
-
-#[cfg(test)]
-mod tests {
-    use std::io;
-
-    use super::*;
-
-    #[test]
-    fn causes_lists_the_source_chain() {
-        let error = NirvanaError::from(io::Error::other("disk full"));
-        assert_eq!(causes(&error), Some("disk full".to_owned()));
-    }
-
-    #[test]
-    fn causes_is_none_without_a_source() {
-        assert_eq!(causes(&io::Error::other("disk full")), None);
     }
 }

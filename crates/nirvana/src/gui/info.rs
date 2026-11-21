@@ -5,17 +5,20 @@ use iced::{Task, window};
 use nirvana_core::Nirvana;
 use tracing::error;
 
+use super::failure::{Failure, chain};
 use super::views;
 use super::windows::{Window, Windows};
 use crate::about;
 
 const INFO_CLICKS: u32 = 5;
+const INFO_FAILED: &str = "couldn't load the app info";
 const LOG_FILE_FAILED: &str = "couldn't find the log file";
 const OPEN_LOGS_FAILED: &str = "couldn't open the log file";
+const MISSING_FILE: &str = "the file doesn't exist";
 
 #[derive(Clone)]
 pub(super) struct Info {
-    pub(super) rows: Result<Vec<(&'static str, String)>, String>,
+    pub(super) rows: Result<Vec<(&'static str, String)>, Failure>,
     pub(super) log_file: Result<PathBuf, String>,
 }
 
@@ -30,14 +33,14 @@ pub(super) enum Message {
     LogoClicked,
     Loaded(Info),
     ShowLogs,
-    Failed(&'static str, String, window::Id),
+    Failed(Failure, window::Id),
 }
 
 impl State {
     pub(super) fn update(
         &mut self,
         message: Message,
-        nirvana: Option<&Result<Arc<Nirvana>, String>>,
+        nirvana: Option<&Result<Arc<Nirvana>, Failure>>,
         windows: &mut Windows,
     ) -> Task<Message> {
         match message {
@@ -51,10 +54,15 @@ impl State {
             Message::Loaded(info) => {
                 self.loading = false;
                 let size = views::info_size(&info);
-                let failed = info.log_file.as_ref().err().cloned();
+                let failure = info.rows.as_ref().err().cloned().or_else(|| {
+                    info.log_file
+                        .as_ref()
+                        .err()
+                        .map(|_| Failure::new(LOG_FILE_FAILED, None))
+                });
                 return windows.open(Window::Info(info), size).then(move |window| {
-                    failed.clone().map_or_else(Task::none, |e| {
-                        Task::done(Message::Failed(LOG_FILE_FAILED, e, window))
+                    failure.clone().map_or_else(Task::none, |failure| {
+                        Task::done(Message::Failed(failure, window))
                     })
                 });
             }
@@ -63,11 +71,9 @@ impl State {
                     .info()
                     .map(|(window, info)| (window, info.log_file.clone()))
                 {
-                    return Task::future(open_file(log_file)).then(move |opened| {
-                        opened.map_or_else(
-                            |e| Task::done(Message::Failed(OPEN_LOGS_FAILED, e, window)),
-                            |()| Task::none(),
-                        )
+                    return Task::future(open_file(log_file)).then(move |opened| match opened {
+                        Ok(()) => Task::none(),
+                        Err(failure) => Task::done(Message::Failed(failure, window)),
                     });
                 }
             }
@@ -78,7 +84,7 @@ impl State {
 
     fn show(
         &mut self,
-        nirvana: Option<&Result<Arc<Nirvana>, String>>,
+        nirvana: Option<&Result<Arc<Nirvana>, Failure>>,
         windows: &Windows,
     ) -> Task<Message> {
         if let Some((id, _)) = windows.info() {
@@ -95,15 +101,17 @@ impl State {
     }
 }
 
-async fn load_info(nirvana: Result<Arc<Nirvana>, String>) -> Info {
+async fn load_info(nirvana: Result<Arc<Nirvana>, Failure>) -> Info {
     let rows = match nirvana {
         Ok(nirvana) => nirvana
             .info()
             .await
             .map(|info| about::rows(&info))
-            .map_err(|e| e.to_string())
-            .inspect_err(|e| error!("{e}")),
-        Err(e) => Err(e),
+            .map_err(|e| {
+                error!("{}", chain(&e));
+                Failure::from_error(INFO_FAILED, &e)
+            }),
+        Err(failure) => Err(failure),
     };
     let log_file = Nirvana::log_file()
         .map_err(|e| e.to_string())
@@ -111,14 +119,22 @@ async fn load_info(nirvana: Result<Arc<Nirvana>, String>) -> Info {
     Info { rows, log_file }
 }
 
-async fn open_file(path: PathBuf) -> Result<(), String> {
+async fn open_file(path: PathBuf) -> Result<(), Failure> {
+    if !path.exists() {
+        error!("cannot open {}: {MISSING_FILE}", path.display());
+        return Err(Failure::new(OPEN_LOGS_FAILED, Some(MISSING_FILE)));
+    }
     let target = path.clone();
-    let error = match tokio::task::spawn_blocking(move || opener::open(&target)).await {
+    let failure = match tokio::task::spawn_blocking(move || opener::open(&target)).await {
         Ok(Ok(())) => return Ok(()),
-        Ok(Err(e)) => e.to_string(),
-        Err(e) => e.to_string(),
+        Ok(Err(e)) => {
+            error!("cannot open {}: {}", path.display(), chain(&e));
+            Failure::from_error(OPEN_LOGS_FAILED, &e)
+        }
+        Err(e) => {
+            error!("cannot open {}: {e}", path.display());
+            Failure::new(OPEN_LOGS_FAILED, None)
+        }
     };
-    let error = format!("cannot open {}: {error}", path.display());
-    error!("{error}");
-    Err(error)
+    Err(failure)
 }

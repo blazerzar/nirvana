@@ -2,9 +2,11 @@ use iced::widget::text::{LineHeight, Wrapping};
 use iced::widget::{Column, button, column, container, row, scrollable, text};
 use iced::{Color, Element, Length, Size};
 
+use super::with_toast;
 use crate::gui::app::Message;
 use crate::gui::design_system::{Tokens, tokens};
 use crate::gui::info::{self, Info};
+use crate::gui::toast::Toast;
 
 const TEXT_SIZE: f32 = 10.0;
 const LINE_HEIGHT: f32 = 1.3;
@@ -16,10 +18,11 @@ const SECTION_SPACING: f32 = 16.0;
 const BUTTON_PADDING: [f32; 2] = [5.0, 10.0];
 const SHOW_LOGS: &str = "Show logs";
 const MAX_WIDTH: f32 = 720.0;
+const MIN_SIZE: Size = Size::new(460.0, 120.0);
 
-pub(in crate::gui) fn info(info: &Info) -> Element<'_, Message> {
-    let body: Element<'_, Message> = match &info.rows {
-        Ok(rows) => Column::with_children(rows.iter().map(|(label, value)| {
+pub(in crate::gui) fn info<'a>(info: &'a Info, toast: Option<&'a Toast>) -> Element<'a, Message> {
+    let body = info.rows.as_ref().ok().map(|rows| {
+        Column::with_children(rows.iter().map(|(label, value)| {
             row![
                 colored(text(*label), |t| t.text_secondary).width(LABEL_WIDTH),
                 colored(text(value), |t| t.text_primary).wrapping(Wrapping::Glyph),
@@ -27,11 +30,7 @@ pub(in crate::gui) fn info(info: &Info) -> Element<'_, Message> {
             .into()
         }))
         .spacing(ROW_SPACING)
-        .into(),
-        Err(e) => colored(text(e), |t| t.status_danger)
-            .wrapping(Wrapping::Glyph)
-            .into(),
-    };
+    });
     let show_logs = info.log_file.as_ref().ok().map(|_| {
         button(sized(text(SHOW_LOGS)))
             .padding(BUTTON_PADDING)
@@ -42,14 +41,18 @@ pub(in crate::gui) fn info(info: &Info) -> Element<'_, Message> {
                 ..button::Style::default()
             })
     });
-    let content = column![body].push(show_logs).spacing(SECTION_SPACING);
-    container(scrollable(container(content).padding(PADDING)))
+    let content = column![]
+        .push(body)
+        .push(show_logs)
+        .spacing(SECTION_SPACING);
+    let content = container(scrollable(container(content).padding(PADDING)))
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(|theme| container::background(tokens(theme).bg_default))
-        .into()
+        .style(|theme| container::background(tokens(theme).bg_default));
+    with_toast(content.into(), toast, PADDING)
 }
 
+/// Returns the size that fits `info`, and at least [`MIN_SIZE`].
 pub(in crate::gui) fn info_size(info: &Info) -> Size {
     let char_width = TEXT_SIZE * MONO_ADVANCE;
     let line = TEXT_SIZE * LINE_HEIGHT;
@@ -69,22 +72,25 @@ pub(in crate::gui) fn info_size(info: &Info) -> Size {
                 lines as f32 * line + spacing,
             )
         }
-        Err(e) => {
-            let (chars, lines) = measure(e, fits(MAX_WIDTH - 2.0 * PADDING));
-            (chars as f32 * char_width, lines as f32 * line)
-        }
+        Err(_) => (0.0, 0.0),
     };
     let (button_width, button_height) = match info.log_file {
         Ok(_) => (
             SHOW_LOGS.chars().count() as f32 * char_width + 2.0 * BUTTON_PADDING[1],
-            SECTION_SPACING + line + 2.0 * BUTTON_PADDING[0],
+            line + 2.0 * BUTTON_PADDING[0],
         ),
         Err(_) => (0.0, 0.0),
     };
+    let spacing = if body_height > 0.0 && button_height > 0.0 {
+        SECTION_SPACING
+    } else {
+        0.0
+    };
     Size::new(
         (body_width.max(button_width) + 2.0 * PADDING).ceil(),
-        (body_height + button_height + 2.0 * PADDING).ceil(),
+        (body_height + spacing + button_height + 2.0 * PADDING).ceil(),
     )
+    .max(MIN_SIZE)
 }
 
 /// Returns the widest line in characters and the number of lines `value`
@@ -108,4 +114,21 @@ fn colored(text: text::Text<'_>, color: fn(&Tokens) -> Color) -> text::Text<'_> 
     sized(text).style(move |theme| text::Style {
         color: Some(color(tokens(theme))),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::gui::failure::Failure;
+
+    #[test]
+    fn info_size_is_at_least_the_minimum() {
+        let info = Info {
+            rows: Err(Failure::new("couldn't open the database", None)),
+            log_file: Ok(PathBuf::from("nirvana.log")),
+        };
+        assert_eq!(info_size(&info), MIN_SIZE);
+    }
 }

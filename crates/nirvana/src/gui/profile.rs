@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use iced::Task;
 use nirvana_core::{DomainError, Nirvana, NirvanaError};
-use tracing::{error, warn};
+use tracing::warn;
 
 pub(super) enum ProfileState {
     Missing,
@@ -57,7 +57,7 @@ impl Profile {
 #[derive(Clone)]
 pub(super) enum Message {
     Missing,
-    Failed(String),
+    Failed(Arc<NirvanaError>),
     Loaded(String, usize, bool),
     ConnectionTested(bool),
 }
@@ -97,10 +97,7 @@ pub(super) fn load(nirvana: Arc<Nirvana>) -> Task<Message> {
             Err(NirvanaError::Domain(DomainError::NoActiveProfile)) => {
                 return Task::done(Message::Missing);
             }
-            Err(e) => {
-                error!("{e}");
-                return Task::done(Message::Failed(e.to_string()));
-            }
+            Err(e) => return Task::done(Message::Failed(Arc::new(e))),
         };
         let loaded = Message::Loaded(active.profile.name, active.connections.len(), has_slots);
         let tests = active.connections.into_iter().map(|connection| {

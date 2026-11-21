@@ -1,6 +1,11 @@
 mod app;
+mod appearance;
 mod design_system;
+mod info;
+mod profile;
+mod shortcuts;
 mod views;
+mod windows;
 
 use app::Gui;
 use iced::{Pixels, Settings};

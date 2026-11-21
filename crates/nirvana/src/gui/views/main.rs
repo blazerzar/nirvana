@@ -5,8 +5,9 @@ use super::bottom_bar::bottom_bar;
 use super::header::header;
 use super::listing::listing;
 use super::tracking::tracking;
-use crate::gui::app::{Message, ProfileState};
+use crate::gui::app::Message;
 use crate::gui::design_system::tokens;
+use crate::gui::profile::ProfileState;
 
 pub(in crate::gui) const MAIN_WINDOW_SIZE: Size = Size::new(960.0, 540.0);
 

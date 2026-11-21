@@ -8,15 +8,18 @@ use iced::widget::{column, container, mouse_area, row, rule, space, stack, svg, 
 use iced::{Border, Color, Element, Length, Point, Rectangle, Renderer, Size, mouse, padding};
 
 use super::border;
-use crate::gui::app::{Health, Message, Profile, ProfileState};
+use crate::gui::app::Message;
 use crate::gui::design_system::font::INTER_BOLD;
 use crate::gui::design_system::{Tokens, tokens};
+use crate::gui::info;
+use crate::gui::profile::{Health, Profile, ProfileState};
 
 static LOGO: LazyLock<svg::Handle> =
     LazyLock::new(|| svg::Handle::from_memory(include_bytes!("../../../assets/logo.svg")));
 
 pub(super) fn header(profile: Option<&ProfileState>) -> Element<'_, Message> {
-    let logo = mouse_area(svg(LOGO.clone()).width(24).height(24)).on_press(Message::LogoClicked);
+    let logo = mouse_area(svg(LOGO.clone()).width(24).height(24))
+        .on_press(Message::Info(info::Message::LogoClicked));
     let wordmark = text("nirvana")
         .font(INTER_BOLD)
         .size(16)

@@ -2,8 +2,9 @@ use iced::widget::text::{LineHeight, Wrapping};
 use iced::widget::{Column, button, column, container, row, scrollable, text};
 use iced::{Color, Element, Length, Size};
 
-use crate::gui::app::{Info, Message};
+use crate::gui::app::Message;
 use crate::gui::design_system::{Tokens, tokens};
+use crate::gui::info::{self, Info};
 
 const TEXT_SIZE: f32 = 10.0;
 const LINE_HEIGHT: f32 = 1.3;
@@ -34,7 +35,7 @@ pub(in crate::gui) fn info(info: &Info) -> Element<'_, Message> {
     let show_logs = info.log_file.as_ref().map(|_| {
         button(sized(text(SHOW_LOGS)))
             .padding(BUTTON_PADDING)
-            .on_press(Message::ShowLogs)
+            .on_press(Message::Info(info::Message::ShowLogs))
             .style(|theme, _| button::Style {
                 background: Some(tokens(theme).fill_accent.into()),
                 text_color: tokens(theme).text_on_accent,

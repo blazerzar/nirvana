@@ -6,8 +6,11 @@ use tracing::error;
 
 use super::profile::{self, ProfileState};
 use super::shortcuts::shortcut;
+use super::toast::{self, Kind};
 use super::windows::{Window, Windows};
 use super::{appearance, info, views};
+
+const PROFILE_FAILED: &str = "couldn't load the profile";
 
 pub(super) struct Gui {
     nirvana: Option<Result<Arc<Nirvana>, String>>,
@@ -15,6 +18,7 @@ pub(super) struct Gui {
     appearance: appearance::State,
     info: info::State,
     profile: Option<ProfileState>,
+    toast: toast::State,
 }
 
 #[derive(Clone)]
@@ -24,6 +28,7 @@ pub(super) enum Message {
     Appearance(appearance::Message),
     Info(info::Message),
     Profile(profile::Message),
+    Toast(toast::Message),
 }
 
 impl Gui {
@@ -34,6 +39,7 @@ impl Gui {
             appearance: appearance::State::default(),
             info: info::State::default(),
             profile: None,
+            toast: toast::State::default(),
         };
         let load = Task::perform(
             async {
@@ -73,18 +79,33 @@ impl Gui {
                 }
             }
             Message::Appearance(message) => self.appearance.update(message),
+            Message::Info(info::Message::Failed(text, e)) => return self.show_error(text, e),
             Message::Info(message) => {
                 return self
                     .info
                     .update(message, self.nirvana.as_ref(), &mut self.windows)
                     .map(Message::Info);
             }
+            Message::Profile(profile::Message::Failed(e)) => {
+                return Task::batch([self.open_main(), self.show_error(PROFILE_FAILED, e)]);
+            }
             Message::Profile(message) => {
                 profile::update(&mut self.profile, message);
                 return self.open_main();
             }
+            Message::Toast(message) => return self.toast.update(message).map(Message::Toast),
         }
         Task::none()
+    }
+
+    fn show_error(&mut self, text: &str, detail: String) -> Task<Message> {
+        self.toast
+            .update(toast::Message::Show {
+                kind: Kind::Error,
+                text: text.to_owned(),
+                detail: Some(detail),
+            })
+            .map(Message::Toast)
     }
 
     fn open_main(&mut self) -> Task<Message> {
@@ -105,13 +126,14 @@ impl Gui {
     }
 
     pub(super) fn view(&self, window: window::Id) -> Element<'_, Message> {
-        match self.windows.get(window) {
+        let content = match self.windows.get(window) {
             Some(Window::Info(info)) => views::info(info),
             _ => {
                 let error = self.nirvana.as_ref().and_then(|n| n.as_ref().err());
                 views::main(error.map(String::as_str), self.profile.as_ref())
             }
-        }
+        };
+        views::with_toast(content, self.toast.current())
     }
 
     pub(super) fn theme(&self, _window: window::Id) -> Option<iced::Theme> {

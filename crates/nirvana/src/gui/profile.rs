@@ -57,7 +57,7 @@ impl Profile {
 #[derive(Clone)]
 pub(super) enum Message {
     Missing,
-    Failed,
+    Failed(String),
     Loaded(String, usize, bool),
     ConnectionTested(bool),
 }
@@ -65,7 +65,7 @@ pub(super) enum Message {
 pub(super) fn update(profile: &mut Option<ProfileState>, message: Message) {
     match message {
         Message::Missing => *profile = Some(ProfileState::Missing),
-        Message::Failed => {}
+        Message::Failed(_) => {}
         Message::Loaded(name, connections, has_slots) => {
             *profile = Some(ProfileState::Active(Profile {
                 name,
@@ -99,7 +99,7 @@ pub(super) fn load(nirvana: Arc<Nirvana>) -> Task<Message> {
             }
             Err(e) => {
                 error!("{e}");
-                return Task::done(Message::Failed);
+                return Task::done(Message::Failed(e.to_string()));
             }
         };
         let loaded = Message::Loaded(active.profile.name, active.connections.len(), has_slots);

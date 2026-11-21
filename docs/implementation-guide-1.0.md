@@ -251,7 +251,12 @@ decisions here (rounding, single active connection, …).
 - **Publish modal** (640px): targets + log count + days, a table ticket / logs
   / logged, the total in accent, the note "X is still running and won't be
   published", `[esc] cancel`, `[↵] publish Xh`.
-- **Toast** (inverse bg) after stop, switch and publish.
+- **Toast** (`v6-toasts.jsx`) after stop, switch and publish, and for errors.
+  Success, warning and error share one surface (raised bg, default border,
+  3px status marker on the left, 16px status icon, message, optional detail
+  line, close ×). Centred 76 above the window bottom, 300–500 wide, one at a
+  time. Success hides after 4 s, warning after 8 s, error stays until
+  dismissed. No actions and no animation for now.
 - **Overview**: 3 stat cards (today, week, month against a target derived from
   the profile's expected hours per day; the design shows 8h / 40h / 21×8h), each
   with a published (neutral) / unpublished (accent) bar, then a this-week

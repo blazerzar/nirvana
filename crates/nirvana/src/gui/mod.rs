@@ -5,6 +5,7 @@ mod design_system;
 mod info;
 mod profile;
 mod shortcuts;
+mod toast;
 mod views;
 mod windows;
 

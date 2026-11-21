@@ -10,11 +10,13 @@ use super::windows::{Window, Windows};
 use crate::about;
 
 const INFO_CLICKS: u32 = 5;
+const LOG_FILE_FAILED: &str = "couldn't find the log file";
+const OPEN_LOGS_FAILED: &str = "couldn't open the log file";
 
 #[derive(Clone)]
 pub(super) struct Info {
     pub(super) rows: Result<Vec<(&'static str, String)>, String>,
-    pub(super) log_file: Option<PathBuf>,
+    pub(super) log_file: Result<PathBuf, String>,
 }
 
 #[derive(Default)]
@@ -28,6 +30,7 @@ pub(super) enum Message {
     LogoClicked,
     Loaded(Info),
     ShowLogs,
+    Failed(&'static str, String),
 }
 
 impl State {
@@ -48,13 +51,30 @@ impl State {
             Message::Loaded(info) => {
                 self.loading = false;
                 let size = views::info_size(&info);
-                return windows.open(Window::Info(info), size).discard();
+                let failed = info
+                    .log_file
+                    .as_ref()
+                    .err()
+                    .map(|e| Message::Failed(LOG_FILE_FAILED, e.clone()));
+                return windows
+                    .open(Window::Info(info), size)
+                    .discard()
+                    .chain(failed.map_or_else(Task::none, Task::done));
             }
             Message::ShowLogs => {
-                if let Some(log_file) = windows.info().and_then(|(_, info)| info.log_file.clone()) {
-                    return Task::future(open_file(log_file)).discard();
+                if let Some(log_file) = windows
+                    .info()
+                    .and_then(|(_, info)| info.log_file.clone().ok())
+                {
+                    return Task::future(open_file(log_file)).then(|opened| {
+                        opened.map_or_else(
+                            |e| Task::done(Message::Failed(OPEN_LOGS_FAILED, e)),
+                            |()| Task::none(),
+                        )
+                    });
                 }
             }
+            Message::Failed(..) => {}
         }
         Task::none()
     }
@@ -88,15 +108,20 @@ async fn load_info(nirvana: Result<Arc<Nirvana>, String>) -> Info {
             .inspect_err(|e| error!("{e}")),
         Err(e) => Err(e),
     };
-    let log_file = Nirvana::log_file().inspect_err(|e| error!("{e}")).ok();
+    let log_file = Nirvana::log_file()
+        .map_err(|e| e.to_string())
+        .inspect_err(|e| error!("{e}"));
     Info { rows, log_file }
 }
 
-async fn open_file(path: PathBuf) {
+async fn open_file(path: PathBuf) -> Result<(), String> {
     let target = path.clone();
-    match tokio::task::spawn_blocking(move || opener::open(&target)).await {
-        Ok(Ok(())) => {}
-        Ok(Err(e)) => error!("cannot open {}: {e}", path.display()),
-        Err(e) => error!("cannot open {}: {e}", path.display()),
-    }
+    let error = match tokio::task::spawn_blocking(move || opener::open(&target)).await {
+        Ok(Ok(())) => return Ok(()),
+        Ok(Err(e)) => e.to_string(),
+        Err(e) => e.to_string(),
+    };
+    let error = format!("cannot open {}: {error}", path.display());
+    error!("{error}");
+    Err(error)
 }

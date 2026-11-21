@@ -32,7 +32,7 @@ pub(in crate::gui) fn info(info: &Info) -> Element<'_, Message> {
             .wrapping(Wrapping::Glyph)
             .into(),
     };
-    let show_logs = info.log_file.as_ref().map(|_| {
+    let show_logs = info.log_file.as_ref().ok().map(|_| {
         button(sized(text(SHOW_LOGS)))
             .padding(BUTTON_PADDING)
             .on_press(Message::Info(info::Message::ShowLogs))
@@ -75,11 +75,11 @@ pub(in crate::gui) fn info_size(info: &Info) -> Size {
         }
     };
     let (button_width, button_height) = match info.log_file {
-        Some(_) => (
+        Ok(_) => (
             SHOW_LOGS.chars().count() as f32 * char_width + 2.0 * BUTTON_PADDING[1],
             SECTION_SPACING + line + 2.0 * BUTTON_PADDING[0],
         ),
-        None => (0.0, 0.0),
+        Err(_) => (0.0, 0.0),
     };
     Size::new(
         (body_width.max(button_width) + 2.0 * PADDING).ceil(),

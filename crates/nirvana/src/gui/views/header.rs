@@ -18,8 +18,15 @@ static LOGO: LazyLock<svg::Handle> =
     LazyLock::new(|| svg::Handle::from_memory(include_bytes!("../../../assets/logo.svg")));
 
 pub(super) fn header(profile: Option<&ProfileState>) -> Element<'_, Message> {
-    let logo = mouse_area(svg(LOGO.clone()).width(24).height(24))
-        .on_press(Message::Info(info::Message::LogoClicked));
+    let logo = mouse_area(
+        svg(LOGO.clone())
+            .width(24)
+            .height(24)
+            .style(|theme, _| svg::Style {
+                color: Some(tokens(theme).brand),
+            }),
+    )
+    .on_press(Message::Info(info::Message::LogoClicked));
     let wordmark = text("nirvana")
         .font(INTER_BOLD)
         .size(16)

@@ -26,7 +26,7 @@ garbage_db() {
     mkdir -p "$root/garbage-db"
     echo garbage >"$root/garbage-db/nirvana.db"
     explain "garbage-db: the database file is not SQLite" \
-        "main window shows the database error (file is not a database)" \
+        "error toast \"database error: ... file is not a database\" in the main window" \
         "click the logo 5 times: the info window shows the same error instead of the rows"
     nirvana garbage-db
 }
@@ -34,7 +34,7 @@ garbage_db() {
 db_is_dir() {
     mkdir -p "$root/db-is-dir/nirvana.db"
     explain "db-is-dir: the database path is a directory" \
-        "main window shows the database error (unable to open database file)"
+        "error toast \"database error: ... unable to open database file\" in the main window"
     nirvana db-is-dir
 }
 
@@ -42,7 +42,7 @@ bad_config() {
     mkdir -p "$root/bad-config"
     echo 'not toml [' >"$root/bad-config/config.toml"
     explain "bad-config: config.toml is not valid TOML" \
-        "\"couldn't load the profile\" error toast with the config error as detail" \
+        "\"couldn't load the profile\" error toast with \"config unavailable\" as detail" \
         "no profile chip in the header"
     nirvana bad-config
 }

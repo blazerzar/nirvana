@@ -4,6 +4,7 @@ use iced::{Element, Length, Size};
 use super::bottom_bar::bottom_bar;
 use super::header::header;
 use super::listing::listing;
+use super::setup::{setup, setup_bottom_bar};
 use super::tracking::tracking;
 use crate::gui::app::Message;
 use crate::gui::design_system::tokens;
@@ -22,12 +23,20 @@ pub(in crate::gui) fn main<'a>(
         .padding(16)
         .width(Length::Fill)
     });
-    let body = responsive(|size| row![tracking(), listing(size.width)].into());
+    let setup_step = profile.and_then(ProfileState::setup_step);
+    let body = responsive(move |size| match setup_step {
+        Some(step) => setup(size.width, step),
+        None => row![tracking(), listing(size.width)].into(),
+    });
+    let bar = match setup_step {
+        Some(_) => setup_bottom_bar(),
+        None => bottom_bar(row![]),
+    };
     let layout = Column::new()
         .push(header(profile))
         .push(error)
         .push(body)
-        .push(bottom_bar());
+        .push(bar);
     container(layout)
         .width(Length::Fill)
         .height(Length::Fill)

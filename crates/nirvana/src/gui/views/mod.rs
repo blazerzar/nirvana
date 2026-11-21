@@ -3,6 +3,7 @@ mod header;
 mod info;
 mod listing;
 mod main;
+mod setup;
 mod tracking;
 
 use iced::widget::rule::{self, Rule};

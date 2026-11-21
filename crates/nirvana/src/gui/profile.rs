@@ -12,6 +12,7 @@ pub(super) enum ProfileState {
 pub(super) struct Profile {
     pub(super) name: String,
     connections: usize,
+    has_slots: bool,
     tested: usize,
     failed: usize,
 }
@@ -23,7 +24,21 @@ pub(super) enum Health {
     Down,
 }
 
+impl ProfileState {
+    pub(super) fn setup_step(&self) -> Option<u8> {
+        match self {
+            Self::Missing => Some(1),
+            Self::Active(profile) if profile.connections == 0 && !profile.has_slots => Some(2),
+            Self::Active(_) => None,
+        }
+    }
+}
+
 impl Profile {
+    pub(super) fn has_connections(&self) -> bool {
+        self.connections > 0
+    }
+
     /// Returns `None` until every connection is tested, and for a profile
     /// without connections.
     pub(super) fn health(&self) -> Option<Health> {
@@ -42,17 +57,20 @@ impl Profile {
 #[derive(Clone)]
 pub(super) enum Message {
     Missing,
-    Loaded(String, usize),
+    Failed,
+    Loaded(String, usize, bool),
     ConnectionTested(bool),
 }
 
 pub(super) fn update(profile: &mut Option<ProfileState>, message: Message) {
     match message {
         Message::Missing => *profile = Some(ProfileState::Missing),
-        Message::Loaded(name, connections) => {
+        Message::Failed => {}
+        Message::Loaded(name, connections, has_slots) => {
             *profile = Some(ProfileState::Active(Profile {
                 name,
                 connections,
+                has_slots,
                 tested: 0,
                 failed: 0,
             }));
@@ -68,18 +86,23 @@ pub(super) fn update(profile: &mut Option<ProfileState>, message: Message) {
 
 pub(super) fn load(nirvana: Arc<Nirvana>) -> Task<Message> {
     let service = nirvana.clone();
-    Task::future(async move { service.active_profile().await }).then(move |active| {
-        let active = match active {
-            Ok(active) => active,
+    Task::future(async move {
+        let active = service.active_profile().await?;
+        let has_slots = service.has_slots().await?;
+        Ok::<_, NirvanaError>((active, has_slots))
+    })
+    .then(move |loaded| {
+        let (active, has_slots) = match loaded {
+            Ok(loaded) => loaded,
             Err(NirvanaError::Domain(DomainError::NoActiveProfile)) => {
                 return Task::done(Message::Missing);
             }
             Err(e) => {
                 error!("{e}");
-                return Task::none();
+                return Task::done(Message::Failed);
             }
         };
-        let loaded = Message::Loaded(active.profile.name, active.connections.len());
+        let loaded = Message::Loaded(active.profile.name, active.connections.len(), has_slots);
         let tests = active.connections.into_iter().map(|connection| {
             Task::perform(
                 test_connection(nirvana.clone(), connection.model.name),
@@ -109,9 +132,36 @@ mod tests {
         Profile {
             name: "work".into(),
             connections,
+            has_slots: false,
             tested,
             failed,
         }
+    }
+
+    #[test]
+    fn setup_starts_at_profile_step_without_profile() {
+        assert_eq!(ProfileState::Missing.setup_step(), Some(1));
+    }
+
+    #[test]
+    fn setup_continues_at_connection_step_for_empty_profile() {
+        let empty = ProfileState::Active(profile(0, 0, 0));
+        assert_eq!(empty.setup_step(), Some(2));
+    }
+
+    #[test]
+    fn setup_is_done_with_connections() {
+        let connected = ProfileState::Active(profile(1, 0, 0));
+        assert_eq!(connected.setup_step(), None);
+    }
+
+    #[test]
+    fn setup_is_done_with_slots() {
+        let tracked = ProfileState::Active(Profile {
+            has_slots: true,
+            ..profile(0, 0, 0)
+        });
+        assert_eq!(tracked.setup_step(), None);
     }
 
     #[test]

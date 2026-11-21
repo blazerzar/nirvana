@@ -53,7 +53,7 @@ impl Gui {
     pub(super) fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Loaded(nirvana) => {
-                let check = match &nirvana {
+                let next = match &nirvana {
                     Ok(nirvana) => {
                         self.appearance
                             .set_theme(nirvana.theme().unwrap_or_default());
@@ -61,16 +61,11 @@ impl Gui {
                     }
                     Err(e) => {
                         error!("{e}");
-                        Task::none()
+                        self.open_main()
                     }
                 };
                 self.nirvana = Some(nirvana);
-                return Task::batch([
-                    self.windows
-                        .open(Window::Main, views::MAIN_WINDOW_SIZE)
-                        .discard(),
-                    check,
-                ]);
+                return next;
             }
             Message::Closed(id) => {
                 if let Some(Window::Main) = self.windows.remove(id) {
@@ -84,9 +79,21 @@ impl Gui {
                     .update(message, self.nirvana.as_ref(), &mut self.windows)
                     .map(Message::Info);
             }
-            Message::Profile(message) => profile::update(&mut self.profile, message),
+            Message::Profile(message) => {
+                profile::update(&mut self.profile, message);
+                return self.open_main();
+            }
         }
         Task::none()
+    }
+
+    fn open_main(&mut self) -> Task<Message> {
+        if self.windows.has_main() {
+            return Task::none();
+        }
+        self.windows
+            .open(Window::Main, views::MAIN_WINDOW_SIZE)
+            .discard()
     }
 
     pub(super) fn subscription(&self) -> Subscription<Message> {

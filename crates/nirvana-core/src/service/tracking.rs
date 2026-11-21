@@ -34,6 +34,20 @@ impl Nirvana {
         find_running_slot(&self.db, profile.id).await
     }
 
+    /// Returns whether the active profile has any slots.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no profile is active, the config is unavailable or
+    /// a database query fails.
+    pub async fn has_slots(&self) -> Result<bool, NirvanaError> {
+        let profile = self.find_active_profile().await?;
+        Ok(slot::Entity::find()
+            .filter(slot::COLUMN.profile_id.eq(profile.id))
+            .exists(&self.db)
+            .await?)
+    }
+
     /// Returns the slots of the active profile that overlap the range from
     /// `from` to `to`, or unbounded, with their tickets and publish states,
     /// ordered by start.
@@ -756,6 +770,23 @@ mod tests {
         assert_eq!(stopped.stopped_at, Some(now - 600));
         assert_eq!(result.started.model.started_at, now - 600);
         assert_eq!(result.started.model.stopped_at, None);
+    }
+
+    #[tokio::test]
+    async fn has_slots_is_false_without_slots() {
+        let (service, _) = setup().await;
+
+        assert!(!service.has_slots().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn has_slots_is_true_with_a_slot() {
+        let (service, [ticket, _]) = setup().await;
+        service
+            .seed_slot(&ticket, Utc::now().timestamp() - 600, None)
+            .await;
+
+        assert!(service.has_slots().await.unwrap());
     }
 
     #[tokio::test]

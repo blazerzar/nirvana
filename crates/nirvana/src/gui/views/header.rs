@@ -72,10 +72,19 @@ fn no_profile_chip<'a>() -> Element<'a, Message> {
 
 fn profile_chip(profile: &Profile) -> Element<'_, Message> {
     let health = profile.health();
+    let has_connections = profile.has_connections();
     let dot = container(space().width(7).height(7)).style(move |theme| {
-        container::Style::default()
-            .background(health_color(tokens(theme), health))
-            .border(Border::default().rounded(9999))
+        let color = health_color(tokens(theme), health);
+        let ring = container::Style::default().border(Border {
+            color,
+            width: 1.0,
+            radius: 9999.into(),
+        });
+        if has_connections {
+            ring.background(color)
+        } else {
+            ring
+        }
     });
     let name = text(&profile.name)
         .size(12)

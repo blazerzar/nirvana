@@ -30,6 +30,10 @@ impl Windows {
         self.0.remove(&id)
     }
 
+    pub(super) fn has_main(&self) -> bool {
+        self.0.values().any(|window| matches!(window, Window::Main))
+    }
+
     pub(super) fn info(&self) -> Option<(window::Id, &Info)> {
         self.0.iter().find_map(|(id, window)| match window {
             Window::Info(info) => Some((*id, info)),

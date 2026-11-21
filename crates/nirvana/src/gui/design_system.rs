@@ -37,6 +37,8 @@ pub(super) struct Tokens {
     pub shadow_lg: Shadow,
 }
 
+pub(super) const DISABLED_OPACITY: f32 = 0.38;
+
 pub(super) fn tokens(theme: &Theme) -> &'static Tokens {
     if theme.mode() == Mode::Dark {
         &DARK
@@ -227,7 +229,7 @@ pub(super) mod tracking {
 #[allow(dead_code)]
 pub(super) mod typography {
     use iced::Font;
-    use iced::widget::text::LineHeight;
+    use iced::widget::text::{IntoFragment, LineHeight, Text};
 
     use super::font::{INTER_BOLD, MONO, MONO_BOLD, MONO_MEDIUM, MONO_SEMIBOLD};
     use super::font_size::{LG, MD, SM, TIMER, XL, XL2, XL3, XL4, XL5, XS, XS2};
@@ -240,6 +242,15 @@ pub(super) mod typography {
         pub size: f32,
         pub line_height: LineHeight,
         pub tracking: f32,
+    }
+
+    impl TextStyle {
+        pub(in crate::gui) fn text<'a>(self, content: impl IntoFragment<'a>) -> Text<'a> {
+            iced::widget::text(content)
+                .font(self.font)
+                .size(self.size)
+                .line_height(self.line_height)
+        }
     }
 
     const fn style(font: Font, size: f32, line_height: LineHeight, tracking: f32) -> TextStyle {

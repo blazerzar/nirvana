@@ -1,5 +1,6 @@
 mod app;
 mod appearance;
+mod components;
 mod design_system;
 mod info;
 mod profile;

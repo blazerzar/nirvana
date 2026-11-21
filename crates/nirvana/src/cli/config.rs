@@ -55,7 +55,7 @@ pub(crate) async fn get(
 }
 
 pub(crate) async fn set(key: String, value: String) -> anyhow::Result<()> {
-    let mut service = Nirvana::new().await?;
+    let service = Nirvana::new().await?;
     service.set_config(&key, &value).await?;
     info!(%key, %value, "config changed");
 
@@ -68,7 +68,7 @@ pub(crate) async fn set(key: String, value: String) -> anyhow::Result<()> {
 }
 
 pub(crate) async fn unset(key: String) -> anyhow::Result<()> {
-    let mut service = Nirvana::new().await?;
+    let service = Nirvana::new().await?;
     service.unset_config(&key).await?;
     info!(%key, "config unset");
 

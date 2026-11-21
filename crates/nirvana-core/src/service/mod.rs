@@ -15,6 +15,7 @@ mod tracking;
 use std::sync::Arc;
 
 use sea_orm::DatabaseConnection;
+use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::warn;
 
 use crate::config::{AppConfig, ConfigError};
@@ -27,7 +28,7 @@ use crate::storage;
 
 pub struct Nirvana {
     paths: AppPaths,
-    config: Result<AppConfig, Arc<ConfigError>>,
+    config: Result<RwLock<AppConfig>, Arc<ConfigError>>,
     db: DatabaseConnection,
     keyring: StoreFactory,
     http: Result<reqwest::Client, Arc<reqwest::Error>>,
@@ -50,15 +51,18 @@ impl Nirvana {
         let http = integration::http_client().map_err(Arc::new);
         Ok(Self {
             paths,
-            config,
+            config: config.map(RwLock::new),
             db,
             keyring,
             http,
         })
     }
 
-    fn config(&self) -> Result<&AppConfig, NirvanaError> {
-        self.config.as_ref().map_err(|e| e.clone().into())
+    async fn config(&self) -> Result<RwLockReadGuard<'_, AppConfig>, NirvanaError> {
+        match &self.config {
+            Ok(config) => Ok(config.read().await),
+            Err(e) => Err(e.clone().into()),
+        }
     }
 
     fn http(&self) -> Result<reqwest::Client, IntegrationError> {
@@ -73,8 +77,13 @@ impl Nirvana {
         Integration::new(connection, self.http()?, token)
     }
 
-    fn config_mut(&mut self) -> Result<&mut AppConfig, NirvanaError> {
-        self.config.as_mut().map_err(|e| e.clone().into())
+    /// Returns the config for a change. Hold the guard until the changed
+    /// config is saved, so concurrent changes are not lost.
+    async fn config_mut(&self) -> Result<RwLockWriteGuard<'_, AppConfig>, NirvanaError> {
+        match &self.config {
+            Ok(config) => Ok(config.write().await),
+            Err(e) => Err(e.clone().into()),
+        }
     }
 }
 
@@ -93,7 +102,7 @@ mod tests {
         let service = Nirvana::open(paths, mock_store()).await.unwrap();
 
         assert!(matches!(
-            service.config(),
+            service.config().await,
             Err(NirvanaError::ConfigUnavailable(_))
         ));
         service.list_profiles().await.unwrap();

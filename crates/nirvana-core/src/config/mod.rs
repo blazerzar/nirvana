@@ -291,13 +291,25 @@ impl LogLevel {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-pub(crate) struct IdleConfig {
+pub struct IdleConfig {
     #[serde(default = "default_idle_enabled")]
-    pub(crate) enabled: bool,
+    pub enabled: bool,
     #[serde(default = "default_idle_methods")]
-    pub(crate) methods: Vec<String>,
+    pub methods: Vec<IdleMethod>,
     #[serde(default = "default_idle_threshold_secs")]
-    pub(crate) threshold_secs: u64,
+    pub threshold_secs: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IdleMethod {
+    Lock,
+    Sleep,
+    Input,
+}
+
+impl IdleMethod {
+    pub const ALL: [Self; 3] = [Self::Lock, Self::Sleep, Self::Input];
 }
 
 impl Default for IdleConfig {
@@ -314,8 +326,8 @@ fn default_idle_enabled() -> bool {
     true
 }
 
-fn default_idle_methods() -> Vec<String> {
-    vec!["lock".into(), "sleep".into(), "input".into()]
+fn default_idle_methods() -> Vec<IdleMethod> {
+    IdleMethod::ALL.to_vec()
 }
 
 fn default_idle_threshold_secs() -> u64 {
@@ -373,7 +385,7 @@ level = "debug"
                 gui: GuiConfig { theme: Theme::Dark },
                 idle: IdleConfig {
                     enabled: false,
-                    methods: vec!["lock".into(), "input".into()],
+                    methods: vec![IdleMethod::Lock, IdleMethod::Input],
                     threshold_secs: 600,
                 },
                 log: LogConfig {
@@ -393,7 +405,7 @@ level = "debug"
             gui: GuiConfig { theme: Theme::Dark },
             idle: IdleConfig {
                 enabled: false,
-                methods: vec!["lock".into()],
+                methods: vec![IdleMethod::Lock],
                 threshold_secs: 600,
             },
             log: LogConfig {
@@ -478,7 +490,7 @@ level = "debug"
         let config = AppConfig::default();
 
         assert!(config.idle.enabled);
-        assert_eq!(config.idle.methods, vec!["lock", "sleep", "input"]);
+        assert_eq!(config.idle.methods, IdleMethod::ALL);
         assert_eq!(config.idle.threshold_secs, 300);
     }
 

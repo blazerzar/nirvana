@@ -523,7 +523,7 @@ mod tests {
 
     #[tokio::test]
     async fn credential_changes_reject_missing_connection() {
-        let mut service = TestService::new(&[Jira]).await;
+        let service = TestService::new(&[Jira]).await;
         service.create_profile("work".to_string()).await.unwrap();
 
         for (profile, name) in [("test", "missing"), ("work", Jira.name())] {

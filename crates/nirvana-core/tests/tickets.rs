@@ -23,7 +23,7 @@ async fn setup() -> Setup {
     let mock = MockServer::start().await;
     mount_missing_issues(&mock).await;
     let dir = tempfile::tempdir().unwrap();
-    let mut service = Nirvana::open_in(dir.path()).await.unwrap();
+    let service = Nirvana::open_in(dir.path()).await.unwrap();
     service.create_profile("work".to_string()).await.unwrap();
     service.switch_profile("work").await.unwrap();
     for (name, kind, _) in CONNECTIONS {

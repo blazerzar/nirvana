@@ -13,7 +13,7 @@ struct Setup {
 
 async fn setup() -> Setup {
     let dir = tempfile::tempdir().unwrap();
-    let mut service = Nirvana::open_in(dir.path()).await.unwrap();
+    let service = Nirvana::open_in(dir.path()).await.unwrap();
     service.create_profile("work".to_string()).await.unwrap();
     service.switch_profile("work").await.unwrap();
     Setup { service, _dir: dir }
@@ -124,7 +124,7 @@ async fn add_edit_and_move_credential() {
 
 #[tokio::test]
 async fn connections_belong_to_their_profile() {
-    let Setup { mut service, _dir } = setup().await;
+    let Setup { service, _dir } = setup().await;
     service.add_connection(linear("Linear")).await.unwrap();
     service
         .store_test_ticket("Linear", "NIR-1", "Fix login")

@@ -3,7 +3,7 @@
 //! Keys are `section.key`, see [`KEYS`]. `core.profile` is changed by
 //! switching the active profile and cannot be unset.
 
-use crate::config::{self, AppConfig, ConfigError, KEYS, Theme};
+use crate::config::{self, AppConfig, ConfigError, IdleConfig, KEYS, Theme};
 use crate::domain::ConfigEntry;
 use crate::errors::{DomainError, NirvanaError};
 use crate::logging;
@@ -38,7 +38,11 @@ impl Nirvana {
         }
 
         let defaults = config::defaults_table()?;
-        let values = self.config()?.saved_table(&self.paths, &defaults).await?;
+        let values = self
+            .config()
+            .await?
+            .saved_table(&self.paths, &defaults)
+            .await?;
         Ok(keys
             .into_iter()
             .map(|key| ConfigEntry {
@@ -64,17 +68,18 @@ impl Nirvana {
     /// Returns an error if the key is unknown, the value is invalid for the
     /// key, the profile for `core.profile` does not exist, the config is
     /// unavailable or cannot be saved, or the database query fails.
-    pub async fn set_config(&mut self, key: &str, value: &str) -> Result<(), NirvanaError> {
+    pub async fn set_config(&self, key: &str, value: &str) -> Result<(), NirvanaError> {
         if key == PROFILE_KEY {
             self.switch_profile(value).await?;
             return Ok(());
         }
 
-        let config = self.edited_config(key, |section, name| {
+        let mut config = self.config_mut().await?;
+        let edited = edited_config(&config, key, |section, name| {
             section.insert(name.to_owned(), parse_value(value));
         })?;
-        config.save(&self.paths).await?;
-        *self.config_mut()? = config;
+        edited.save(&self.paths).await?;
+        *config = edited;
         Ok(())
     }
 
@@ -85,36 +90,18 @@ impl Nirvana {
     ///
     /// Returns an error if the key is unknown or is `core.profile`, or the
     /// config is unavailable or cannot be saved.
-    pub async fn unset_config(&mut self, key: &str) -> Result<(), NirvanaError> {
+    pub async fn unset_config(&self, key: &str) -> Result<(), NirvanaError> {
         if key == PROFILE_KEY {
             return Err(DomainError::ConfigKeyRequired(key.to_owned()).into());
         }
 
-        let config = self.edited_config(key, |section, name| {
+        let mut config = self.config_mut().await?;
+        let edited = edited_config(&config, key, |section, name| {
             section.remove(name);
         })?;
-        config.save_without(&self.paths, key).await?;
-        *self.config_mut()? = config;
+        edited.save_without(&self.paths, key).await?;
+        *config = edited;
         Ok(())
-    }
-
-    /// Returns the config with `edit` applied to the section table and key
-    /// name of `key` (`section.key`).
-    fn edited_config(
-        &self,
-        key: &str,
-        edit: impl FnOnce(&mut toml::Table, &str),
-    ) -> Result<AppConfig, NirvanaError> {
-        let (section, name) = split_key(key)?;
-        let mut table = toml::Table::try_from(self.config()?).map_err(ConfigError::from)?;
-        let section = table
-            .get_mut(section)
-            .and_then(toml::Value::as_table_mut)
-            .ok_or_else(|| DomainError::UnknownConfigKey(key.to_owned()))?;
-        edit(section, name);
-        table
-            .try_into()
-            .map_err(|e| DomainError::InvalidConfigValue(key.to_owned(), e).into())
     }
 
     /// Returns `gui.theme`.
@@ -122,9 +109,51 @@ impl Nirvana {
     /// # Errors
     ///
     /// Returns an error if the config is unavailable.
-    pub fn theme(&self) -> Result<Theme, NirvanaError> {
-        Ok(self.config()?.gui.theme)
+    pub async fn theme(&self) -> Result<Theme, NirvanaError> {
+        Ok(self.config().await?.gui.theme)
     }
+
+    /// Returns the `idle` section.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the config is unavailable.
+    pub async fn idle(&self) -> Result<IdleConfig, NirvanaError> {
+        Ok(self.config().await?.idle.clone())
+    }
+
+    /// Replaces the `idle` section and saves the config.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the config is unavailable or cannot be saved.
+    pub async fn set_idle(&self, idle: IdleConfig) -> Result<(), NirvanaError> {
+        let mut config = self.config_mut().await?;
+        let mut edited = config.clone();
+        edited.idle = idle;
+        edited.save(&self.paths).await?;
+        *config = edited;
+        Ok(())
+    }
+}
+
+/// Returns `config` with `edit` applied to the section table and key name of
+/// `key` (`section.key`).
+fn edited_config(
+    config: &AppConfig,
+    key: &str,
+    edit: impl FnOnce(&mut toml::Table, &str),
+) -> Result<AppConfig, NirvanaError> {
+    let (section, name) = split_key(key)?;
+    let mut table = toml::Table::try_from(config).map_err(ConfigError::from)?;
+    let section = table
+        .get_mut(section)
+        .and_then(toml::Value::as_table_mut)
+        .ok_or_else(|| DomainError::UnknownConfigKey(key.to_owned()))?;
+    edit(section, name);
+    table
+        .try_into()
+        .map_err(|e| DomainError::InvalidConfigValue(key.to_owned(), e).into())
 }
 
 fn split_key(key: &str) -> Result<(&str, &str), DomainError> {
@@ -157,7 +186,7 @@ mod tests {
     use std::io::Write;
 
     use super::*;
-    use crate::config::LogLevel;
+    use crate::config::{IdleMethod, LogLevel};
     use crate::service::test_service::TestService;
 
     fn append_default_theme(service: &TestService) {
@@ -178,7 +207,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_config_returns_all_keys_with_values_and_defaults() {
-        let mut service = TestService::new(&[]).await;
+        let service = TestService::new(&[]).await;
         service.set_config("idle.enabled", "false").await.unwrap();
 
         assert_eq!(
@@ -241,17 +270,53 @@ mod tests {
 
     #[tokio::test]
     async fn theme_returns_saved_theme() {
-        let mut service = TestService::new(&[]).await;
-        assert_eq!(service.theme().unwrap(), Theme::System);
+        let service = TestService::new(&[]).await;
+        assert_eq!(service.theme().await.unwrap(), Theme::System);
 
         service.set_config("gui.theme", "dark").await.unwrap();
 
-        assert_eq!(service.theme().unwrap(), Theme::Dark);
+        assert_eq!(service.theme().await.unwrap(), Theme::Dark);
+    }
+
+    #[tokio::test]
+    async fn set_idle_saves_idle_section() {
+        let service = TestService::new(&[]).await;
+        let idle = IdleConfig {
+            enabled: false,
+            methods: vec![IdleMethod::Sleep],
+            threshold_secs: 600,
+        };
+
+        service.set_idle(idle.clone()).await.unwrap();
+
+        assert_eq!(service.idle().await.unwrap(), idle);
+        let saved = AppConfig::load(&service.paths).await.unwrap();
+        assert_eq!(saved.idle, idle);
+    }
+
+    #[tokio::test]
+    async fn concurrent_config_changes_are_all_saved() {
+        let service = TestService::new(&[]).await;
+        let idle = IdleConfig {
+            enabled: false,
+            ..IdleConfig::default()
+        };
+
+        let (theme, idle_set) = tokio::join!(
+            service.set_config("gui.theme", "dark"),
+            service.set_idle(idle.clone())
+        );
+        theme.unwrap();
+        idle_set.unwrap();
+
+        let saved = AppConfig::load(&service.paths).await.unwrap();
+        assert_eq!(saved.gui.theme, Theme::Dark);
+        assert_eq!(saved.idle, idle);
     }
 
     #[tokio::test]
     async fn set_config_parses_value_for_key_and_saves() {
-        let mut service = TestService::new(&[]).await;
+        let service = TestService::new(&[]).await;
 
         service.set_config("gui.theme", "dark").await.unwrap();
         service
@@ -265,22 +330,23 @@ mod tests {
         service.set_config("log.level", "debug").await.unwrap();
 
         let saved = AppConfig::load(&service.paths).await.unwrap();
-        assert_eq!(saved, *service.config().unwrap());
+        assert_eq!(saved, *service.config().await.unwrap());
         assert_eq!(saved.gui.theme, Theme::Dark);
         assert_eq!(saved.idle.threshold_secs, 600);
-        assert_eq!(saved.idle.methods, ["lock"]);
+        assert_eq!(saved.idle.methods, [IdleMethod::Lock]);
         assert_eq!(saved.log.level, Some(LogLevel::Debug));
     }
 
     #[tokio::test]
     async fn set_config_rejects_invalid_value() {
-        let mut service = TestService::new(&[]).await;
+        let service = TestService::new(&[]).await;
         let content = std::fs::read_to_string(&service.paths.config_file).unwrap();
 
         for (key, value) in [
             ("gui.theme", "blue"),
             ("idle.enabled", "yes"),
             ("idle.threshold_secs", "-1"),
+            ("idle.methods", r#"["typing"]"#),
         ] {
             let err = service.set_config(key, value).await.unwrap_err();
             assert!(
@@ -296,7 +362,7 @@ mod tests {
 
     #[tokio::test]
     async fn set_config_rejects_unknown_key() {
-        let mut service = TestService::new(&[]).await;
+        let service = TestService::new(&[]).await;
 
         for key in ["idle", "idle.foo", "schema_version"] {
             let err = service.set_config(key, "1").await.unwrap_err();
@@ -309,18 +375,18 @@ mod tests {
 
     #[tokio::test]
     async fn set_config_keeps_config_when_save_fails() {
-        let mut service = TestService::new(&[]).await;
+        let service = TestService::new(&[]).await;
         std::fs::remove_file(&service.paths.config_file).unwrap();
         std::fs::create_dir(&service.paths.config_file).unwrap();
 
         service.set_config("gui.theme", "dark").await.unwrap_err();
 
-        assert_eq!(service.config().unwrap().gui.theme, Theme::default());
+        assert_eq!(service.config().await.unwrap().gui.theme, Theme::default());
     }
 
     #[tokio::test]
     async fn unset_config_removes_key_and_restores_default() {
-        let mut service = TestService::new(&[]).await;
+        let service = TestService::new(&[]).await;
         service.set_config("gui.theme", "dark").await.unwrap();
         service.set_config("log.level", "debug").await.unwrap();
 
@@ -328,7 +394,7 @@ mod tests {
         service.unset_config("log.level").await.unwrap();
 
         let saved = AppConfig::load(&service.paths).await.unwrap();
-        assert_eq!(saved, *service.config().unwrap());
+        assert_eq!(saved, *service.config().await.unwrap());
         assert_eq!(saved.gui.theme, Theme::default());
         assert_eq!(saved.log.level, None);
         let content = std::fs::read_to_string(&service.paths.config_file).unwrap();
@@ -338,7 +404,7 @@ mod tests {
 
     #[tokio::test]
     async fn unset_config_removes_default_value_present_in_file() {
-        let mut service = TestService::new(&[]).await;
+        let service = TestService::new(&[]).await;
         append_default_theme(&service);
 
         service.unset_config("gui.theme").await.unwrap();
@@ -351,7 +417,7 @@ mod tests {
 
     #[tokio::test]
     async fn unset_config_rejects_unknown_and_profile_key() {
-        let mut service = TestService::new(&[]).await;
+        let service = TestService::new(&[]).await;
 
         for key in ["idle", "idle.foo", "schema_version"] {
             let err = service.unset_config(key).await.unwrap_err();
@@ -369,7 +435,7 @@ mod tests {
 
     #[tokio::test]
     async fn set_config_profile_switches_to_existing_profile() {
-        let mut service = TestService::new(&[]).await;
+        let service = TestService::new(&[]).await;
         service.create_profile("work".to_string()).await.unwrap();
 
         service.set_config(PROFILE_KEY, "work").await.unwrap();

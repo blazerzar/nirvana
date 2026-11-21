@@ -50,6 +50,7 @@ fn map_theme(theme: &str) -> Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::IdleMethod;
     use crate::config::tests::{FIXTURE_020, FIXTURE_030, parse};
 
     /// Parses the content of a fixture file into the current config.
@@ -82,7 +83,7 @@ mod tests {
                 gui: GuiConfig { theme: Theme::Dark },
                 idle: IdleConfig {
                     enabled: true,
-                    methods: vec!["lock".into()],
+                    methods: vec![IdleMethod::Lock],
                     threshold_secs: 600,
                 },
                 ..AppConfig::default()

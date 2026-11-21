@@ -46,7 +46,7 @@ async fn connection_names(service: &Nirvana) -> Vec<String> {
 #[tokio::test]
 async fn fresh_data_dir_needs_a_profile() {
     let dir = tempfile::tempdir().unwrap();
-    let mut service = reopen(&dir).await;
+    let service = reopen(&dir).await;
     assert!(service.list_profiles().await.unwrap().is_empty());
 
     let err = &service.active_profile().await.unwrap_err();
@@ -75,7 +75,7 @@ async fn fresh_data_dir_needs_a_profile() {
 #[tokio::test]
 async fn switch_rename_and_delete_persist() {
     let dir = tempfile::tempdir().unwrap();
-    let mut service = reopen(&dir).await;
+    let service = reopen(&dir).await;
     for name in ["work", "personal"] {
         service.create_profile(name.to_string()).await.unwrap();
     }
@@ -92,7 +92,7 @@ async fn switch_rename_and_delete_persist() {
         .unwrap();
     drop(service);
 
-    let mut service = reopen(&dir).await;
+    let service = reopen(&dir).await;
     assert_eq!(active_name(&service).await, "home");
     assert_eq!(profile_names(&service).await, ["work", "home"]);
 
@@ -102,7 +102,7 @@ async fn switch_rename_and_delete_persist() {
     assert_eq!(active.as_deref(), Some("home"));
     drop(service);
 
-    let mut service = reopen(&dir).await;
+    let service = reopen(&dir).await;
     assert_eq!(active_name(&service).await, "home");
     assert_eq!(profile_names(&service).await, ["home"]);
 
@@ -118,7 +118,7 @@ async fn switch_rename_and_delete_persist() {
 #[tokio::test]
 async fn delete_profile_removes_its_data() {
     let dir = tempfile::tempdir().unwrap();
-    let mut service = reopen(&dir).await;
+    let service = reopen(&dir).await;
     for name in ["work", "personal"] {
         service.create_profile(name.to_string()).await.unwrap();
         service.switch_profile(name).await.unwrap();
@@ -151,7 +151,7 @@ async fn delete_profile_removes_its_data() {
 #[tokio::test]
 async fn profile_names_are_validated() {
     let dir = tempfile::tempdir().unwrap();
-    let mut service = reopen(&dir).await;
+    let service = reopen(&dir).await;
     for name in ["work", "personal"] {
         service.create_profile(name.to_string()).await.unwrap();
     }

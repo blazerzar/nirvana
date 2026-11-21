@@ -305,7 +305,7 @@ thorough review to make sure we are not bringing any problems into the next stag
 
 - [ ] Create a GUI application using Iced.
 - [ ] Check if we should rework the API interface of the core.
-- [ ] Core methods that change the config or profile take `&self`
+- [x] Core methods that change the config or profile take `&self`
       (implementation guide §3 #32).
 - [ ] Return the issue URL from core with slots, so frontends do not fetch
       the active connection and build it themselves.

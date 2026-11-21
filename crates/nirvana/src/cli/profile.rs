@@ -16,7 +16,7 @@ const COLUMNS: [Column; 4] = [
 ];
 
 pub(crate) async fn switch(name: Option<String>) -> anyhow::Result<()> {
-    let mut service = Nirvana::new().await?;
+    let service = Nirvana::new().await?;
 
     let name = match name {
         Some(name) => name,
@@ -123,7 +123,7 @@ pub(crate) async fn create(name: Option<String>, switch: bool) -> anyhow::Result
         None => create_interactive(switch).await?,
     };
 
-    let mut service = Nirvana::new().await?;
+    let service = Nirvana::new().await?;
     let created = service.create_profile(name).await?;
     info!(name = %created.name, "profile created");
 
@@ -157,7 +157,7 @@ async fn create_interactive(switch: bool) -> anyhow::Result<(String, bool)> {
 }
 
 pub(crate) async fn delete(name: Option<String>, yes: bool) -> anyhow::Result<()> {
-    let mut service = Nirvana::new().await?;
+    let service = Nirvana::new().await?;
 
     let name = match name {
         Some(name) => {
@@ -209,7 +209,7 @@ async fn delete_interactive(service: &Nirvana) -> anyhow::Result<Option<String>>
 }
 
 pub(crate) async fn rename(name: Option<String>, new_name: Option<String>) -> anyhow::Result<()> {
-    let mut service = Nirvana::new().await?;
+    let service = Nirvana::new().await?;
 
     let (name, new_name) = match (name, new_name) {
         (Some(name), Some(new_name)) => (name, new_name),

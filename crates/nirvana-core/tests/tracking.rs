@@ -15,7 +15,7 @@ struct Setup {
 
 async fn setup() -> Setup {
     let dir = tempfile::tempdir().unwrap();
-    let mut service = Nirvana::open_in(dir.path()).await.unwrap();
+    let service = Nirvana::open_in(dir.path()).await.unwrap();
     service.create_profile("work".to_string()).await.unwrap();
     service.switch_profile("work").await.unwrap();
     service

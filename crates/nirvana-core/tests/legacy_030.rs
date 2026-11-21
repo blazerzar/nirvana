@@ -103,7 +103,7 @@ async fn tracks_on_030_data_dir() {
 #[tokio::test]
 async fn renames_and_moves_credential_on_030_data_dir() {
     let dir = data_dir_030();
-    let mut service = Nirvana::open_in(dir.path()).await.unwrap();
+    let service = Nirvana::open_in(dir.path()).await.unwrap();
 
     service
         .rename_profile("default", "home".to_string())

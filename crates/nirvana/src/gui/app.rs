@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use iced::theme::Mode;
@@ -6,19 +8,38 @@ use nirvana_core::{Nirvana, Theme};
 use tracing::error;
 
 use super::views;
+use crate::about;
 
-const WINDOW_SIZE: Size = Size::new(960.0, 540.0);
+const MAIN_WINDOW_SIZE: Size = Size::new(960.0, 540.0);
+const INFO_CLICKS: u32 = 5;
 
 pub(super) struct Gui {
     nirvana: Option<Result<Arc<Nirvana>, String>>,
     theme: Theme,
     system_mode: Mode,
+    windows: BTreeMap<window::Id, Window>,
+    logo_clicks: u32,
+    loading_info: bool,
+}
+
+pub(super) enum Window {
+    Main,
+    Info(Info),
+}
+
+#[derive(Clone)]
+pub(super) struct Info {
+    pub(super) rows: Result<Vec<(&'static str, String)>, String>,
+    pub(super) log_file: Option<PathBuf>,
 }
 
 #[derive(Clone)]
 pub(super) enum Message {
     Loaded(Result<Arc<Nirvana>, String>),
-    WindowClosed,
+    Closed(window::Id),
+    LogoClicked,
+    InfoLoaded(Info),
+    ShowLogs,
     SystemThemeChanged(Mode),
     ToggleTheme,
 }
@@ -29,6 +50,9 @@ impl Gui {
             nirvana: None,
             theme: Theme::default(),
             system_mode: Mode::None,
+            windows: BTreeMap::new(),
+            logo_clicks: 0,
+            loading_info: false,
         };
         let load = Task::perform(
             async {
@@ -51,13 +75,33 @@ impl Gui {
                     Err(e) => error!("{e}"),
                 }
                 self.nirvana = Some(nirvana);
-                let (_, open) = window::open(window::Settings {
-                    size: WINDOW_SIZE,
-                    ..window::Settings::default()
-                });
-                return open.discard();
+                return self.open_window(Window::Main, MAIN_WINDOW_SIZE);
             }
-            Message::WindowClosed => return iced::exit(),
+            Message::Closed(id) => {
+                if let Some(Window::Main) = self.windows.remove(&id) {
+                    return iced::exit();
+                }
+            }
+            Message::LogoClicked => {
+                self.logo_clicks += 1;
+                if self.logo_clicks == INFO_CLICKS {
+                    self.logo_clicks = 0;
+                    return self.show_info();
+                }
+            }
+            Message::InfoLoaded(info) => {
+                self.loading_info = false;
+                let size = views::info_size(&info);
+                return self.open_window(Window::Info(info), size);
+            }
+            Message::ShowLogs => {
+                if let Some(log_file) = self
+                    .info_window()
+                    .and_then(|(_, info)| info.log_file.clone())
+                {
+                    return Task::future(open_file(log_file)).discard();
+                }
+            }
             Message::SystemThemeChanged(mode) => self.system_mode = mode,
             Message::ToggleTheme => {
                 self.theme = if self.is_dark() {
@@ -74,13 +118,18 @@ impl Gui {
         Subscription::batch([
             system::theme_changes().map(Message::SystemThemeChanged),
             keyboard::listen().filter_map(toggle_theme_shortcut),
-            window::close_events().map(|_| Message::WindowClosed),
+            window::close_events().map(Message::Closed),
         ])
     }
 
-    pub(super) fn view(&self, _window: window::Id) -> Element<'_, Message> {
-        let error = self.nirvana.as_ref().and_then(|n| n.as_ref().err());
-        views::main(error.map(String::as_str))
+    pub(super) fn view(&self, window: window::Id) -> Element<'_, Message> {
+        match self.windows.get(&window) {
+            Some(Window::Info(info)) => views::info(info),
+            _ => {
+                let error = self.nirvana.as_ref().and_then(|n| n.as_ref().err());
+                views::main(error.map(String::as_str))
+            }
+        }
     }
 
     pub(super) fn theme(&self, _window: window::Id) -> Option<iced::Theme> {
@@ -91,12 +140,65 @@ impl Gui {
         }
     }
 
+    fn show_info(&mut self) -> Task<Message> {
+        if let Some((id, _)) = self.info_window() {
+            return window::gain_focus(id);
+        }
+        let Some(nirvana) = self.nirvana.clone() else {
+            return Task::none();
+        };
+        if self.loading_info {
+            return Task::none();
+        }
+        self.loading_info = true;
+        Task::perform(load_info(nirvana), Message::InfoLoaded)
+    }
+
+    fn open_window(&mut self, kind: Window, size: Size) -> Task<Message> {
+        let (id, open) = window::open(window::Settings {
+            size,
+            ..window::Settings::default()
+        });
+        self.windows.insert(id, kind);
+        open.discard()
+    }
+
+    fn info_window(&self) -> Option<(window::Id, &Info)> {
+        self.windows.iter().find_map(|(id, window)| match window {
+            Window::Info(info) => Some((*id, info)),
+            Window::Main => None,
+        })
+    }
+
     fn is_dark(&self) -> bool {
         match self.theme {
             Theme::System => self.system_mode == Mode::Dark,
             Theme::Light => false,
             Theme::Dark => true,
         }
+    }
+}
+
+async fn load_info(nirvana: Result<Arc<Nirvana>, String>) -> Info {
+    let rows = match nirvana {
+        Ok(nirvana) => nirvana
+            .info()
+            .await
+            .map(|info| about::rows(&info))
+            .map_err(|e| e.to_string())
+            .inspect_err(|e| error!("{e}")),
+        Err(e) => Err(e),
+    };
+    let log_file = Nirvana::log_file().inspect_err(|e| error!("{e}")).ok();
+    Info { rows, log_file }
+}
+
+async fn open_file(path: PathBuf) {
+    let target = path.clone();
+    match tokio::task::spawn_blocking(move || opener::open(&target)).await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => error!("cannot open {}: {e}", path.display()),
+        Err(e) => error!("cannot open {}: {e}", path.display()),
     }
 }
 

@@ -2,6 +2,7 @@ use tracing::error;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
+mod about;
 mod cli;
 mod gui;
 

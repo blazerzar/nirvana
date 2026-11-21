@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 use iced::Element;
 use iced::alignment::Vertical;
 use iced::widget::text::LineHeight;
-use iced::widget::{column, container, row, rule, svg, text};
+use iced::widget::{column, container, mouse_area, row, rule, svg, text};
 
 use crate::gui::INTER_BOLD;
 use crate::gui::app::Message;
@@ -13,7 +13,7 @@ static LOGO: LazyLock<svg::Handle> =
     LazyLock::new(|| svg::Handle::from_memory(include_bytes!("../../../assets/logo.svg")));
 
 pub(super) fn header<'a>() -> Element<'a, Message> {
-    let logo = svg(LOGO.clone()).width(24).height(24);
+    let logo = mouse_area(svg(LOGO.clone()).width(24).height(24)).on_press(Message::LogoClicked);
     let wordmark = text("nirvana")
         .font(INTER_BOLD)
         .size(16)

@@ -1,7 +1,7 @@
 //! Log file viewing, following and clearing.
 
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tokio::fs::OpenOptions;
 use tracing::debug;
@@ -12,6 +12,15 @@ use crate::paths::AppPaths;
 use crate::service::Nirvana;
 
 impl Nirvana {
+    /// Returns the log file path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the log file location cannot be determined.
+    pub fn log_file() -> Result<PathBuf, NirvanaError> {
+        Ok(AppPaths::resolve()?.log_file)
+    }
+
     /// Opens the log file for reading from its first line. A missing file
     /// reads as empty until it is created.
     ///
@@ -20,8 +29,7 @@ impl Nirvana {
     /// Returns an error if the log file location cannot be determined or the
     /// file exists but cannot be opened.
     pub async fn open_logs() -> Result<LogReader, NirvanaError> {
-        let paths = AppPaths::resolve()?;
-        Ok(LogReader::open(paths.log_file).await?)
+        Ok(LogReader::open(Self::log_file()?).await?)
     }
 
     /// Truncates the log file. A missing file is skipped.
@@ -34,8 +42,7 @@ impl Nirvana {
     /// Returns an error if the log file location cannot be determined or the
     /// file exists but cannot be truncated.
     pub async fn clear_logs() -> Result<(), NirvanaError> {
-        let paths = AppPaths::resolve()?;
-        Ok(clear(&paths.log_file).await?)
+        Ok(clear(&Self::log_file()?).await?)
     }
 }
 

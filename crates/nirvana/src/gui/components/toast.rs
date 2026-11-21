@@ -1,8 +1,9 @@
 use std::sync::LazyLock;
 
-use iced::border::{self, Border};
+use iced::border::Border;
+use iced::widget::canvas::{self, Canvas, Path};
 use iced::widget::{Space, button, column, container, row, stack, svg, text};
-use iced::{Color, Element, Length, Padding, Theme};
+use iced::{Color, Element, Length, Padding, Point, Rectangle, Renderer, Size, Theme, mouse};
 
 use crate::gui::design_system::typography::{BODY, CAPTION};
 use crate::gui::design_system::{font_size, line_height, radius, space, tokens};
@@ -91,15 +92,9 @@ pub(in crate::gui) fn toast<'a, Message: Clone + 'a>(
             })
             .shadow(tokens.shadow_lg)
     });
-    let marker =
-        container(Space::new().width(MARKER_WIDTH).height(Length::Fill)).style(move |theme| {
-            container::Style::default()
-                .background(status_color(theme, kind))
-                .border(Border {
-                    radius: border::left(radius::MD),
-                    ..Border::default()
-                })
-        });
+    let marker = Canvas::new(Marker(kind))
+        .width(MARKER_WIDTH)
+        .height(Length::Fill);
     let close = container(close_button(on_close))
         .align_right(Length::Fill)
         .padding(
@@ -108,6 +103,34 @@ pub(in crate::gui) fn toast<'a, Message: Clone + 'a>(
                 .right(BORDER_WIDTH + space::S100),
         );
     stack![body, marker, close].into()
+}
+
+/// The left strip of a rounded rectangle, so its outer edge follows the
+/// toast corners while the inner edge stays straight.
+struct Marker(Kind);
+
+impl<Message> canvas::Program<Message> for Marker {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &Renderer,
+        theme: &Theme,
+        bounds: Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Vec<canvas::Geometry> {
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+        frame.with_clip(Rectangle::with_size(bounds.size()), |frame| {
+            let shape = Path::rounded_rectangle(
+                Point::ORIGIN,
+                Size::new(2.0 * radius::MD, bounds.height),
+                radius::MD.into(),
+            );
+            frame.fill(&shape, status_color(theme, self.0));
+        });
+        vec![frame.into_geometry()]
+    }
 }
 
 fn close_button<'a, Message: Clone + 'a>(on_close: Message) -> Element<'a, Message> {

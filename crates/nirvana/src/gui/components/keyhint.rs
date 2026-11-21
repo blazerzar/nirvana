@@ -1,8 +1,10 @@
 use iced::widget::{container, text};
-use iced::{Border, Element};
+use iced::{Border, Element, Padding};
 
 use crate::gui::design_system::typography::KBD;
 use crate::gui::design_system::{DISABLED_OPACITY, radius, space, tokens};
+
+pub(in crate::gui) const RETURN_KEY: &str = "↵";
 
 pub(in crate::gui) fn keyhint<'a, Message: 'a>(
     key: &'a str,
@@ -12,8 +14,13 @@ pub(in crate::gui) fn keyhint<'a, Message: 'a>(
     let label = KBD.text(key).style(move |theme| text::Style {
         color: Some(tokens(theme).text_accent.scale_alpha(opacity)),
     });
+    let top = if key == RETURN_KEY {
+        space::S025
+    } else {
+        space::S0
+    };
     container(label)
-        .padding([space::S0, space::S050])
+        .padding(Padding::from([space::S0, space::S050]).top(top))
         .style(move |theme| {
             let tokens = tokens(theme);
             container::Style::default()

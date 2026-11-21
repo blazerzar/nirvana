@@ -5,7 +5,7 @@ use iced::{Element, Length, Padding, Theme, padding};
 use super::bottom_bar::bottom_bar;
 use super::listing::side_pane;
 use crate::gui::app::Message;
-use crate::gui::components::{Button, number_badge, tracked_text};
+use crate::gui::components::{Button, RETURN_KEY, number_badge, tracked_text};
 use crate::gui::design_system::typography::{
     BODY, HEADING_PAGE, LABEL_CAPS, LABEL_STRONG, PARAGRAPH,
 };
@@ -87,7 +87,7 @@ fn welcome<'a>() -> Element<'a, Message> {
             }),
     )
     .max_width(440);
-    let open_web = Button::new("open nirvana web ↗").key("↵");
+    let open_web = Button::new("open nirvana web ↗").key(RETURN_KEY);
 
     let content = column![
         label,

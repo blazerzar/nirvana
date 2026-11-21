@@ -16,6 +16,8 @@ mise run jira:connect keyring
 mise run jira:connect plaintext --dc --bin target/release/nirvana
 mise run linear:connect keyring
 mise run dev:setup keyring
+mise run dev:gui-errors
+mise run dev:gui-errors bad-config
 ```
 
 The `seed` tasks create 100 issues in a project or team. The `connect` tasks
@@ -25,6 +27,11 @@ In dev mode the DB lives next to the binary (`target/debug/nirvana.db`), so it
 never touches your real data. Dev mode is on in debug builds or with
 `NIRVANA_DEV=1`, so a release binary given with `--bin` uses your real DB unless
 `NIRVANA_DEV=1` is set.
+
+`dev:gui-errors` opens the GUI in each error state it can reach from the
+outside, one after another, and prints what to check and click before each
+one. Every case runs with dev mode off against its own temporary directory, so
+neither the dev DB nor your real data is touched.
 
 ## Secrets
 

@@ -7,6 +7,7 @@ mod tracked_text;
 
 #[allow(unused_imports)]
 pub(super) use button::{Button, Size};
+pub(super) use keyhint::RETURN_KEY;
 use keyhint::keyhint;
 pub(super) use number_badge::number_badge;
 pub(super) use toast::toast;

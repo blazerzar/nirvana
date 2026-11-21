@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use iced::theme::Mode;
 use iced::{Element, Size, Subscription, Task, keyboard, system, window};
-use nirvana_core::{Nirvana, Theme};
-use tracing::error;
+use nirvana_core::{DomainError, Nirvana, NirvanaError, Theme};
+use tracing::{error, warn};
 
 use super::views;
 use crate::about;
@@ -19,6 +19,7 @@ pub(super) struct Gui {
     windows: BTreeMap<window::Id, Window>,
     logo_clicks: u32,
     loading_info: bool,
+    profile: Option<ProfileState>,
 }
 
 pub(super) enum Window {
@@ -32,11 +33,49 @@ pub(super) struct Info {
     pub(super) log_file: Option<PathBuf>,
 }
 
+pub(super) enum ProfileState {
+    Missing,
+    Active(Profile),
+}
+
+pub(super) struct Profile {
+    pub(super) name: String,
+    connections: usize,
+    tested: usize,
+    failed: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum Health {
+    Healthy,
+    Degraded,
+    Down,
+}
+
+impl Profile {
+    /// Returns `None` until every connection is tested, and for a profile
+    /// without connections.
+    pub(super) fn health(&self) -> Option<Health> {
+        (self.connections > 0 && self.tested == self.connections).then_some(
+            if self.failed == self.connections {
+                Health::Down
+            } else if self.failed == 0 {
+                Health::Healthy
+            } else {
+                Health::Degraded
+            },
+        )
+    }
+}
+
 #[derive(Clone)]
 pub(super) enum Message {
     Loaded(Result<Arc<Nirvana>, String>),
     Closed(window::Id),
     LogoClicked,
+    NoProfile,
+    ProfileLoaded(String, usize),
+    ConnectionTested(bool),
     InfoLoaded(Info),
     ShowLogs,
     SystemThemeChanged(Mode),
@@ -52,6 +91,7 @@ impl Gui {
             windows: BTreeMap::new(),
             logo_clicks: 0,
             loading_info: false,
+            profile: None,
         };
         let load = Task::perform(
             async {
@@ -69,12 +109,21 @@ impl Gui {
     pub(super) fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Loaded(nirvana) => {
-                match &nirvana {
-                    Ok(nirvana) => self.theme = nirvana.theme().unwrap_or_default(),
-                    Err(e) => error!("{e}"),
-                }
+                let check = match &nirvana {
+                    Ok(nirvana) => {
+                        self.theme = nirvana.theme().unwrap_or_default();
+                        check_profile(nirvana.clone())
+                    }
+                    Err(e) => {
+                        error!("{e}");
+                        Task::none()
+                    }
+                };
                 self.nirvana = Some(nirvana);
-                return self.open_window(Window::Main, views::MAIN_WINDOW_SIZE);
+                return Task::batch([
+                    self.open_window(Window::Main, views::MAIN_WINDOW_SIZE),
+                    check,
+                ]);
             }
             Message::Closed(id) => {
                 if let Some(Window::Main) = self.windows.remove(&id) {
@@ -86,6 +135,21 @@ impl Gui {
                 if self.logo_clicks == INFO_CLICKS {
                     self.logo_clicks = 0;
                     return self.show_info();
+                }
+            }
+            Message::NoProfile => self.profile = Some(ProfileState::Missing),
+            Message::ProfileLoaded(name, connections) => {
+                self.profile = Some(ProfileState::Active(Profile {
+                    name,
+                    connections,
+                    tested: 0,
+                    failed: 0,
+                }));
+            }
+            Message::ConnectionTested(passed) => {
+                if let Some(ProfileState::Active(profile)) = &mut self.profile {
+                    profile.tested += 1;
+                    profile.failed += usize::from(!passed);
                 }
             }
             Message::InfoLoaded(info) => {
@@ -126,7 +190,7 @@ impl Gui {
             Some(Window::Info(info)) => views::info(info),
             _ => {
                 let error = self.nirvana.as_ref().and_then(|n| n.as_ref().err());
-                views::main(error.map(String::as_str))
+                views::main(error.map(String::as_str), self.profile.as_ref())
             }
         }
     }
@@ -178,6 +242,41 @@ impl Gui {
     }
 }
 
+fn check_profile(nirvana: Arc<Nirvana>) -> Task<Message> {
+    let service = nirvana.clone();
+    Task::future(async move { service.active_profile().await }).then(move |active| {
+        let active = match active {
+            Ok(active) => active,
+            Err(NirvanaError::Domain(DomainError::NoActiveProfile)) => {
+                return Task::done(Message::NoProfile);
+            }
+            Err(e) => {
+                error!("{e}");
+                return Task::none();
+            }
+        };
+        let loaded = Message::ProfileLoaded(active.profile.name, active.connections.len());
+        let tests = active.connections.into_iter().map(|connection| {
+            Task::perform(
+                test_connection(nirvana.clone(), connection.model.name),
+                Message::ConnectionTested,
+            )
+        });
+        tests.fold(Task::done(loaded), Task::chain)
+    })
+}
+
+async fn test_connection(nirvana: Arc<Nirvana>, name: String) -> bool {
+    match nirvana.test_connection(&name).await {
+        Ok(()) => true,
+        Err(e) => {
+            let error = format!("{:#}", anyhow::Error::from(e));
+            warn!(%name, %error, "connection test failed");
+            false
+        }
+    }
+}
+
 async fn load_info(nirvana: Result<Arc<Nirvana>, String>) -> Info {
     let rows = match nirvana {
         Ok(nirvana) => nirvana
@@ -216,4 +315,43 @@ fn toggle_theme_shortcut(event: keyboard::Event) -> Option<Message> {
         .to_latin(physical_key)
         .is_some_and(|c| c.eq_ignore_ascii_case(&'t'));
     (modifiers.command() && modifiers.shift() && is_t).then_some(Message::ToggleTheme)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn profile(connections: usize, tested: usize, failed: usize) -> Profile {
+        Profile {
+            name: "work".into(),
+            connections,
+            tested,
+            failed,
+        }
+    }
+
+    #[test]
+    fn health_is_unknown_while_testing() {
+        assert_eq!(profile(2, 1, 1).health(), None);
+    }
+
+    #[test]
+    fn health_is_unknown_without_connections() {
+        assert_eq!(profile(0, 0, 0).health(), None);
+    }
+
+    #[test]
+    fn health_is_healthy_when_no_test_fails() {
+        assert_eq!(profile(2, 2, 0).health(), Some(Health::Healthy));
+    }
+
+    #[test]
+    fn health_is_degraded_when_some_tests_fail() {
+        assert_eq!(profile(3, 3, 1).health(), Some(Health::Degraded));
+    }
+
+    #[test]
+    fn health_is_down_when_all_tests_fail() {
+        assert_eq!(profile(2, 2, 2).health(), Some(Health::Down));
+    }
 }

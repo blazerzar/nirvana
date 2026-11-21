@@ -223,7 +223,11 @@ decisions here (rounding, single active connection, …).
 ### 6.2 Desktop screens (960×540)
 
 - **Header**: logo + "nirvana", profile pill (status dot + name), buttons
-  `[v] overview`, `[o] open web ↗`, `[,] settings`.
+  `[v] overview`, `[o] open web ↗`, `[,] settings`. The pill shows the active
+  profile, or "no profile yet" with a dashed border when no profile is active.
+  Every connection is tested when the GUI opens. The dot is neutral while
+  testing and when the profile has no connections, success when no test
+  fails, warning when some fail and danger when all fail.
 - **Main left pane**: when tracking, shows "tracking · since HH:MM" with a
   pulse dot, the ticket key (40px, accent), the ticket title (or "ticket name
   loads on next sync"), a big h:mm:ss timer (68px), and "today Xh · ⌃⌥X stops

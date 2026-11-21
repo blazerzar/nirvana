@@ -5,12 +5,15 @@ use super::bottom_bar::bottom_bar;
 use super::header::header;
 use super::listing::listing;
 use super::tracking::tracking;
-use crate::gui::app::Message;
+use crate::gui::app::{Message, ProfileState};
 use crate::gui::theme::tokens;
 
 pub(in crate::gui) const MAIN_WINDOW_SIZE: Size = Size::new(960.0, 540.0);
 
-pub(in crate::gui) fn main(error: Option<&str>) -> Element<'_, Message> {
+pub(in crate::gui) fn main<'a>(
+    error: Option<&'a str>,
+    profile: Option<&'a ProfileState>,
+) -> Element<'a, Message> {
     let error = error.map(|e| {
         container(text(e).style(|theme| text::Style {
             color: Some(tokens(theme).status_danger),
@@ -20,7 +23,7 @@ pub(in crate::gui) fn main(error: Option<&str>) -> Element<'_, Message> {
     });
     let body = responsive(|size| row![tracking(), listing(size.width)].into());
     let layout = Column::new()
-        .push(header())
+        .push(header(profile))
         .push(error)
         .push(body)
         .push(bottom_bar());

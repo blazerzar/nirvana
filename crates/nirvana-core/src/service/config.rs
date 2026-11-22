@@ -113,6 +113,38 @@ impl Nirvana {
         Ok(self.config().await?.gui.theme)
     }
 
+    /// Returns `core.port`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the config is unavailable.
+    pub async fn port(&self) -> Result<u16, NirvanaError> {
+        Ok(self.config().await?.core.port)
+    }
+
+    /// Returns `gui.server`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the config is unavailable.
+    pub async fn server(&self) -> Result<bool, NirvanaError> {
+        Ok(self.config().await?.gui.server)
+    }
+
+    /// Sets `gui.server` and saves the config.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the config is unavailable or cannot be saved.
+    pub async fn set_server(&self, server: bool) -> Result<(), NirvanaError> {
+        let mut config = self.config_mut().await?;
+        let mut edited = config.clone();
+        edited.gui.server = server;
+        edited.save(&self.paths).await?;
+        *config = edited;
+        Ok(())
+    }
+
     /// Returns the `idle` section.
     ///
     /// # Errors
@@ -214,7 +246,9 @@ mod tests {
             service.get_config(None).await.unwrap(),
             [
                 entry("core.profile", Some("test"), None),
+                entry("core.port", None, Some("5167")),
                 entry("gui.theme", None, Some("system")),
+                entry("gui.server", None, Some("true")),
                 entry("idle.enabled", Some("false"), Some("true")),
                 entry("idle.methods", None, Some(r#"["lock", "sleep", "input"]"#)),
                 entry("idle.threshold_secs", None, Some("300")),
@@ -276,6 +310,28 @@ mod tests {
         service.set_config("gui.theme", "dark").await.unwrap();
 
         assert_eq!(service.theme().await.unwrap(), Theme::Dark);
+    }
+
+    #[tokio::test]
+    async fn port_returns_saved_port() {
+        let service = TestService::new(&[]).await;
+        assert_eq!(service.port().await.unwrap(), 5167);
+
+        service.set_config("core.port", "8080").await.unwrap();
+
+        assert_eq!(service.port().await.unwrap(), 8080);
+    }
+
+    #[tokio::test]
+    async fn set_server_saves_server() {
+        let service = TestService::new(&[]).await;
+        assert!(service.server().await.unwrap());
+
+        service.set_server(false).await.unwrap();
+
+        assert!(!service.server().await.unwrap());
+        let saved = AppConfig::load(&service.paths).await.unwrap();
+        assert!(!saved.gui.server);
     }
 
     #[tokio::test]
@@ -343,6 +399,8 @@ mod tests {
         let content = std::fs::read_to_string(&service.paths.config_file).unwrap();
 
         for (key, value) in [
+            ("core.port", "70000"),
+            ("core.port", "x"),
             ("gui.theme", "blue"),
             ("idle.enabled", "yes"),
             ("idle.threshold_secs", "-1"),

@@ -19,6 +19,19 @@ async fn manages_config() {
     assert_eq!(nirvana.run(&["config", "get", "log.level"]).trim(), "debug");
     let default = nirvana.run(&["config", "get", "log.level", "--show-default"]);
     assert_eq!(default.trim(), "info");
+    let default = nirvana.run(&["config", "get", "core.port", "--show-default"]);
+    assert_eq!(default.trim(), "5167");
+    nirvana.run(&["config", "set", "core.port", "8080"]);
+    assert_eq!(nirvana.run(&["config", "get", "core.port"]).trim(), "8080");
+    nirvana.fail(
+        &["config", "set", "core.port", "70000"],
+        "invalid value for config key 'core.port'",
+    );
+    nirvana.run(&["config", "set", "gui.server", "false"]);
+    assert_eq!(
+        nirvana.run(&["config", "get", "gui.server"]).trim(),
+        "false"
+    );
     nirvana.fail(
         &["config", "set", "gui.theme", "blue"],
         "invalid value for config key 'gui.theme'",

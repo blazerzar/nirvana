@@ -29,7 +29,9 @@ const CURRENT_SCHEMA_VERSION: i64 = 2;
 /// Config keys as `section.key`, in the order of [`AppConfig`].
 pub(crate) const KEYS: &[&str] = &[
     "core.profile",
+    "core.port",
     "gui.theme",
+    "gui.server",
     "idle.enabled",
     "idle.methods",
     "idle.threshold_secs",
@@ -242,16 +244,46 @@ async fn existing_table(paths: &AppPaths) -> toml::Table {
         .unwrap_or_default()
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub(crate) struct CoreConfig {
     #[serde(default)]
     pub(crate) profile: Option<String>,
+    #[serde(default = "default_port")]
+    pub(crate) port: u16,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+impl Default for CoreConfig {
+    fn default() -> Self {
+        Self {
+            profile: None,
+            port: default_port(),
+        }
+    }
+}
+
+fn default_port() -> u16 {
+    5167
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub(crate) struct GuiConfig {
     #[serde(default)]
     pub(crate) theme: Theme,
+    #[serde(default = "default_server")]
+    pub(crate) server: bool,
+}
+
+impl Default for GuiConfig {
+    fn default() -> Self {
+        Self {
+            theme: Theme::default(),
+            server: default_server(),
+        }
+    }
+}
+
+fn default_server() -> bool {
+    true
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -360,9 +392,11 @@ schema_version = 2
 
 [core]
 profile = "work"
+port = 8080
 
 [gui]
 theme = "dark"
+server = false
 
 [idle]
 enabled = false
@@ -381,8 +415,12 @@ level = "debug"
                 schema_version: 2,
                 core: CoreConfig {
                     profile: Some("work".into()),
+                    port: 8080,
                 },
-                gui: GuiConfig { theme: Theme::Dark },
+                gui: GuiConfig {
+                    theme: Theme::Dark,
+                    server: false,
+                },
                 idle: IdleConfig {
                     enabled: false,
                     methods: vec![IdleMethod::Lock, IdleMethod::Input],
@@ -401,8 +439,12 @@ level = "debug"
             schema_version: CURRENT_SCHEMA_VERSION,
             core: CoreConfig {
                 profile: Some("work".into()),
+                port: 8080,
             },
-            gui: GuiConfig { theme: Theme::Dark },
+            gui: GuiConfig {
+                theme: Theme::Dark,
+                server: false,
+            },
             idle: IdleConfig {
                 enabled: false,
                 methods: vec![IdleMethod::Lock],
@@ -469,6 +511,7 @@ level = "debug"
         let config = AppConfig {
             core: CoreConfig {
                 profile: Some("work".into()),
+                ..CoreConfig::default()
             },
             ..AppConfig::default()
         };
@@ -524,6 +567,7 @@ level = "debug"
         let config = AppConfig {
             core: CoreConfig {
                 profile: Some("work".into()),
+                ..CoreConfig::default()
             },
             idle: IdleConfig {
                 enabled: default_idle_enabled(),
@@ -755,6 +799,7 @@ threshold_secs = 600
         let config = AppConfig {
             core: CoreConfig {
                 profile: Some("work".into()),
+                ..CoreConfig::default()
             },
             ..AppConfig::default()
         };

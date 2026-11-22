@@ -33,6 +33,7 @@ pub(super) fn parse(table: toml::Table) -> Result<AppConfig, ConfigError> {
         core: CoreConfig::default(),
         gui: GuiConfig {
             theme: map_theme(&config.gui.theme),
+            ..GuiConfig::default()
         },
         idle: config.idle,
         log: LogConfig::default(),
@@ -67,6 +68,7 @@ mod tests {
             AppConfig {
                 gui: GuiConfig {
                     theme: Theme::Light,
+                    ..GuiConfig::default()
                 },
                 ..AppConfig::default()
             }
@@ -80,7 +82,10 @@ mod tests {
         assert_eq!(
             config,
             AppConfig {
-                gui: GuiConfig { theme: Theme::Dark },
+                gui: GuiConfig {
+                    theme: Theme::Dark,
+                    ..GuiConfig::default()
+                },
                 idle: IdleConfig {
                     enabled: true,
                     methods: vec![IdleMethod::Lock],

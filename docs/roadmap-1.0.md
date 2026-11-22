@@ -301,7 +301,7 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [x] Analyze design if we should put it in nirvana or core: nirvana
       (implementation guide §3 #10).
 - [ ] Axum server bound to 127.0.0.1, Host and Origin checks, never return tokens.
-- [ ] Default port 5167, configurable.
+- [x] Default port 5167, configurable.
 
 ## GUI
 

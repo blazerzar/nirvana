@@ -1,5 +1,6 @@
 #[allow(dead_code)]
 mod button;
+mod dashed_border;
 mod dropdown;
 mod key_listener;
 mod keyhint;
@@ -13,6 +14,7 @@ mod tracked_text;
 
 #[allow(unused_imports)]
 pub(super) use button::{Button, Size};
+pub(super) use dashed_border::dashed_border;
 pub(super) use key_listener::KeyListener;
 pub(super) use keyhint::RETURN_KEY;
 use keyhint::keyhint;

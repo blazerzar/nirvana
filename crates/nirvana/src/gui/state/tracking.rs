@@ -60,11 +60,17 @@ impl State {
         self.last.as_ref()
     }
 
+    /// Returns the current timestamp in seconds, kept up to date while
+    /// tracking.
+    pub(in crate::gui) fn now(&self) -> i64 {
+        self.now_ms / 1000
+    }
+
     /// Returns the seconds the running slot has been running for.
     pub(in crate::gui) fn elapsed(&self) -> i64 {
-        self.running.as_ref().map_or(0, |running| {
-            (self.now_ms / 1000 - running.model.started_at).max(0)
-        })
+        self.running
+            .as_ref()
+            .map_or(0, |running| (self.now() - running.model.started_at).max(0))
     }
 
     pub(in crate::gui) fn pulse_opacity(&self) -> f32 {

@@ -1,24 +1,30 @@
 use iced::alignment::Vertical;
 use iced::widget::text::Wrapping;
 use iced::widget::text_input::{self, Icon, Side};
-use iced::widget::{Column, Space, button, column, container, row, space, text};
+use iced::widget::{Column, Space, button, column, container, row, space, stack, text};
 use iced::{Border, Color, Element, Length, Theme};
+use nirvana_core::Slot;
 
+use super::tracking::time_of_day;
 use crate::gui::app::Message;
 use crate::gui::components::{
-    Button, KeyListener, RETURN_KEY, Size, select, shortcut_hint, tracked_text,
+    Button, KeyListener, RETURN_KEY, Size, dashed_border, select, shortcut_hint, tracked_text,
 };
 use crate::gui::design_system::font::MONO;
 use crate::gui::design_system::typography::{BODY, BODY_LG, BODY_STRONG, CAPTION, LABEL_CAPS};
 use crate::gui::design_system::{radius, space as spacing, tokens};
 use crate::gui::shortcuts::recent_shortcut;
 use crate::gui::state::start::{self, Recent, TICKET_INPUT};
+use crate::gui::state::tracking::{self, clock};
 
 const INPUT_HEIGHT: f32 = 36.0;
 const RECENT_KEY_WIDTH: f32 = 64.0;
 const RECENT_BORDER_WIDTH: f32 = 1.0;
 
-pub(super) fn start(state: &start::State) -> Element<'_, Message> {
+pub(super) fn start<'a>(
+    state: &'a start::State,
+    tracking: &'a tracking::State,
+) -> Element<'a, Message> {
     let text_height = BODY_LG.line_height.to_absolute(BODY_LG.size.into()).0;
     let input = text_input::TextInput::new("e.g. NIR-12", state.key())
         .id(TICKET_INPUT)
@@ -67,7 +73,12 @@ pub(super) fn start(state: &start::State) -> Element<'_, Message> {
     .spacing(spacing::S025);
 
     let has_key = !state.key().trim().is_empty();
-    let mut start_button = Button::new("start").key(RETURN_KEY).primary();
+    let start_label = if tracking.is_tracking() {
+        "stop & start"
+    } else {
+        "start"
+    };
+    let mut start_button = Button::new(start_label).key(RETURN_KEY).primary();
     if has_key && !state.is_starting() {
         start_button = start_button.on_press(Message::Start(start::Message::Start));
     }
@@ -80,17 +91,30 @@ pub(super) fn start(state: &start::State) -> Element<'_, Message> {
     ]
     .spacing(spacing::S100);
 
+    let (label, running) = match tracking.running() {
+        Some(running) => (
+            "START A NEW TASK",
+            Some(column![
+                running_row(running, tracking.now(), tracking.elapsed()),
+                Space::new().height(spacing::S150),
+            ]),
+        ),
+        None => ("START TRACKING", None),
+    };
     let content = column![
-        tracked_text(LABEL_CAPS, "START TRACKING", tertiary),
+        tracked_text(LABEL_CAPS, label, tertiary),
         Space::new().height(spacing::S150),
-        ticket,
-        Space::new().height(spacing::S150),
+    ]
+    .push(running)
+    .extend([
+        ticket.into(),
+        Space::new().height(spacing::S150).into(),
         field_label("recent"),
-        Space::new().height(spacing::S050),
-        recent,
-        space::vertical(),
-        actions,
-    ];
+        Space::new().height(spacing::S050).into(),
+        recent.into(),
+        space::vertical().into(),
+        actions.into(),
+    ]);
     let content = container(content)
         .padding(spacing::S300)
         .width(Length::Fill)
@@ -101,6 +125,36 @@ pub(super) fn start(state: &start::State) -> Element<'_, Message> {
                 .map(|index| Message::Start(start::Message::RecentShortcut(index)))
         })
         .into()
+}
+
+/// The running ticket, which starting stops now, and its elapsed time.
+fn running_row(running: &Slot, now: i64, elapsed: i64) -> Element<'_, Message> {
+    let key = BODY_STRONG
+        .text(&running.ticket.ticket_key)
+        .wrapping(Wrapping::None)
+        .style(accent);
+    let title = BODY
+        .text(&running.ticket.title)
+        .wrapping(Wrapping::None)
+        .style(secondary);
+    let stops_at = BODY
+        .text(format!("stops at {}", time_of_day(now)))
+        .wrapping(Wrapping::None)
+        .style(secondary);
+    let elapsed = BODY.text(clock(elapsed)).style(primary);
+    let content = row![
+        key,
+        container(title).clip(true).width(Length::Fill),
+        stops_at,
+        elapsed
+    ]
+    .spacing(spacing::S100)
+    .align_y(Vertical::Center);
+    stack![
+        container(content).padding([spacing::S100, spacing::S150]),
+        dashed_border(radius::SM),
+    ]
+    .into()
 }
 
 fn field_label(label: &str) -> Element<'_, Message> {
@@ -190,5 +244,23 @@ fn input_style(theme: &Theme, status: text_input::Status) -> text_input::Style {
 fn tertiary(theme: &Theme) -> text::Style {
     text::Style {
         color: Some(tokens(theme).text_tertiary),
+    }
+}
+
+fn secondary(theme: &Theme) -> text::Style {
+    text::Style {
+        color: Some(tokens(theme).text_secondary),
+    }
+}
+
+fn primary(theme: &Theme) -> text::Style {
+    text::Style {
+        color: Some(tokens(theme).text_primary),
+    }
+}
+
+fn accent(theme: &Theme) -> text::Style {
+    text::Style {
+        color: Some(tokens(theme).text_accent),
     }
 }

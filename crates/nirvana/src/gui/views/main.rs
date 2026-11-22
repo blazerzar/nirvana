@@ -37,7 +37,7 @@ pub(in crate::gui) fn main<'a>(
             let body = responsive(move |size| match setup_step {
                 Some(step) => setup(size.width, step),
                 None if start_state.is_open() => {
-                    row![start(start_state), listing(size.width)].into()
+                    row![start(start_state, tracking_state), listing(size.width)].into()
                 }
                 None => row![tracking(tracking_state, theme_tokens), listing(size.width)].into(),
             });

@@ -1,17 +1,15 @@
-use std::cell::Cell;
 use std::sync::LazyLock;
 
 use iced::alignment::Vertical;
-use iced::widget::canvas::{self, LineDash, Path, Stroke};
 use iced::widget::text::LineHeight;
 use iced::widget::{column, container, mouse_area, row, rule, space, stack, svg, text};
-use iced::{Border, Color, Element, Length, Point, Rectangle, Renderer, Size, mouse, padding};
+use iced::{Border, Color, Element, padding};
 
 use super::border;
 use crate::gui::app::Message;
-use crate::gui::components::{Button, Size as ButtonSize};
+use crate::gui::components::{Button, Size as ButtonSize, dashed_border};
 use crate::gui::design_system::font::INTER_BOLD;
-use crate::gui::design_system::{Tokens, tokens};
+use crate::gui::design_system::{Tokens, radius, tokens};
 use crate::gui::state::profile::{Health, Profile, ProfileState};
 use crate::gui::state::{info, settings};
 
@@ -82,9 +80,7 @@ fn no_profile_chip<'a>() -> Element<'a, Message> {
         });
     let chip = stack![
         container(label).padding([4, 8]),
-        canvas::Canvas::new(DashedBorder)
-            .width(Length::Fill)
-            .height(Length::Fill),
+        dashed_border(radius::FULL),
     ];
 
     container(chip).padding(padding::left(4)).into()
@@ -131,47 +127,5 @@ fn health_color(tokens: &Tokens, health: Option<Health>) -> Color {
         Some(Health::Healthy) => tokens.status_success,
         Some(Health::Degraded) => tokens.status_warning,
         Some(Health::Down) => tokens.status_danger,
-    }
-}
-
-struct DashedBorder;
-
-#[derive(Default)]
-struct DashedBorderCache {
-    cache: canvas::Cache,
-    color: Cell<Option<Color>>,
-}
-
-impl canvas::Program<Message> for DashedBorder {
-    type State = DashedBorderCache;
-
-    fn draw(
-        &self,
-        state: &Self::State,
-        renderer: &Renderer,
-        theme: &iced::Theme,
-        bounds: Rectangle,
-        _cursor: mouse::Cursor,
-    ) -> Vec<canvas::Geometry> {
-        let color = tokens(theme).border_default;
-        if state.color.replace(Some(color)) != Some(color) {
-            state.cache.clear();
-        }
-        let geometry = state.cache.draw(renderer, bounds.size(), |frame| {
-            let border = Path::rounded_rectangle(
-                Point::new(0.5, 0.5),
-                Size::new(bounds.width - 1.0, bounds.height - 1.0),
-                (bounds.height / 2.0).into(),
-            );
-            let stroke = Stroke {
-                line_dash: LineDash {
-                    segments: &[3.0, 3.0],
-                    offset: 0,
-                },
-                ..Stroke::default().with_color(color).with_width(1.0)
-            };
-            frame.stroke(&border, stroke);
-        });
-        vec![geometry]
     }
 }

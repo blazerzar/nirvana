@@ -98,7 +98,7 @@ fn not_tracking<'a>(last: Option<&'a Slot>, tokens: &'static Tokens) -> Element<
 }
 
 /// Formats `timestamp` as local `HH:MM`.
-fn time_of_day(timestamp: i64) -> String {
+pub(super) fn time_of_day(timestamp: i64) -> String {
     DateTime::from_timestamp(timestamp, 0)
         .map(|utc| utc.with_timezone(&Local).format("%H:%M").to_string())
         .unwrap_or_default()

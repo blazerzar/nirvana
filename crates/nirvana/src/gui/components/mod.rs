@@ -24,7 +24,7 @@ use keyhint::keyhint;
 pub(super) use number_badge::number_badge;
 pub(super) use recent_chip::recent_chip;
 pub(super) use select::select;
-pub(super) use shortcut_hint::shortcut_hint;
+pub(super) use shortcut_hint::{MODIFIER, MODIFIER_NAME, shortcut_hint};
 pub(super) use toast::toast;
 pub(super) use toggle::toggle;
 pub(super) use toggle_chip::toggle_chip;

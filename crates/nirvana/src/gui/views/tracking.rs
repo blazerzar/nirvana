@@ -5,7 +5,7 @@ use iced::{Border, Element, Length, Theme, padding};
 use nirvana_core::Slot;
 
 use crate::gui::app::Message;
-use crate::gui::components::{recent_chip, tracked_text};
+use crate::gui::components::{MODIFIER, MODIFIER_NAME, recent_chip, tracked_text};
 use crate::gui::design_system::font::MONO_SEMIBOLD;
 use crate::gui::design_system::typography::{
     BODY, BODY_LG, CAPTION, DISPLAY_KEY, DISPLAY_TIMER, LABEL_CAPS, PARAGRAPH, TITLE,
@@ -16,20 +16,16 @@ use crate::time::format_duration;
 
 const PULSE_DOT_SIZE: f32 = 7.0;
 const HINT_MAX_WIDTH: f32 = 400.0;
-const RESUME_HINT: &str =
-    "resume it, or pick a ticket to start. logs stay on this machine until you publish.";
-const NOTHING_TODAY_HINT: &str = concat!(
-    "nothing tracked today yet. pick a recent ticket or press s to start. ",
-    "logs stay on this machine until you publish.",
-);
+const LOGS_HINT: &str = "logs stay on this machine until you publish.";
 
 pub(super) fn tracking<'a>(
     state: &'a tracking::State,
     tokens: &'static Tokens,
+    command_held: bool,
 ) -> Element<'a, Message> {
     let content = match state.running() {
-        Some(running) => tracking_now(running, state),
-        None => not_tracking(state, tokens),
+        Some(running) => tracking_now(running, state, command_held),
+        None => not_tracking(state, tokens, command_held),
     };
     container(content)
         .padding(spacing::S300)
@@ -38,7 +34,11 @@ pub(super) fn tracking<'a>(
         .into()
 }
 
-fn tracking_now<'a>(running: &'a Slot, state: &'a tracking::State) -> Element<'a, Message> {
+fn tracking_now<'a>(
+    running: &'a Slot,
+    state: &'a tracking::State,
+    command_held: bool,
+) -> Element<'a, Message> {
     let pulse = state.pulse_opacity();
     let dot = container(space())
         .width(PULSE_DOT_SIZE)
@@ -48,7 +48,7 @@ fn tracking_now<'a>(running: &'a Slot, state: &'a tracking::State) -> Element<'a
             border: Border::default().rounded(radius::FULL),
             ..container::Style::default()
         });
-    let recent = recent_chips(state);
+    let recent = recent_chips(state, command_held);
     let since = format!("TRACKING · SINCE {}", time_of_day(running.model.started_at));
     let label = row![dot, tracked_text(LABEL_CAPS, &since, tertiary)]
         .spacing(spacing::S100)
@@ -62,7 +62,7 @@ fn tracking_now<'a>(running: &'a Slot, state: &'a tracking::State) -> Element<'a
     ]
     .push(recent.map(|recent| {
         column![
-            CAPTION.text("switch to").style(tertiary),
+            CAPTION.text(switch_label(command_held)).style(tertiary),
             Space::new().height(spacing::S075),
             recent,
         ]
@@ -79,9 +79,13 @@ fn tracking_now<'a>(running: &'a Slot, state: &'a tracking::State) -> Element<'a
     .into()
 }
 
-fn not_tracking<'a>(state: &'a tracking::State, tokens: &'static Tokens) -> Element<'a, Message> {
+fn not_tracking<'a>(
+    state: &'a tracking::State,
+    tokens: &'static Tokens,
+    command_held: bool,
+) -> Element<'a, Message> {
     let last = state.last();
-    let recent = recent_chips(state);
+    let recent = recent_chips(state, command_held);
     let last_line = last.map(|last| {
         let stopped = last.model.stopped_at.map(time_of_day).unwrap_or_default();
         column![
@@ -101,9 +105,14 @@ fn not_tracking<'a>(state: &'a tracking::State, tokens: &'static Tokens) -> Elem
         ]
     });
     let hint = if last.is_some() {
-        RESUME_HINT
+        format!(
+            "resume it, or pick a recent ticket. hold {MODIFIER_NAME} for shortcuts. {LOGS_HINT}"
+        )
     } else {
-        NOTHING_TODAY_HINT
+        format!(
+            "nothing tracked today yet. pick a recent ticket, or hold {MODIFIER_NAME} for \
+             shortcuts. {LOGS_HINT}"
+        )
     };
     column![
         tracked_text(LABEL_CAPS, "○ NOT TRACKING", tertiary),
@@ -117,16 +126,26 @@ fn not_tracking<'a>(state: &'a tracking::State, tokens: &'static Tokens) -> Elem
     .into()
 }
 
+fn switch_label(command_held: bool) -> String {
+    if command_held {
+        format!("switch to · {MODIFIER_NAME} + number")
+    } else {
+        format!("switch to · hold {MODIFIER_NAME} for shortcuts")
+    }
+}
+
 /// The recent tickets as chips that wrap onto new lines and start the ticket
-/// when clicked, or `None` when there are none.
-fn recent_chips(state: &tracking::State) -> Option<Element<'_, Message>> {
+/// when clicked, with their shortcuts while ⌘ or Ctrl is held, or `None` when
+/// there are none.
+fn recent_chips(state: &tracking::State, command_held: bool) -> Option<Element<'_, Message>> {
     let recent = state.recent();
     if recent.is_empty() {
         return None;
     }
-    let chips = Row::with_children(recent.into_iter().map(|recent| {
+    let chips = Row::with_children(recent.into_iter().enumerate().map(|(index, recent)| {
         recent_chip(
             recent,
+            command_held.then(|| format!("{MODIFIER}{}", index + 1)),
             Message::Tracking(tracking::Message::Start(recent.clone())),
         )
     }))

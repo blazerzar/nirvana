@@ -12,16 +12,25 @@ pub(super) enum Shortcut {
     Settings(settings::Message),
     Start(start::Message),
     Tracking(tracking::Message),
+    /// Starts the shown recent ticket at the index.
+    Recent(usize),
 }
 
 pub(super) fn listen() -> Subscription<Message> {
     event::listen_with(|event, status, window| match (event, status) {
+        (Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)), _) => {
+            Some(Message::CommandHeld(modifiers.command()))
+        }
+        (Event::Window(window::Event::Unfocused), _) => Some(Message::CommandHeld(false)),
         (Event::Keyboard(event), Status::Ignored) => shortcut(event, window),
         _ => None,
     })
 }
 
 fn shortcut(event: keyboard::Event, window: window::Id) -> Option<Message> {
+    if let Some(index) = recent_shortcut(&event) {
+        return Some(Message::Shortcut(window, Shortcut::Recent(index)));
+    }
     let keyboard::Event::KeyPressed {
         key,
         physical_key,

@@ -22,6 +22,7 @@ pub(super) struct Gui {
     start: start::State,
     toast: toast::State,
     tracking: tracking::State,
+    command_held: bool,
 }
 
 /// `Nirvana` with the config values the GUI needs before its first frame.
@@ -41,6 +42,8 @@ pub(super) enum Message {
     Profile(profile::Message),
     Settings(settings::Message),
     Shortcut(window::Id, Shortcut),
+    /// ⌘ or Ctrl was pressed or released.
+    CommandHeld(bool),
     Start(start::Message),
     Toast(toast::Message),
     Tracking(tracking::Message),
@@ -59,6 +62,7 @@ impl Gui {
             start: start::State::default(),
             toast: toast::State::default(),
             tracking: tracking::State::default(),
+            command_held: false,
         };
         let load = Task::perform(async { load().await.map_err(Arc::new) }, Message::Loaded);
         let boot = appearance::system_mode()
@@ -142,9 +146,16 @@ impl Gui {
                     Shortcut::Tracking(message) if main_shown => {
                         return self.update(Message::Tracking(message));
                     }
-                    Shortcut::Start(_) | Shortcut::Tracking(_) => {}
+                    Shortcut::Recent(index) if main_shown && self.can_start() => {
+                        if let Some(&recent) = self.tracking.recent().get(index) {
+                            let start = tracking::Message::Start(recent.clone());
+                            return self.update(Message::Tracking(start));
+                        }
+                    }
+                    Shortcut::Start(_) | Shortcut::Tracking(_) | Shortcut::Recent(_) => {}
                 }
             }
+            Message::CommandHeld(held) => self.command_held = held,
             Message::Start(start::Message::Succeeded) => {
                 return self.update(Message::Tracking(tracking::Message::Load));
             }
@@ -234,6 +245,7 @@ impl Gui {
                 &self.tracking,
                 &self.start,
                 self.appearance.tokens(),
+                self.command_held,
                 toast,
             ),
         }

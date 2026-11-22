@@ -1,3 +1,4 @@
+use iced::widget::text::IntoFragment;
 use iced::widget::{container, text};
 use iced::{Border, Element, Padding};
 
@@ -8,10 +9,16 @@ pub(in crate::gui) const RETURN_KEY: &str = "↵";
 
 /// On a primary button the hint has no fill and takes the button's text color.
 pub(in crate::gui) fn keyhint<'a, Message: 'a>(
-    key: &'a str,
+    key: impl IntoFragment<'a>,
     disabled: bool,
     primary: bool,
 ) -> Element<'a, Message> {
+    let key = key.into_fragment();
+    let top = if key == RETURN_KEY {
+        space::S025
+    } else {
+        space::S0
+    };
     let opacity = if disabled { DISABLED_OPACITY } else { 1.0 };
     let label = KBD.text(key).style(move |theme| {
         let tokens = tokens(theme);
@@ -24,11 +31,6 @@ pub(in crate::gui) fn keyhint<'a, Message: 'a>(
             color: Some(color.scale_alpha(opacity)),
         }
     });
-    let top = if key == RETURN_KEY {
-        space::S025
-    } else {
-        space::S0
-    };
     container(label)
         .padding(Padding::from([space::S0, space::S050]).top(top))
         .style(move |theme| {

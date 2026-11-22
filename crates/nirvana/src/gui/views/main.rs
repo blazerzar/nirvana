@@ -24,6 +24,7 @@ pub(in crate::gui) fn main<'a>(
     tracking_state: &'a tracking::State,
     start_state: &'a start_form::State,
     theme_tokens: &'static Tokens,
+    command_held: bool,
     toast: Option<&'a Toast>,
 ) -> Element<'a, Message> {
     let header = header(profile, settings);
@@ -39,7 +40,11 @@ pub(in crate::gui) fn main<'a>(
                 None if start_state.is_open() => {
                     row![start(start_state, tracking_state), listing(size.width)].into()
                 }
-                None => row![tracking(tracking_state, theme_tokens), listing(size.width)].into(),
+                None => row![
+                    tracking(tracking_state, theme_tokens, command_held),
+                    listing(size.width)
+                ]
+                .into(),
             });
             (
                 body.into(),

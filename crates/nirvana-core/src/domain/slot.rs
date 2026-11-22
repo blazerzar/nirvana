@@ -1,7 +1,7 @@
 use chrono::Utc;
 use nirvana_entity::{connection, publish_entry, slot, ticket};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Slot {
     pub model: slot::Model,
     pub ticket: ticket::Model,

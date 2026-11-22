@@ -2,7 +2,7 @@ use std::error::Error;
 use std::io::{self, ErrorKind};
 use std::iter;
 
-use nirvana_core::NirvanaError;
+use nirvana_core::{DomainError, NirvanaError};
 
 const START_FAILED: &str = "couldn't start nirvana";
 const DATABASE_FAILED: &str = "couldn't open the database";
@@ -25,7 +25,7 @@ impl Failure {
     }
 
     pub(super) fn from_error(text: &'static str, error: &(dyn Error + 'static)) -> Self {
-        Self::new(text, io_reason(error))
+        Self::new(text, domain_reason(error).or_else(|| io_reason(error)))
     }
 
     pub(super) fn startup(error: &NirvanaError) -> Self {
@@ -52,6 +52,16 @@ pub(super) fn chain(error: &(dyn Error + 'static)) -> String {
         .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join(": ")
+}
+
+/// Returns why a domain error failed, for the errors a user can act on.
+fn domain_reason(error: &(dyn Error + 'static)) -> Option<&'static str> {
+    match error.downcast_ref::<NirvanaError>()? {
+        NirvanaError::Domain(DomainError::RunningSlotJustStarted) => {
+            Some("tracking started less than a second ago, try again")
+        }
+        _ => None,
+    }
 }
 
 /// Returns why the first I/O error in the chain of `error` failed, for the
@@ -84,6 +94,15 @@ mod tests {
         assert_eq!(
             Failure::startup(&error),
             Failure::new(START_FAILED, Some("no permission to access it"))
+        );
+    }
+
+    #[test]
+    fn running_slot_just_started_gives_a_reason() {
+        let error = NirvanaError::from(DomainError::RunningSlotJustStarted);
+        assert_eq!(
+            Failure::from_error(START_FAILED, &error).detail.as_deref(),
+            Some("tracking started less than a second ago, try again")
         );
     }
 

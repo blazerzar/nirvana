@@ -8,6 +8,7 @@ mod profile;
 mod settings;
 mod shortcuts;
 mod toast;
+mod tracking;
 mod views;
 mod windows;
 

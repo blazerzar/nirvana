@@ -19,6 +19,7 @@ pub(in crate::gui) struct Button<'a, Message> {
     label: Fragment<'a>,
     size: Size,
     primary: bool,
+    outline: bool,
     key: Option<&'a str>,
     hint: Option<Fragment<'a>>,
     on_press: Option<Message>,
@@ -30,6 +31,7 @@ impl<'a, Message> Button<'a, Message> {
             label: label.into_fragment(),
             size: Size::default(),
             primary: false,
+            outline: false,
             key: None,
             hint: None,
             on_press: None,
@@ -43,6 +45,12 @@ impl<'a, Message> Button<'a, Message> {
 
     pub(in crate::gui) fn primary(mut self) -> Self {
         self.primary = true;
+        self
+    }
+
+    /// Draws the border in the accent color.
+    pub(in crate::gui) fn outline(mut self) -> Self {
+        self.outline = true;
         self
     }
 
@@ -67,6 +75,7 @@ impl<'a, Message: Clone + 'a> From<Button<'a, Message>> for Element<'a, Message>
         let disabled = button.on_press.is_none();
         let opacity = if disabled { DISABLED_OPACITY } else { 1.0 };
         let primary = button.primary;
+        let outline = button.outline;
         let (height, padding, label_style) = match (button.size, primary) {
             (Size::Sm, false) => (30.0, space::S150, LABEL_SM),
             (Size::Sm, true) => (30.0, space::S150, BODY_STRONG),
@@ -101,12 +110,12 @@ impl<'a, Message: Clone + 'a> From<Button<'a, Message>> for Element<'a, Message>
             .height(height)
             .padding([space::S0, padding])
             .on_press_maybe(button.on_press)
-            .style(move |theme, status| style(theme, status, primary))
+            .style(move |theme, status| style(theme, status, primary, outline))
             .into()
     }
 }
 
-fn style(theme: &Theme, status: button::Status, primary: bool) -> button::Style {
+fn style(theme: &Theme, status: button::Status, primary: bool, outline: bool) -> button::Style {
     let tokens = tokens(theme);
     let (active, hovered, pressed, text, border) = if primary {
         (
@@ -122,7 +131,11 @@ fn style(theme: &Theme, status: button::Status, primary: bool) -> button::Style 
             tokens.fill_hover,
             tokens.fill_pressed,
             tokens.text_primary,
-            tokens.border_default,
+            if outline {
+                tokens.border_accent
+            } else {
+                tokens.border_default
+            },
         )
     };
     let (background, opacity) = match status {

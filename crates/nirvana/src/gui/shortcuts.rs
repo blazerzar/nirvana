@@ -3,7 +3,14 @@ use iced::keyboard::{self, key};
 use iced::{Subscription, window};
 
 use super::app::Message;
-use super::{appearance, settings};
+use super::{appearance, settings, tracking};
+
+/// A shortcut pressed in a window, handled by the main window only.
+#[derive(Clone)]
+pub(super) enum Shortcut {
+    Settings(settings::Message),
+    Tracking(tracking::Message),
+}
 
 pub(super) fn listen() -> Subscription<Message> {
     event::listen_with(|event, status, window| match (event, status) {
@@ -33,12 +40,17 @@ fn shortcut(event: keyboard::Event, window: window::Id) -> Option<Message> {
     if !modifiers.is_empty() {
         return None;
     }
-    let settings = match key {
-        keyboard::Key::Named(key::Named::Escape) => settings::Message::Close,
-        _ if is_comma(latin, physical_key) => settings::Message::Toggle,
+    let shortcut = match (key, latin) {
+        (keyboard::Key::Named(key::Named::Escape), _) => {
+            Shortcut::Settings(settings::Message::Close)
+        }
+        _ if is_comma(latin, physical_key) => Shortcut::Settings(settings::Message::Toggle),
+        (_, Some('x')) => Shortcut::Tracking(tracking::Message::Stop),
+        (_, Some('r')) => Shortcut::Tracking(tracking::Message::Resume),
+        (_, Some('w')) => Shortcut::Tracking(tracking::Message::Switch),
         _ => return None,
     };
-    Some(Message::Shortcut(window, settings))
+    Some(Message::Shortcut(window, shortcut))
 }
 
 /// Matches the comma by its character, or by its physical key on layouts

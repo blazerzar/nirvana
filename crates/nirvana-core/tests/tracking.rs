@@ -108,6 +108,34 @@ async fn start_switch_stop_resume() {
 }
 
 #[tokio::test]
+async fn previous_ticket_is_what_resume_and_switch_start() {
+    let Setup { service, now, _dir } = setup().await;
+    let previous_key = async || {
+        service
+            .previous_ticket()
+            .await
+            .unwrap()
+            .map(|ticket| ticket.ticket_key)
+    };
+    assert_eq!(previous_key().await, None);
+
+    service
+        .start_slot("NIR-1", Some(now - 3600), None)
+        .await
+        .unwrap();
+    assert_eq!(previous_key().await, None);
+
+    service
+        .start_slot("KAR-1", Some(now - 2400), None)
+        .await
+        .unwrap();
+    assert_eq!(previous_key().await.as_deref(), Some("NIR-1"));
+
+    service.stop_slot(Some(now - 1200)).await.unwrap();
+    assert_eq!(previous_key().await.as_deref(), Some("KAR-1"));
+}
+
+#[tokio::test]
 async fn edit_and_delete() {
     let Setup { service, now, _dir } = setup().await;
     let added = service

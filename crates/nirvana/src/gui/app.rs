@@ -6,9 +6,10 @@ use tracing::error;
 
 use super::failure::{Failure, chain};
 use super::profile::{self, ProfileState};
+use super::shortcuts::Shortcut;
 use super::toast::{self, Kind};
 use super::windows::{Window, Windows};
-use super::{appearance, info, settings, shortcuts, views};
+use super::{appearance, info, settings, shortcuts, tracking, views};
 
 pub(super) struct Gui {
     nirvana: Option<Result<Arc<Nirvana>, Failure>>,
@@ -18,6 +19,7 @@ pub(super) struct Gui {
     profile: Option<ProfileState>,
     settings: settings::State,
     toast: toast::State,
+    tracking: tracking::State,
 }
 
 /// `Nirvana` with the config values the GUI needs before its first frame.
@@ -36,9 +38,9 @@ pub(super) enum Message {
     Info(info::Message),
     Profile(profile::Message),
     Settings(settings::Message),
-    /// A settings shortcut pressed in the window.
-    Shortcut(window::Id, settings::Message),
+    Shortcut(window::Id, Shortcut),
     Toast(toast::Message),
+    Tracking(tracking::Message),
     Failed(window::Id, Failure),
 }
 
@@ -52,6 +54,7 @@ impl Gui {
             profile: None,
             settings: settings::State::default(),
             toast: toast::State::default(),
+            tracking: tracking::State::default(),
         };
         let load = Task::perform(async { load().await.map_err(Arc::new) }, Message::Loaded);
         let boot = appearance::system_mode()
@@ -99,8 +102,15 @@ impl Gui {
                 return self.show_error_in_main(Failure::profile(&e));
             }
             Message::Profile(message) => {
+                let loaded = matches!(message, profile::Message::Loaded(..));
                 profile::update(&mut self.profile, message);
-                return self.open_main().discard();
+                let open = self.open_main().discard();
+                let tracking = if loaded {
+                    self.update(Message::Tracking(tracking::Message::Load))
+                } else {
+                    Task::none()
+                };
+                return Task::batch([open, tracking]);
             }
             Message::Settings(settings::Message::Failed(failure)) => {
                 return self.show_error_in_main(failure);
@@ -111,12 +121,41 @@ impl Gui {
                     .update(message, self.nirvana.as_ref())
                     .map(Message::Settings);
             }
-            Message::Shortcut(window, message) => {
-                if self.windows.main() == Some(window) {
-                    return self.update(Message::Settings(message));
+            Message::Shortcut(window, shortcut) => {
+                if self.windows.main() != Some(window) {
+                    return Task::none();
+                }
+                match shortcut {
+                    Shortcut::Settings(message) => return self.update(Message::Settings(message)),
+                    Shortcut::Tracking(message) if self.settings.shown().is_none() => {
+                        return self.update(Message::Tracking(message));
+                    }
+                    Shortcut::Tracking(_) => {}
                 }
             }
             Message::Toast(message) => return self.toast.update(message).map(Message::Toast),
+            Message::Tracking(tracking::Message::Succeeded(text)) => {
+                if let Some(window) = self.windows.main() {
+                    return self
+                        .toast
+                        .update(toast::Message::Show {
+                            window,
+                            kind: Kind::Success,
+                            text,
+                            detail: None,
+                        })
+                        .map(Message::Toast);
+                }
+            }
+            Message::Tracking(tracking::Message::Failed(failure)) => {
+                return self.show_error_in_main(failure);
+            }
+            Message::Tracking(message) => {
+                return self
+                    .tracking
+                    .update(message, self.nirvana.as_ref())
+                    .map(Message::Tracking);
+            }
             Message::Failed(window, failure) => return self.show_error(window, failure),
         }
         Task::none()
@@ -157,7 +196,7 @@ impl Gui {
         let toast = self.toast.current(window);
         match self.windows.get(window) {
             Some(Window::Info(info)) => views::info(info, toast),
-            _ => views::main(self.profile.as_ref(), &self.settings, toast),
+            _ => views::main(self.profile.as_ref(), &self.settings, &self.tracking, toast),
         }
     }
 

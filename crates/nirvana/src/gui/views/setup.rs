@@ -1,8 +1,7 @@
 use iced::alignment::Vertical;
 use iced::widget::{column, container, row, text};
-use iced::{Element, Length, Padding, Theme, padding};
+use iced::{Element, Length, Padding, Theme};
 
-use super::bottom_bar::bottom_bar;
 use super::listing::side_pane;
 use crate::gui::app::Message;
 use crate::gui::components::{Button, RETURN_KEY, number_badge, tracked_text};
@@ -53,19 +52,6 @@ fn step<'a>(
     row![number_badge(number, active), column![title, description]]
         .spacing(space::S150)
         .into()
-}
-
-pub(super) fn setup_bottom_bar<'a>() -> Element<'a, Message> {
-    let hint = container(
-        BODY.text("available once a profile is connected")
-            .style(tertiary),
-    )
-    .padding(padding::left(space::S100));
-    bottom_bar(row![
-        Button::new("start").key("s"),
-        Button::new("stop").key("x"),
-        hint
-    ])
 }
 
 fn welcome<'a>() -> Element<'a, Message> {

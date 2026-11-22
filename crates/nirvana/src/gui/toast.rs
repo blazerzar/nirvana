@@ -5,7 +5,6 @@ use iced::{Task, window};
 
 #[derive(Clone, Copy)]
 pub(super) enum Kind {
-    #[allow(dead_code)]
     Success,
     #[allow(dead_code)]
     Warning,

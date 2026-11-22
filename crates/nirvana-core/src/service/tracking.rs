@@ -34,6 +34,25 @@ impl Nirvana {
         find_running_slot(&self.db, profile.id).await
     }
 
+    /// Returns the ticket that [`Nirvana::resume_slot`] or
+    /// [`Nirvana::switch_slot`] starts: the ticket of the last stopped slot,
+    /// on another ticket than the running slot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no profile is active, the config is unavailable or
+    /// a database query fails.
+    pub async fn previous_ticket(&self) -> Result<Option<ticket::Model>, NirvanaError> {
+        let profile = self.find_active_profile().await?;
+        let running = find_running_slot(&self.db, profile.id).await?;
+        find_previous_ticket(
+            &self.db,
+            profile.id,
+            running.map(|slot| slot.model.ticket_id),
+        )
+        .await
+    }
+
     /// Returns whether the active profile has any slots.
     ///
     /// # Errors
@@ -182,7 +201,9 @@ impl Nirvana {
         if find_running_slot(&txn, profile.id).await?.is_some() {
             return Err(DomainError::AlreadyTracking.into());
         }
-        let ticket = find_previous_ticket(&txn, profile.id, None).await?;
+        let ticket = find_previous_ticket(&txn, profile.id, None)
+            .await?
+            .ok_or(DomainError::NoPreviousTicket)?;
 
         let result = start_in_txn(&txn, profile.id, None, ticket, at).await?;
         txn.commit().await?;
@@ -208,7 +229,9 @@ impl Nirvana {
         let Some(running) = find_running_slot(&txn, profile.id).await? else {
             return Err(DomainError::NotTracking.into());
         };
-        let ticket = find_previous_ticket(&txn, profile.id, Some(running.model.ticket_id)).await?;
+        let ticket = find_previous_ticket(&txn, profile.id, Some(running.model.ticket_id))
+            .await?
+            .ok_or(DomainError::NoPreviousTicket)?;
 
         let result = start_in_txn(&txn, profile.id, Some(running), ticket, at).await?;
         txn.commit().await?;
@@ -488,7 +511,7 @@ async fn find_previous_ticket(
     db: &impl ConnectionTrait,
     profile_id: i64,
     skipped_ticket_id: Option<i64>,
-) -> Result<ticket::Model, NirvanaError> {
+) -> Result<Option<ticket::Model>, NirvanaError> {
     let Some((slot, ticket)) = slot::Entity::find_last_stopped(profile_id)
         .apply_if(skipped_ticket_id, |query, id| {
             query.filter(slot::COLUMN.ticket_id.ne(id))
@@ -497,9 +520,10 @@ async fn find_previous_ticket(
         .one(db)
         .await?
     else {
-        return Err(DomainError::NoPreviousTicket.into());
+        return Ok(None);
     };
-    Ok(ticket.ok_or(DomainError::TicketIdNotFound(slot.ticket_id))?)
+    let ticket = ticket.ok_or(DomainError::TicketIdNotFound(slot.ticket_id))?;
+    Ok(Some(ticket))
 }
 
 /// Stops the `running` slot of the profile and starts a slot on `ticket` at
@@ -787,6 +811,75 @@ mod tests {
             .await;
 
         assert!(service.has_slots().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn previous_ticket_is_none_without_slots() {
+        let (service, _) = setup().await;
+
+        assert_eq!(service.previous_ticket().await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn previous_ticket_is_none_with_only_a_running_slot() {
+        let (service, [ticket, _]) = setup().await;
+        service
+            .seed_slot(&ticket, Utc::now().timestamp() - 600, None)
+            .await;
+
+        assert_eq!(service.previous_ticket().await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn previous_ticket_returns_ticket_of_last_stopped_slot() {
+        let (service, [first, last]) = setup().await;
+        let now = Utc::now().timestamp();
+        service.seed_slot(&last, now - 3600, Some(now - 3000)).await;
+        service
+            .seed_slot(&first, now - 2400, Some(now - 1800))
+            .await;
+        service.seed_slot(&last, now - 1200, Some(now - 600)).await;
+
+        assert_eq!(service.previous_ticket().await.unwrap(), Some(last));
+    }
+
+    #[tokio::test]
+    async fn previous_ticket_skips_running_ticket() {
+        let (service, [previous, current]) = setup().await;
+        let now = Utc::now().timestamp();
+        service
+            .seed_slot(&previous, now - 3600, Some(now - 3000))
+            .await;
+        service
+            .seed_slot(&current, now - 2400, Some(now - 1800))
+            .await;
+        service.seed_slot(&current, now - 1200, None).await;
+
+        assert_eq!(service.previous_ticket().await.unwrap(), Some(previous));
+    }
+
+    #[tokio::test]
+    async fn previous_ticket_is_none_when_only_running_ticket_was_stopped() {
+        let (service, [ticket, _]) = setup().await;
+        let now = Utc::now().timestamp();
+        service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
+        service.seed_slot(&ticket, now - 300, None).await;
+
+        assert_eq!(service.previous_ticket().await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn previous_ticket_ignores_slots_of_other_profiles() {
+        let (mut service, [ticket, _]) = setup().await;
+        let now = Utc::now().timestamp();
+        service
+            .seed_slot(&ticket, now - 1200, Some(now - 600))
+            .await;
+        service.use_profile("work").await;
+
+        assert_eq!(service.previous_ticket().await.unwrap(), None);
     }
 
     #[tokio::test]

@@ -8,7 +8,7 @@ use super::failure::{Failure, chain};
 use super::shortcuts::Shortcut;
 use super::state::profile::{self, ProfileState};
 use super::state::toast::{self, Kind};
-use super::state::{appearance, info, settings, start, tracking};
+use super::state::{appearance, info, overview, settings, start, tracking};
 use super::windows::{Window, Windows};
 use super::{shortcuts, views};
 
@@ -17,6 +17,7 @@ pub(super) struct Gui {
     windows: Windows,
     appearance: appearance::State,
     info: info::State,
+    overview: overview::State,
     profile: Option<ProfileState>,
     settings: settings::State,
     start: start::State,
@@ -50,6 +51,7 @@ pub(super) enum Message {
     Closed(window::Id),
     Appearance(appearance::Message),
     Info(info::Message),
+    Overview(overview::Message),
     Profile(profile::Message),
     Settings(settings::Message),
     /// Shows the screen, or the main screen when it is already shown.
@@ -70,6 +72,7 @@ impl Gui {
             windows: Windows::default(),
             appearance: appearance::State::default(),
             info: info::State::default(),
+            overview: overview::State::default(),
             profile: None,
             settings: settings::State::default(),
             start: start::State::default(),
@@ -150,8 +153,20 @@ impl Gui {
                     screen
                 };
                 self.show(shown);
+                if shown == Screen::Overview {
+                    return self.update(Message::Overview(overview::Message::Load));
+                }
             }
             Message::ToggleScreen(_) => {}
+            Message::Overview(overview::Message::Failed(failure)) => {
+                return self.show_error_in_main(failure);
+            }
+            Message::Overview(message) => {
+                return self
+                    .overview
+                    .update(message, self.nirvana.as_ref())
+                    .map(Message::Overview);
+            }
             Message::Shortcut(window, shortcut) => {
                 if self.windows.main() != Some(window) {
                     return Task::none();
@@ -209,10 +224,19 @@ impl Gui {
                 return self.show_error_in_main(failure);
             }
             Message::Tracking(message) => {
-                return self
+                let reload = matches!(message, tracking::Message::Loaded(_))
+                    && self.screen == Screen::Overview;
+                let update = self
                     .tracking
                     .update(message, self.nirvana.as_ref())
                     .map(Message::Tracking);
+                if reload {
+                    return Task::batch([
+                        update,
+                        self.update(Message::Overview(overview::Message::Load)),
+                    ]);
+                }
+                return update;
             }
             Message::Failed(window, failure) => return self.show_error(window, failure),
         }
@@ -284,7 +308,11 @@ impl Gui {
                         views::settings_bar(),
                     ),
                     (Screen::Overview, _, Some(ProfileState::Active(profile))) => {
-                        (views::overview_view(&profile.name), views::overview_bar())
+                        let stats = self.overview.stats(self.tracking.elapsed());
+                        (
+                            views::overview_view(&profile.name, stats),
+                            views::overview_bar(),
+                        )
                     }
                     _ => views::main_screen(
                         self.profile.as_ref(),

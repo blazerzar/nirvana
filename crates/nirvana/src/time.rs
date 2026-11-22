@@ -1,13 +1,27 @@
 use anyhow::Context;
-use chrono::{Local, NaiveTime};
+use chrono::{DateTime, Local, NaiveDate, NaiveTime};
 
 /// Returns the Unix timestamp of today 00:00 in local time.
 pub(crate) fn today_start() -> anyhow::Result<i64> {
-    Ok(Local::now()
-        .with_time(NaiveTime::MIN)
+    day_start(Local::now().date_naive())
+}
+
+/// Returns the Unix timestamp of `date` 00:00 in local time.
+pub(crate) fn day_start(date: NaiveDate) -> anyhow::Result<i64> {
+    Ok(date
+        .and_time(NaiveTime::MIN)
+        .and_local_timezone(Local)
         .earliest()
-        .context("today 00:00 does not exist in the local time zone")?
+        .with_context(|| format!("{date} 00:00 does not exist in the local time zone"))?
         .timestamp())
+}
+
+/// Returns the local date of `timestamp`.
+pub(crate) fn local_date(timestamp: i64) -> anyhow::Result<NaiveDate> {
+    Ok(DateTime::from_timestamp(timestamp, 0)
+        .context("time is out of range")?
+        .with_timezone(&Local)
+        .date_naive())
 }
 
 /// Formats `seconds` as hours and minutes, e.g. `1h 5m` or `45m`.

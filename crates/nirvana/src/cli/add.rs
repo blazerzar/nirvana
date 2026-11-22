@@ -5,8 +5,8 @@ use nirvana_core::Nirvana;
 use tracing::info;
 
 use crate::cli::AddArgs;
-use crate::cli::time::{local_date, parse_duration, parse_time};
-use crate::time::format_duration;
+use crate::cli::time::{parse_duration, parse_time};
+use crate::time::{format_duration, local_date};
 
 pub(crate) async fn run(args: AddArgs) -> anyhow::Result<()> {
     let started_at = parse_time(&args.start, Local::now().date_naive())?;

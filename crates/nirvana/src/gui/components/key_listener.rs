@@ -4,26 +4,42 @@ use iced::advanced::{Clipboard, Shell, overlay, renderer};
 use iced::keyboard::key::Named;
 use iced::{Element, Event, Length, Rectangle, Size, Vector, keyboard, mouse};
 
-/// Publishes `on_escape` when `content` captures an Esc press, like a
+type KeyHandler<'a, Message> = Box<dyn Fn(&keyboard::Event) -> Option<Message> + 'a>;
+
+/// Listens to the key presses of `content`. `on_key` sees every key event
+/// before `content` does, and the event is captured when it publishes.
+/// `on_escape` is published when `content` captures an Esc press, like a
 /// focused text input does to drop its focus.
-pub(in crate::gui) struct OnEscape<'a, Message> {
+pub(in crate::gui) struct KeyListener<'a, Message> {
     content: Element<'a, Message>,
-    on_escape: Message,
+    on_key: Option<KeyHandler<'a, Message>>,
+    on_escape: Option<Message>,
 }
 
-impl<'a, Message> OnEscape<'a, Message> {
-    pub(in crate::gui) fn new(
-        content: impl Into<Element<'a, Message>>,
-        on_escape: Message,
-    ) -> Self {
+impl<'a, Message> KeyListener<'a, Message> {
+    pub(in crate::gui) fn new(content: impl Into<Element<'a, Message>>) -> Self {
         Self {
             content: content.into(),
-            on_escape,
+            on_key: None,
+            on_escape: None,
         }
+    }
+
+    pub(in crate::gui) fn on_key(
+        mut self,
+        on_key: impl Fn(&keyboard::Event) -> Option<Message> + 'a,
+    ) -> Self {
+        self.on_key = Some(Box::new(on_key));
+        self
+    }
+
+    pub(in crate::gui) fn on_escape(mut self, message: Message) -> Self {
+        self.on_escape = Some(message);
+        self
     }
 }
 
-impl<Message: Clone> Widget<Message, iced::Theme, iced::Renderer> for OnEscape<'_, Message> {
+impl<Message: Clone> Widget<Message, iced::Theme, iced::Renderer> for KeyListener<'_, Message> {
     fn children(&self) -> Vec<Tree> {
         vec![Tree::new(&self.content)]
     }
@@ -58,6 +74,13 @@ impl<Message: Clone> Widget<Message, iced::Theme, iced::Renderer> for OnEscape<'
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
+        if let (Some(on_key), Event::Keyboard(key_event)) = (&self.on_key, event)
+            && let Some(message) = on_key(key_event)
+        {
+            shell.publish(message);
+            shell.capture_event();
+            return;
+        }
         let was_captured = shell.is_event_captured();
         self.content.as_widget_mut().update(
             &mut tree.children[0],
@@ -76,8 +99,12 @@ impl<Message: Clone> Widget<Message, iced::Theme, iced::Renderer> for OnEscape<'
                 ..
             })
         );
-        if is_escape && !was_captured && shell.is_event_captured() {
-            shell.publish(self.on_escape.clone());
+        if let Some(on_escape) = &self.on_escape
+            && is_escape
+            && !was_captured
+            && shell.is_event_captured()
+        {
+            shell.publish(on_escape.clone());
         }
     }
 
@@ -149,8 +176,8 @@ impl<Message: Clone> Widget<Message, iced::Theme, iced::Renderer> for OnEscape<'
     }
 }
 
-impl<'a, Message: Clone + 'a> From<OnEscape<'a, Message>> for Element<'a, Message> {
-    fn from(on_escape: OnEscape<'a, Message>) -> Self {
-        Element::new(on_escape)
+impl<'a, Message: Clone + 'a> From<KeyListener<'a, Message>> for Element<'a, Message> {
+    fn from(listener: KeyListener<'a, Message>) -> Self {
+        Element::new(listener)
     }
 }

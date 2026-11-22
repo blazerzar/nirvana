@@ -5,10 +5,13 @@ use iced::widget::{Column, Space, button, column, container, row, space, text};
 use iced::{Border, Color, Element, Length, Theme};
 
 use crate::gui::app::Message;
-use crate::gui::components::{Button, OnEscape, RETURN_KEY, Size, select, tracked_text};
+use crate::gui::components::{
+    Button, KeyListener, RETURN_KEY, Size, select, shortcut_hint, tracked_text,
+};
 use crate::gui::design_system::font::MONO;
 use crate::gui::design_system::typography::{BODY, BODY_LG, BODY_STRONG, CAPTION, LABEL_CAPS};
 use crate::gui::design_system::{radius, space as spacing, tokens};
+use crate::gui::shortcuts::recent_shortcut;
 use crate::gui::state::start::{self, Recent, TICKET_INPUT};
 
 const INPUT_HEIGHT: f32 = 36.0;
@@ -33,7 +36,7 @@ pub(super) fn start(state: &start::State) -> Element<'_, Message> {
         .line_height(BODY_LG.line_height)
         .padding([(INPUT_HEIGHT - text_height) / 2.0, spacing::S150])
         .style(input_style);
-    let input = OnEscape::new(input, Message::Start(start::Message::Cancel));
+    let input = KeyListener::new(input).on_escape(Message::Start(start::Message::Cancel));
     let connection = state.connection_choices().map(|choices| {
         let connection = select(
             Size::Lg,
@@ -57,8 +60,9 @@ pub(super) fn start(state: &start::State) -> Element<'_, Message> {
     let recent = Column::with_children(
         state
             .recent()
-            .iter()
-            .map(|recent| recent_row(recent, recent.key.eq_ignore_ascii_case(state.key().trim()))),
+            .into_iter()
+            .enumerate()
+            .map(|(index, recent)| recent_row(recent, index, state.is_picked(recent))),
     )
     .spacing(spacing::S025);
 
@@ -87,10 +91,15 @@ pub(super) fn start(state: &start::State) -> Element<'_, Message> {
         space::vertical(),
         actions,
     ];
-    container(content)
+    let content = container(content)
         .padding(spacing::S300)
         .width(Length::Fill)
-        .height(Length::Fill)
+        .height(Length::Fill);
+    KeyListener::new(content)
+        .on_key(|event| {
+            recent_shortcut(event)
+                .map(|index| Message::Start(start::Message::RecentShortcut(index)))
+        })
         .into()
 }
 
@@ -98,7 +107,7 @@ fn field_label(label: &str) -> Element<'_, Message> {
     CAPTION.text(label).style(tertiary).into()
 }
 
-fn recent_row(recent: &Recent, is_selected: bool) -> Element<'_, Message> {
+fn recent_row(recent: &Recent, index: usize, is_selected: bool) -> Element<'_, Message> {
     let key = container(
         BODY_STRONG
             .text(&recent.key)
@@ -122,10 +131,15 @@ fn recent_row(recent: &Recent, is_selected: bool) -> Element<'_, Message> {
                 tokens(theme).text_secondary
             }),
         });
+    let shortcut = shortcut_hint((index + 1).to_string(), is_selected);
     button(
-        row![key, container(title).clip(true)]
-            .spacing(spacing::S100)
-            .align_y(Vertical::Center),
+        row![
+            key,
+            container(title).clip(true).width(Length::Fill),
+            shortcut
+        ]
+        .spacing(spacing::S100)
+        .align_y(Vertical::Center),
     )
     .width(Length::Fill)
     .padding([spacing::S075 + RECENT_BORDER_WIDTH, spacing::S100])

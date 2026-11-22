@@ -13,8 +13,8 @@ const START_FAILED: &str = "couldn't start tracking";
 const RECENT_LIMIT: usize = 5;
 pub(in crate::gui) const TICKET_INPUT: Id = Id::new("start-ticket");
 
-/// The start form: the ticket key, the connection to search in and the
-/// recently worked on tickets.
+/// The start form: the ticket key, the connection to search in, the tickets
+/// by when they were last worked on and the one picked from them.
 #[derive(Default)]
 pub(in crate::gui) struct State {
     open: bool,
@@ -24,9 +24,10 @@ pub(in crate::gui) struct State {
     connection_open: bool,
     connections: Vec<String>,
     recent: Vec<Recent>,
+    picked: Option<Recent>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub(in crate::gui) struct Recent {
     pub(in crate::gui) key: String,
     pub(in crate::gui) title: String,
@@ -60,6 +61,8 @@ pub(in crate::gui) enum Message {
     CloseConnection,
     Connection(ConnectionChoice),
     Recent(Recent),
+    /// Picks the shown recent ticket at the index.
+    RecentShortcut(usize),
     Start,
     Started(Result<(), Failure>),
     Succeeded,
@@ -100,19 +103,37 @@ impl State {
         })
     }
 
-    pub(in crate::gui) fn recent(&self) -> &[Recent] {
-        &self.recent
+    /// Returns the most recent tickets that fuzzily match the key.
+    pub(in crate::gui) fn recent(&self) -> Vec<&Recent> {
+        let query = self.key.trim().to_lowercase();
+        self.recent
+            .iter()
+            .filter(|recent| recent.matches(&query))
+            .take(RECENT_LIMIT)
+            .collect()
+    }
+
+    pub(in crate::gui) fn is_picked(&self, recent: &Recent) -> bool {
+        self.picked.as_ref() == Some(recent)
+    }
+
+    /// Sets the typed key, which no longer is a picked recent ticket.
+    fn set_key(&mut self, key: String) {
+        self.key = key;
+        self.picked = None;
     }
 
     /// Fills in the key of `recent` and, when the connection choices are
     /// shown, its connection.
     fn pick(&mut self, recent: Recent) {
-        self.key = recent.key;
+        self.key.clone_from(&recent.key);
         if self.connection_choices().is_some() {
             self.connection = recent
                 .connection
+                .clone()
                 .map_or(ConnectionChoice::All, ConnectionChoice::Named);
         }
+        self.picked = Some(recent);
     }
 
     pub(in crate::gui) fn update(
@@ -136,14 +157,24 @@ impl State {
                 self.connections = connections;
                 self.recent = recent;
             }
-            Message::KeyChanged(key) => self.key = key,
+            Message::KeyChanged(key) => self.set_key(key),
             Message::ToggleConnection => self.connection_open = !self.connection_open,
             Message::CloseConnection => self.connection_open = false,
             Message::Connection(connection) => {
                 self.connection = connection;
                 self.connection_open = false;
+                self.picked = None;
             }
-            Message::Recent(recent) => self.pick(recent),
+            Message::Recent(recent) => {
+                self.pick(recent);
+                return operation::focus(TICKET_INPUT);
+            }
+            Message::RecentShortcut(index) => {
+                if let Some(recent) = self.recent().get(index).copied().cloned() {
+                    self.pick(recent);
+                    return operation::focus(TICKET_INPUT);
+                }
+            }
             Message::Start => {
                 let key = self.key.trim().to_owned();
                 if key.is_empty() || self.starting {
@@ -182,7 +213,6 @@ fn load(nirvana: Arc<Nirvana>) -> Task<Message> {
             .collect();
         let recent = tickets
             .into_iter()
-            .take(RECENT_LIMIT)
             .map(|(ticket, connection)| Recent {
                 key: ticket.ticket_key,
                 title: ticket.title,
@@ -212,6 +242,21 @@ fn start(nirvana: Arc<Nirvana>, key: String, connection: Option<String>) -> Task
     })
 }
 
+impl Recent {
+    /// Returns whether the lowercase `query` is empty, its characters appear
+    /// in order in the key or it is part of the title, ignoring case.
+    fn matches(&self, query: &str) -> bool {
+        query.is_empty()
+            || is_subsequence(query, &self.key.to_lowercase())
+            || self.title.to_lowercase().contains(query)
+    }
+}
+
+fn is_subsequence(query: &str, text: &str) -> bool {
+    let mut text = text.chars();
+    query.chars().all(|q| text.any(|t| t == q))
+}
+
 fn failure(text: &'static str, error: &NirvanaError) -> Failure {
     error!("{}", chain(error));
     Failure::from_error(text, error)
@@ -229,11 +274,72 @@ mod tests {
     }
 
     fn recent(connection: Option<&str>) -> Recent {
+        ticket("NIR-1", "title", connection)
+    }
+
+    fn ticket(key: &str, title: &str, connection: Option<&str>) -> Recent {
         Recent {
-            key: "NIR-1".into(),
-            title: "title".into(),
+            key: key.into(),
+            title: title.into(),
             connection: connection.map(str::to_owned),
         }
+    }
+
+    fn keys(state: &State) -> Vec<&str> {
+        state
+            .recent()
+            .into_iter()
+            .map(|recent| recent.key.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn recent_shows_the_most_recent_without_a_key() {
+        let state = State {
+            recent: (1..=7)
+                .map(|n| ticket(&format!("NIR-{n}"), "title", None))
+                .collect(),
+            ..State::default()
+        };
+        assert_eq!(keys(&state), ["NIR-1", "NIR-2", "NIR-3", "NIR-4", "NIR-5"]);
+    }
+
+    #[test]
+    fn recent_matches_the_key_fuzzily_and_the_title() {
+        let state = State {
+            key: " nr1 ".into(),
+            recent: vec![
+                ticket("NIR-12", "timer", None),
+                ticket("DES-50", "status bar", None),
+                ticket("DES-51", "nr1 notes", None),
+                ticket("NIR-3", "connection list", None),
+            ],
+            ..State::default()
+        };
+        assert_eq!(keys(&state), ["NIR-12", "DES-51"]);
+    }
+
+    #[test]
+    fn picking_marks_only_the_picked_ticket() {
+        let mut state = state(&["jira", "linear"]);
+        state.pick(recent(Some("jira")));
+        assert!(state.is_picked(&recent(Some("jira"))));
+        assert!(!state.is_picked(&recent(Some("linear"))));
+    }
+
+    #[test]
+    fn typing_the_key_of_a_recent_ticket_does_not_pick_it() {
+        let mut state = state(&["jira"]);
+        state.set_key("NIR-1".into());
+        assert!(!state.is_picked(&recent(Some("jira"))));
+    }
+
+    #[test]
+    fn typing_after_picking_clears_the_pick() {
+        let mut state = state(&["jira"]);
+        state.pick(recent(Some("jira")));
+        state.set_key("NIR-12".into());
+        assert!(!state.is_picked(&recent(Some("jira"))));
     }
 
     #[test]

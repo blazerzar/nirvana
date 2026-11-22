@@ -291,7 +291,7 @@ thorough review to make sure we are not bringing any problems into the next stag
 
 ## Design tokens
 
-- [ ] Single Rust source of v6 tokens (light, dark) used by Iced theme and
+- [x] Single Rust source of v6 tokens (light, dark) used by Iced theme and
       generated web CSS variables.
 - [x] Bundle JetBrains Mono and Inter fonts.
 

@@ -1,42 +1,8 @@
+use iced::Theme;
 use iced::theme::{Base, Mode};
-use iced::{Color, Shadow, Theme, Vector, color};
 
-#[allow(dead_code)]
-pub(super) struct Tokens {
-    pub brand: Color,
-    pub accent: Color,
-    pub bg_default: Color,
-    pub bg_subtle: Color,
-    pub bg_muted: Color,
-    pub bg_frame: Color,
-    pub bg_raised: Color,
-    pub bg_inverse: Color,
-    pub bg_overlay: Color,
-    pub text_primary: Color,
-    pub text_secondary: Color,
-    pub text_tertiary: Color,
-    pub text_disabled: Color,
-    pub text_accent: Color,
-    pub text_on_accent: Color,
-    pub text_inverse: Color,
-    pub border_default: Color,
-    pub border_accent: Color,
-    pub border_focus: Color,
-    pub fill_accent: Color,
-    pub fill_accent_subtle: Color,
-    pub fill_neutral: Color,
-    pub fill_neutral_strong: Color,
-    pub fill_hover: Color,
-    pub fill_pressed: Color,
-    pub fill_accent_hover: Color,
-    pub fill_accent_pressed: Color,
-    pub status_success: Color,
-    pub status_warning: Color,
-    pub status_danger: Color,
-    pub shadow_sm: Shadow,
-    pub shadow_lg: Shadow,
-    pub disabled_opacity: f32,
-}
+use crate::tokens::{DARK, LIGHT};
+pub(super) use crate::tokens::{Tokens, font_size, radius, space, tracking};
 
 impl Tokens {
     pub(super) fn opacity(&self, enabled: bool) -> f32 {
@@ -52,126 +18,31 @@ pub(super) fn tokens(theme: &Theme) -> &'static Tokens {
     }
 }
 
-const LIGHT: Tokens = Tokens {
-    brand: color!(0xFFCB50),
-    accent: color!(0xBE7E12),
-    bg_default: color!(0xFFFCF7),
-    bg_subtle: color!(0xFBF7F0),
-    bg_muted: color!(0xF3EDE3),
-    bg_frame: color!(0xF5F0E8),
-    bg_raised: color!(0xFFFFFF),
-    bg_inverse: color!(0x1F1A14),
-    bg_overlay: color!(0x1F1A14, 0.18),
-    text_primary: color!(0x1F1A14),
-    text_secondary: color!(0x57534C),
-    text_tertiary: color!(0x706B63),
-    text_disabled: color!(0xBEB8AE),
-    text_accent: color!(0xA35300),
-    text_on_accent: color!(0x1F1A14),
-    text_inverse: color!(0xFFFCF7),
-    border_default: color!(0xE6E0D6),
-    border_accent: color!(0xF0BF4B),
-    border_focus: color!(0xBE7E12),
-    fill_accent: color!(0xFFDB85),
-    fill_accent_subtle: color!(0xFDF1D3),
-    fill_neutral: color!(0xF1ECE3),
-    fill_neutral_strong: color!(0x969188),
-    fill_hover: color!(0xF3EDE3),
-    fill_pressed: color!(0xE6E0D6),
-    fill_accent_hover: color!(0xFFCB50),
-    fill_accent_pressed: color!(0xF0BF4B),
-    status_success: color!(0x2F7A3F),
-    status_warning: color!(0x9A5F08),
-    status_danger: color!(0xB03A22),
-    shadow_sm: Shadow {
-        color: color!(0x281E14, 0.12),
-        offset: Vector::new(0.0, 1.0),
-        blur_radius: 2.0,
-    },
-    shadow_lg: Shadow {
-        color: color!(0x281E14, 0.16),
-        offset: Vector::new(0.0, 24.0),
-        blur_radius: 60.0,
-    },
-    disabled_opacity: 0.38,
-};
-
-const DARK: Tokens = Tokens {
-    brand: color!(0xFFCB50),
-    accent: color!(0xF0B33A),
-    bg_default: color!(0x181715),
-    bg_subtle: color!(0x1C1B19),
-    bg_muted: color!(0x272522),
-    bg_frame: color!(0x121110),
-    bg_raised: color!(0x211F1C),
-    bg_inverse: color!(0xF2EFEA),
-    bg_overlay: color!(0x121110, 0.6),
-    text_primary: color!(0xF2EFEA),
-    text_secondary: color!(0xBDB8B0),
-    text_tertiary: color!(0xA09B93),
-    text_disabled: color!(0x4F4B45),
-    text_accent: color!(0xFFCB50),
-    text_on_accent: color!(0xFFCB50),
-    text_inverse: color!(0x181715),
-    border_default: color!(0x34312C),
-    border_accent: color!(0x77612C),
-    border_focus: color!(0xF0B33A),
-    fill_accent: color!(0x45391C),
-    fill_accent_subtle: color!(0x3A311C),
-    fill_neutral: color!(0x2A2825),
-    fill_neutral_strong: color!(0x6E6A62),
-    fill_hover: color!(0x272522),
-    fill_pressed: color!(0x34312C),
-    fill_accent_hover: color!(0x52431F),
-    fill_accent_pressed: color!(0x5E4D23),
-    status_success: color!(0x8FCB7A),
-    status_warning: color!(0xF0B86E),
-    status_danger: color!(0xE66C5C),
-    shadow_sm: Shadow {
-        color: color!(0x000000, 0.4),
-        offset: Vector::new(0.0, 1.0),
-        blur_radius: 2.0,
-    },
-    shadow_lg: Shadow {
-        color: color!(0x000000, 0.55),
-        offset: Vector::new(0.0, 30.0),
-        blur_radius: 80.0,
-    },
-    disabled_opacity: 0.28,
-};
-
-#[allow(dead_code)]
-pub(super) mod space {
-    pub(in crate::gui) const S0: f32 = 0.0;
-    pub(in crate::gui) const S025: f32 = 2.0;
-    pub(in crate::gui) const S050: f32 = 4.0;
-    pub(in crate::gui) const S075: f32 = 6.0;
-    pub(in crate::gui) const S100: f32 = 8.0;
-    pub(in crate::gui) const S150: f32 = 12.0;
-    pub(in crate::gui) const S200: f32 = 16.0;
-    pub(in crate::gui) const S250: f32 = 20.0;
-    pub(in crate::gui) const S300: f32 = 24.0;
-    pub(in crate::gui) const S400: f32 = 32.0;
-}
-
-#[allow(dead_code)]
-pub(super) mod radius {
-    pub(in crate::gui) const XS: f32 = 2.0;
-    pub(in crate::gui) const SM: f32 = 4.0;
-    pub(in crate::gui) const MD: f32 = 6.0;
-    pub(in crate::gui) const LG: f32 = 8.0;
-    pub(in crate::gui) const XL: f32 = 10.0;
-    pub(in crate::gui) const FULL: f32 = 9999.0;
-}
-
 #[allow(dead_code)]
 pub(super) mod weight {
     use iced::font::Weight;
 
-    pub(in crate::gui) const REGULAR: Weight = Weight::Normal;
-    pub(in crate::gui) const MEDIUM: Weight = Weight::Medium;
-    pub(in crate::gui) const SEMIBOLD: Weight = Weight::Semibold;
-    pub(in crate::gui) const BOLD: Weight = Weight::Bold;
+    use crate::tokens::weight;
+
+    const fn iced(value: u16) -> Weight {
+        match value {
+            100 => Weight::Thin,
+            200 => Weight::ExtraLight,
+            300 => Weight::Light,
+            400 => Weight::Normal,
+            500 => Weight::Medium,
+            600 => Weight::Semibold,
+            700 => Weight::Bold,
+            800 => Weight::ExtraBold,
+            900 => Weight::Black,
+            _ => panic!("font weight must be a multiple of 100 from 100 to 900"),
+        }
+    }
+
+    pub(in crate::gui) const REGULAR: Weight = iced(weight::REGULAR);
+    pub(in crate::gui) const MEDIUM: Weight = iced(weight::MEDIUM);
+    pub(in crate::gui) const SEMIBOLD: Weight = iced(weight::SEMIBOLD);
+    pub(in crate::gui) const BOLD: Weight = iced(weight::BOLD);
 }
 
 #[allow(dead_code)]
@@ -200,37 +71,16 @@ pub(super) mod font {
 }
 
 #[allow(dead_code)]
-pub(super) mod font_size {
-    pub(in crate::gui) const XS2: f32 = 10.0;
-    pub(in crate::gui) const XS: f32 = 11.0;
-    pub(in crate::gui) const SM: f32 = 12.0;
-    pub(in crate::gui) const MD: f32 = 13.0;
-    pub(in crate::gui) const LG: f32 = 14.0;
-    pub(in crate::gui) const XL: f32 = 16.0;
-    pub(in crate::gui) const XL2: f32 = 18.0;
-    pub(in crate::gui) const XL3: f32 = 24.0;
-    pub(in crate::gui) const XL4: f32 = 30.0;
-    pub(in crate::gui) const XL5: f32 = 40.0;
-    pub(in crate::gui) const TIMER: f32 = 68.0;
-}
-
-#[allow(dead_code)]
 pub(super) mod line_height {
     use iced::widget::text::LineHeight;
 
-    pub(in crate::gui) const NONE: LineHeight = LineHeight::Relative(1.0);
-    pub(in crate::gui) const TIGHT: LineHeight = LineHeight::Relative(1.25);
-    pub(in crate::gui) const SNUG: LineHeight = LineHeight::Relative(1.4);
-    pub(in crate::gui) const DEFAULT: LineHeight = LineHeight::Relative(1.5);
-    pub(in crate::gui) const RELAXED: LineHeight = LineHeight::Relative(1.6);
-}
+    use crate::tokens::line_height;
 
-#[allow(dead_code)]
-pub(super) mod tracking {
-    pub(in crate::gui) const NONE: f32 = 0.0;
-    pub(in crate::gui) const CAPS: f32 = 0.12;
-    pub(in crate::gui) const HEADING: f32 = -0.02;
-    pub(in crate::gui) const DISPLAY: f32 = -0.03;
+    pub(in crate::gui) const NONE: LineHeight = LineHeight::Relative(line_height::NONE);
+    pub(in crate::gui) const TIGHT: LineHeight = LineHeight::Relative(line_height::TIGHT);
+    pub(in crate::gui) const SNUG: LineHeight = LineHeight::Relative(line_height::SNUG);
+    pub(in crate::gui) const DEFAULT: LineHeight = LineHeight::Relative(line_height::DEFAULT);
+    pub(in crate::gui) const RELAXED: LineHeight = LineHeight::Relative(line_height::RELAXED);
 }
 
 #[allow(dead_code)]

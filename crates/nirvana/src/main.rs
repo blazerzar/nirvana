@@ -6,6 +6,7 @@ mod about;
 mod cli;
 mod gui;
 mod time;
+mod tokens;
 
 fn main() {
     match nirvana_core::file_layer() {

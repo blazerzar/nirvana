@@ -33,6 +33,7 @@ pub(super) enum Screen {
     #[default]
     Main,
     Settings,
+    Overview,
 }
 
 /// `Nirvana` with the config values the GUI needs before its first frame.
@@ -142,9 +143,7 @@ impl Gui {
                     .update(message, self.nirvana.as_ref())
                     .map(Message::Settings);
             }
-            Message::ToggleScreen(screen)
-                if screen != Screen::Settings || self.settings.is_available() =>
-            {
+            Message::ToggleScreen(screen) if self.can_show(screen) => {
                 let shown = if self.screen == screen {
                     Screen::Main
                 } else {
@@ -164,13 +163,13 @@ impl Gui {
                     Shortcut::ToggleScreen(screen) => {
                         return self.update(Message::ToggleScreen(screen));
                     }
-                    Shortcut::Start(message) if main_shown && self.can_start() => {
+                    Shortcut::Start(message) if main_shown && self.is_set_up() => {
                         return self.update(Message::Start(message));
                     }
                     Shortcut::Tracking(message) if main_shown => {
                         return self.update(Message::Tracking(message));
                     }
-                    Shortcut::Recent(index) if main_shown && self.can_start() => {
+                    Shortcut::Recent(index) if main_shown && self.is_set_up() => {
                         if let Some(&recent) = self.tracking.recent().get(index) {
                             let start = tracking::Message::Start(recent.clone());
                             return self.update(Message::Tracking(start));
@@ -225,8 +224,17 @@ impl Gui {
         self.settings.close_idle_after();
     }
 
-    /// Returns whether the start form can open: a profile is set up.
-    fn can_start(&self) -> bool {
+    fn can_show(&self, screen: Screen) -> bool {
+        match screen {
+            Screen::Main => true,
+            Screen::Settings => self.settings.is_available(),
+            Screen::Overview => self.is_set_up(),
+        }
+    }
+
+    /// Returns whether a profile is set up, which the start form and the
+    /// overview need.
+    fn is_set_up(&self) -> bool {
         self.profile
             .as_ref()
             .is_some_and(|profile| profile.setup_step().is_none())
@@ -270,11 +278,14 @@ impl Gui {
             Some(Window::Info(info)) => views::info(info, toast),
             _ => {
                 let header = views::header(self.profile.as_ref(), self.screen, &self.settings);
-                let screen = match (self.screen, self.settings.idle()) {
-                    (Screen::Settings, Some(idle)) => (
+                let screen = match (self.screen, self.settings.idle(), self.profile.as_ref()) {
+                    (Screen::Settings, Some(idle), _) => (
                         views::settings_view(idle, self.settings.is_idle_after_open()),
                         views::settings_bar(),
                     ),
+                    (Screen::Overview, _, Some(ProfileState::Active(profile))) => {
+                        (views::overview_view(&profile.name), views::overview_bar())
+                    }
                     _ => views::main_screen(
                         self.profile.as_ref(),
                         &self.tracking,

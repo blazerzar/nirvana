@@ -3,27 +3,21 @@ use iced::widget::{Column, column, container, row, rule, text};
 use iced::{Element, Length, Padding, Theme};
 use nirvana_core::{IdleConfig, IdleMethod};
 
-use super::border;
+use super::{border, done_bar, screen_heading};
 use crate::gui::app::{Message, Screen};
-use crate::gui::components::{Button, Size, select, toggle, toggle_chip, tracked_text};
-use crate::gui::design_system::typography::{BODY, BODY_LG, CAPTION, HEADING_SCREEN, LABEL_CAPS};
+use crate::gui::components::{Size, select, toggle, toggle_chip, tracked_text};
+use crate::gui::design_system::typography::{BODY_LG, CAPTION, LABEL_CAPS};
 use crate::gui::design_system::{space, tokens};
 use crate::gui::state::settings::{self, IdleAfter};
 
 const COLUMN_GAP: f32 = 32.0;
-const BAR_HEIGHT: f32 = 52.0;
 
 pub(in crate::gui) fn settings_view(
     idle: &IdleConfig,
     idle_after_open: bool,
 ) -> Element<'_, Message> {
-    let heading = row![
-        HEADING_SCREEN.text("desktop settings").style(primary),
-        BODY.text("this machine only").style(tertiary),
-    ]
-    .spacing(space::S150)
-    .align_y(Vertical::Bottom)
-    .padding(Padding::from([space::S200, space::S300]).bottom(space::S075));
+    let heading = screen_heading("desktop settings", "this machine only")
+        .padding(Padding::from([space::S200, space::S300]).bottom(space::S075));
 
     let idle_after = IdleAfter::of(idle);
     let methods = row(IdleMethod::ALL.into_iter().map(|method| {
@@ -80,29 +74,10 @@ pub(in crate::gui) fn settings_view(
 }
 
 pub(in crate::gui) fn settings_bar<'a>() -> Element<'a, Message> {
-    let note = row![
-        BODY.text("profiles, connections and publishing rules are in")
-            .style(tertiary),
-        BODY.text("nirvana web").style(|theme| text::Style {
-            color: Some(tokens(theme).text_accent),
-        }),
-    ]
-    .spacing(space::S075);
-    let done = Button::new("done")
-        .size(Size::Sm)
-        .key("esc")
-        .primary()
-        .on_press(Message::ToggleScreen(Screen::Settings));
-    let bar = container(
-        row![note, iced::widget::space::horizontal(), done]
-            .spacing(space::S100)
-            .align_y(Vertical::Center),
+    done_bar(
+        "profiles, connections and publishing rules are in",
+        Screen::Settings,
     )
-    .height(BAR_HEIGHT)
-    .padding(Padding::from([space::S0, space::S200]).left(space::S300))
-    .align_y(Vertical::Center);
-
-    column![border(rule::horizontal(1)), bar].into()
 }
 
 fn section<'a>(
@@ -153,12 +128,6 @@ fn method_label(method: IdleMethod) -> &'static str {
         IdleMethod::Lock => "lock",
         IdleMethod::Sleep => "sleep",
         IdleMethod::Input => "no input",
-    }
-}
-
-fn primary(theme: &Theme) -> text::Style {
-    text::Style {
-        color: Some(tokens(theme).text_primary),
     }
 }
 

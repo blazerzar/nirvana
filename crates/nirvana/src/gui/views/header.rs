@@ -43,6 +43,18 @@ pub(in crate::gui) fn header<'a>(
         ProfileState::Active(profile) => profile_chip(profile),
     });
 
+    let is_set_up = profile.is_some_and(|profile| profile.setup_step().is_none());
+    let overview = is_set_up.then(|| {
+        let label = if screen == Screen::Overview {
+            "done"
+        } else {
+            "overview"
+        };
+        Button::new(label)
+            .size(ButtonSize::Sm)
+            .key("v")
+            .on_press(Message::ToggleScreen(Screen::Overview))
+    });
     let open_web = Button::new("open web ↗").size(ButtonSize::Sm).key("o");
     let settings_label = if screen == Screen::Settings {
         "done"
@@ -60,6 +72,7 @@ pub(in crate::gui) fn header<'a>(
         row![logo, wordmark]
             .push(chip)
             .push(space::horizontal())
+            .push(overview)
             .push(open_web)
             .push(settings_button)
             .spacing(12)

@@ -54,6 +54,7 @@ fn shortcut(event: keyboard::Event, window: window::Id) -> Option<Message> {
     let shortcut = match (key, latin) {
         (keyboard::Key::Named(key::Named::Escape), _) => Shortcut::Escape,
         _ if is_comma(latin, physical_key) => Shortcut::ToggleScreen(Screen::Settings),
+        (_, Some('v')) => Shortcut::ToggleScreen(Screen::Overview),
         (_, Some('s')) => Shortcut::Start(start::Message::Open),
         (_, Some('x')) => Shortcut::Tracking(tracking::Message::Stop),
         (_, Some('r')) => Shortcut::Tracking(tracking::Message::Resume),

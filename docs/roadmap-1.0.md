@@ -238,7 +238,7 @@ logged from the start.
       entries reset to pending on retry) and sends only the claimed ones,
       so concurrent publishes do not post duplicates.
 - [x] CLI: `publish [--target <name>] [--start <time>] [--stop <time>]
-      [--all] [--retry]`, today by default. Slots overlapping the range are
+      [--all] [--retry]`, today by default. Slots started in the range are
       selected, like in `list`. Only unpublished slots are sent, failed ones
       only with `--retry`.
 - [x] Fix error messages of the errors publishing returns (decision 21).
@@ -307,6 +307,9 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [ ] Check if we should rework the API interface of the core.
 - [x] Core methods that change the config or profile take `&self`
       (implementation guide §3 #32).
+- [x] `list` and `publish` select slots started in the range, and `list`
+      also the running slot when the range reaches now (implementation
+      guide §3 #34).
 - [ ] Return the issue URL from core with slots, so frontends do not fetch
       the active connection and build it themselves.
 - [ ] Connection health checks (ping every 60 s, latency, auth status),

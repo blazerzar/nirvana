@@ -31,7 +31,7 @@ use crate::service::Nirvana;
 const STUCK_AFTER: i64 = 60;
 
 impl Nirvana {
-    /// Publishes the stopped slots of the active profile that overlap the
+    /// Publishes the stopped slots of the active profile started in the
     /// range from `from` to `to`, each unbounded when `None`. Only slots
     /// without publish entries are sent, and with `retry` also failed and
     /// stuck ones.
@@ -170,7 +170,7 @@ fn squash(slots: Vec<Slot>) -> Vec<Vec<Slot>> {
     groups
 }
 
-/// Returns the stopped slots of the profile that overlap the range, whose
+/// Returns the stopped slots of the profile started in the range, whose
 /// ticket belongs to one of `connection_ids` and that have no publish entry,
 /// or with `retry` a failed or stuck one, grouped by that connection and
 /// ordered by start.
@@ -188,7 +188,7 @@ async fn find_publishable(
         }
         false => publish_entry::Entity::unpublished(),
     };
-    let rows = slot::Entity::find_in_range(profile_id, from.unwrap_or(i64::MIN), to)
+    let rows = slot::Entity::find_started_in_range(profile_id, from, to)
         .filter(slot::COLUMN.stopped_at.is_not_null())
         .filter(state)
         .find_also_related(ticket::Entity)
@@ -383,8 +383,9 @@ mod tests {
         service.use_connection(Some(Jira));
         let ticket = service.seed_ticket("KAR-1", "Title", 0, 0).await;
         let connection_id = ticket.connection_id.unwrap();
-        let before = service.seed_slot(&ticket, 1000, Some(2000)).await;
-        let overlapping = service.seed_slot(&ticket, 2500, Some(3500)).await;
+        let before = service.seed_slot(&ticket, 1000, Some(1500)).await;
+        let crossing = service.seed_slot(&ticket, 2000, Some(2400)).await;
+        let started = service.seed_slot(&ticket, 2400, Some(3500)).await;
         let published = service.seed_slot(&ticket, 3500, Some(4000)).await;
         let failed = service.seed_slot(&ticket, 4000, Some(4500)).await;
         let stuck = service.seed_slot(&ticket, 4500, Some(4600)).await;
@@ -407,14 +408,14 @@ mod tests {
         let slots = find_publishable(
             &service.db,
             ticket.profile_id,
-            Some(3000),
+            Some(2300),
             None,
             [connection_id],
             false,
         )
         .await
         .unwrap();
-        assert_eq!(ids(&slots[&connection_id]), [overlapping.id]);
+        assert_eq!(ids(&slots[&connection_id]), [started.id]);
 
         let slots = find_publishable(
             &service.db,
@@ -428,7 +429,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             ids(&slots[&connection_id]),
-            [before.id, overlapping.id, failed.id, stuck.id]
+            [before.id, crossing.id, started.id, failed.id, stuck.id]
         );
     }
 

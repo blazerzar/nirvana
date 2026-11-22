@@ -209,10 +209,10 @@ struct ListArgs {
     /// Order by ticket instead of time
     #[arg(long)]
     by_ticket: bool,
-    /// Range start (e.g. "14:30" or "2026-05-19 14:30"). Lists today if omitted.
+    /// List slots started from this time (e.g. "14:30" or "2026-05-19 14:30"). Lists today if omitted.
     #[arg(long, alias = "start")]
     from: Option<String>,
-    /// Range end (e.g. "14:30" or "2026-05-19 14:30"). Unbounded if omitted.
+    /// List slots started before this time (e.g. "14:30" or "2026-05-19 14:30"). Unbounded if omitted.
     #[arg(long, alias = "stop", requires = "from")]
     to: Option<String>,
     /// Show slot IDs
@@ -238,10 +238,10 @@ struct PublishArgs {
     /// Publish only to this connection (omit to publish to all connections)
     #[arg(long)]
     target: Option<String>,
-    /// Range start (e.g. "14:30" or "2026-05-19 14:30"). Defaults to today 00:00.
+    /// Publish slots started from this time (e.g. "14:30" or "2026-05-19 14:30"). Defaults to today 00:00.
     #[arg(long)]
     start: Option<String>,
-    /// Range stop (e.g. "14:30" or "2026-05-19 14:30"). Unbounded if omitted.
+    /// Publish slots started before this time (e.g. "14:30" or "2026-05-19 14:30"). Unbounded if omitted.
     #[arg(long)]
     stop: Option<String>,
     /// Publish all slots

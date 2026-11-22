@@ -196,16 +196,13 @@ async fn list_ranges() {
         .await
         .unwrap();
 
-    let partly_overlapping = service
+    let started_inside = service
         .list_slots(now - 4 * h - 30 * m, Some(now - 2 * h - 30 * m), false)
         .await
         .unwrap();
     assert_eq!(
-        summary(&partly_overlapping),
-        [
-            ("NIR-1", now - 5 * h, Some(now - 4 * h)),
-            ("KAR-1", now - 3 * h, Some(now - 2 * h)),
-        ]
+        summary(&started_inside),
+        [("KAR-1", now - 3 * h, Some(now - 2 * h))]
     );
 
     let between_edges = service
@@ -215,12 +212,12 @@ async fn list_ranges() {
     assert!(between_edges.is_empty());
 
     let unbounded = service.list_slots(now - 75 * m, None, false).await.unwrap();
+    assert_eq!(summary(&unbounded), [("KAR-1", now - 30 * m, None)]);
+
+    let running_before_range = service.list_slots(now - 15 * m, None, false).await.unwrap();
     assert_eq!(
-        summary(&unbounded),
-        [
-            ("NIR-1", now - 90 * m, Some(now - 60 * m)),
-            ("KAR-1", now - 30 * m, None),
-        ]
+        summary(&running_before_range),
+        [("KAR-1", now - 30 * m, None)]
     );
 
     let by_ticket = service.list_slots(now - 6 * h, None, true).await.unwrap();

@@ -67,9 +67,9 @@ impl Nirvana {
             .await?)
     }
 
-    /// Returns the slots of the active profile that overlap the range from
-    /// `from` to `to`, or unbounded, with their tickets and publish states,
-    /// ordered by start.
+    /// Returns the slots of the active profile started in the range from
+    /// `from` to `to`, or unbounded, and the running slot when the range
+    /// reaches now, with their tickets and publish states, ordered by start.
     /// With `by_ticket` the slots of a ticket are grouped, in the order of
     /// each ticket's first slot.
     ///
@@ -84,8 +84,8 @@ impl Nirvana {
         by_ticket: bool,
     ) -> Result<Vec<(Slot, PublishState)>, NirvanaError> {
         let profile = self.find_active_profile().await?;
-        let mut query =
-            slot::Entity::find_in_range(profile.id, from, to).find_also_related(ticket::Entity);
+        let mut query = slot::Entity::find_listed(profile.id, from, to, Utc::now().timestamp())
+            .find_also_related(ticket::Entity);
         if by_ticket {
             QueryTrait::query(&mut query)
                 .expr_window_as(
@@ -1263,16 +1263,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_slots_returns_slots_overlapping_range() {
+    async fn list_slots_returns_slots_started_in_range() {
         let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
-        service
-            .seed_slot(&ticket, now - 7200, Some(now - 5400))
-            .await;
         let crossing_start = service
             .seed_slot(&ticket, now - 5000, Some(now - 3000))
             .await;
-        let inside = service
+        let at_start = service
             .seed_slot(&ticket, now - 2500, Some(now - 2000))
             .await;
         let crossing_stop = service
@@ -1281,16 +1278,41 @@ mod tests {
         let running = service.seed_slot(&ticket, now - 300, None).await;
 
         assert_eq!(
-            listed_slot_ids(&service, now - 4000, Some(now - 1000), false).await,
-            [crossing_start.id, inside.id, crossing_stop.id]
+            listed_slot_ids(&service, now - 2500, Some(now - 1000), false).await,
+            [at_start.id, crossing_stop.id]
+        );
+        assert_eq!(
+            listed_slot_ids(&service, now - 4000, Some(now - 1500), false).await,
+            [at_start.id]
         );
         assert_eq!(
             listed_slot_ids(&service, now - 4000, None, false).await,
-            [crossing_start.id, inside.id, crossing_stop.id, running.id]
+            [at_start.id, crossing_stop.id, running.id]
         );
         assert_eq!(
-            listed_slot_ids(&service, now - 600, Some(now - 100), false).await,
-            [crossing_stop.id, running.id]
+            listed_slot_ids(&service, now - 6000, Some(now - 4000), false).await,
+            [crossing_start.id]
+        );
+    }
+
+    #[tokio::test]
+    async fn list_slots_returns_running_slot_when_range_reaches_now() {
+        let (service, [ticket, _]) = setup().await;
+        let now = Utc::now().timestamp();
+        let running = service.seed_slot(&ticket, now - 3000, None).await;
+
+        assert_eq!(
+            listed_slot_ids(&service, now - 1000, None, false).await,
+            [running.id]
+        );
+        assert_eq!(
+            listed_slot_ids(&service, now - 1000, Some(now + 60), false).await,
+            [running.id]
+        );
+        assert!(
+            listed_slot_ids(&service, now - 1000, Some(now - 500), false)
+                .await
+                .is_empty()
         );
     }
 

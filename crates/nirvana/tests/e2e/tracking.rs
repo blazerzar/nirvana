@@ -124,12 +124,16 @@ async fn lists_slots() {
     assert!(empty.contains("No slots in this range"), "{empty}");
 
     nirvana.run(&["add", &j1, "--start", &at(d2, "09:00"), "--duration", "30m"]);
+    nirvana.run(&["add", &j2, "--start", &at(d2, "23:30"), "--duration", "1h"]);
     nirvana.run(&["add", &j1, "--start", &at(d, "09:00"), "--duration", "30m"]);
     nirvana.run(&["add", &l1, "--start", &at(d, "10:00"), "--duration", "30m"]);
     nirvana.run(&["add", &j2, "--start", &at(d, "10:30"), "--duration", "15m"]);
     nirvana.run(&["add", &j1, "--start", &at(d, "11:00"), "--duration", "15m"]);
 
-    assert_eq!(nirvana.list_rows(d2), [row(&j1, at(d2, "09:00"), "")]);
+    assert_eq!(
+        nirvana.list_rows(d2),
+        [row(&j1, at(d2, "09:00"), ""), row(&j2, at(d2, "23:30"), "")]
+    );
     assert_eq!(
         nirvana.list_rows(d),
         [

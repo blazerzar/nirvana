@@ -1,5 +1,5 @@
 use sea_orm::entity::prelude::*;
-use sea_orm::{ExprTrait, QueryOrder, QueryTrait, Set};
+use sea_orm::{Condition, ExprTrait, QueryOrder, QueryTrait, Set};
 
 #[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
@@ -66,4 +66,33 @@ impl Entity {
             .filter(COLUMN.stopped_at.is_null().or(COLUMN.stopped_at.gt(from)))
             .apply_if(to, |query, to| query.filter(COLUMN.started_at.lt(to)))
     }
+
+    pub fn find_started_in_range(
+        profile_id: i64,
+        from: Option<i64>,
+        to: Option<i64>,
+    ) -> Select<Self> {
+        Self::find()
+            .filter(COLUMN.profile_id.eq(profile_id))
+            .filter(started_in_range(from, to))
+    }
+
+    /// Selects the slots started in the range and the running slot when the
+    /// range reaches `now`.
+    pub fn find_listed(profile_id: i64, from: i64, to: Option<i64>, now: i64) -> Select<Self> {
+        let reaches_now = to.is_none_or(|to| to > now);
+        Self::find()
+            .filter(COLUMN.profile_id.eq(profile_id))
+            .filter(
+                Condition::any()
+                    .add(started_in_range(Some(from), to))
+                    .add_option(reaches_now.then(|| COLUMN.stopped_at.is_null())),
+            )
+    }
+}
+
+fn started_in_range(from: Option<i64>, to: Option<i64>) -> Condition {
+    Condition::all()
+        .add_option(from.map(|from| COLUMN.started_at.gte(from)))
+        .add_option(to.map(|to| COLUMN.started_at.lt(to)))
 }

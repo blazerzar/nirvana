@@ -308,9 +308,11 @@ impl Gui {
                         views::settings_bar(),
                     ),
                     (Screen::Overview, _, Some(ProfileState::Active(profile))) => {
-                        let stats = self.overview.stats(self.tracking.elapsed());
+                        let elapsed = self.tracking.elapsed();
+                        let stats = self.overview.stats(elapsed);
+                        let week = self.overview.week(elapsed);
                         (
-                            views::overview_view(&profile.name, stats),
+                            views::overview_view(&profile.name, stats, week),
                             views::overview_bar(),
                         )
                     }

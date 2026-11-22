@@ -323,7 +323,9 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [x] We need to support CLI and GUI in the same binary.
 - [ ] We need to make sure such binary works on macOS (.dmg), Windows and Linux.
 - [ ] Start building screens: main (tracking, not tracking), start / switch
-      form, publish modal, overview, settings, first launch.
+      form, publish modal, settings, first launch.
+- [x] Overview screen: today, week and month cards and this week by day
+      (implementation guide §6.2).
 - [ ] Minimum size for the main window, so the listing pane (at least 400px)
       always fits.
 - [ ] Menu bar support (macOS).
@@ -347,6 +349,8 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [ ] Responsive layouts (below 1200 px and 720 px).
 - [ ] Separate profile settings from machine settings.
 - [ ] Add commands for reading and setting profile settings.
+- [ ] Desktop overview uses the profile's expected hours per day, week start
+      and weekends (fixed to 8h, Monday and Mon–Fri until then).
 
 ## CICD
 

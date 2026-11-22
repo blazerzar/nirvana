@@ -15,7 +15,7 @@ use crate::gui::state::tracking::{self, clock};
 use crate::time::format_duration;
 
 const PULSE_DOT_SIZE: f32 = 7.0;
-const HINT_MAX_WIDTH: f32 = 400.0;
+const HINT_MAX_WIDTH: f32 = 450.0;
 const LOGS_HINT: &str = "logs stay on this machine until you publish.";
 
 pub(super) fn tracking<'a>(

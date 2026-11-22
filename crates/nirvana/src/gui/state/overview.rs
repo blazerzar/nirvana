@@ -10,7 +10,7 @@ use crate::gui::failure::{Failure, chain};
 use crate::time::{day_start, local_date};
 
 const LOAD_FAILED: &str = "couldn't load the overview";
-const EXPECTED_SECONDS_PER_DAY: i64 = 8 * 3600;
+pub(in crate::gui) const EXPECTED_SECONDS_PER_DAY: i64 = 8 * 3600;
 const WEEK_START: Weekday = Weekday::Mon;
 const WORKDAYS_PER_WEEK: i64 = 5;
 
@@ -67,6 +67,14 @@ pub(in crate::gui) struct Stat {
     pub(in crate::gui) target: i64,
 }
 
+/// A day of this week.
+#[derive(Debug, PartialEq)]
+pub(in crate::gui) struct Day {
+    pub(in crate::gui) label: String,
+    pub(in crate::gui) total: Total,
+    pub(in crate::gui) is_today: bool,
+}
+
 impl State {
     pub(in crate::gui) fn update(
         &mut self,
@@ -89,6 +97,12 @@ impl State {
     /// of the running slot as unpublished.
     pub(in crate::gui) fn stats(&self, elapsed: i64) -> Option<[Stat; 3]> {
         self.loaded.as_ref().map(|loaded| loaded.stats(elapsed))
+    }
+
+    /// Returns the days of this week, with the `elapsed` seconds of the
+    /// running slot as unpublished.
+    pub(in crate::gui) fn week(&self, elapsed: i64) -> Option<[Day; 7]> {
+        self.loaded.as_ref().map(|loaded| loaded.week(elapsed))
     }
 }
 
@@ -119,6 +133,18 @@ impl Loaded {
                 target: workdays(month, month_end) * EXPECTED_SECONDS_PER_DAY,
             },
         ]
+    }
+
+    fn week(&self, elapsed: i64) -> [Day; 7] {
+        let week = week_start(self.today);
+        std::array::from_fn(|index| {
+            let day = week + Days::new(index as u64);
+            Day {
+                label: day.format("%a %-d").to_string(),
+                total: self.total(day, day + Days::new(1), elapsed),
+                is_today: day == self.today,
+            }
+        })
     }
 
     /// Returns the total of the days from `from` to `to` (exclusive).
@@ -278,6 +304,17 @@ mod tests {
         assert_eq!(today.target, 8 * 3600);
         assert_eq!(week.target, 40 * 3600);
         assert_eq!(month.target, 21 * 8 * 3600);
+    }
+
+    #[test]
+    fn week_lists_the_days_from_monday() {
+        let week = loaded(Some(date(5, 18))).week(5);
+        assert_eq!(week[0].label, "Mon 18");
+        assert_eq!(week[0].total, total(300, 25));
+        assert_eq!(week[3].total, Total::default());
+        assert_eq!(week[4].total, total(400, 30));
+        assert!(week[4].is_today);
+        assert!(!week[0].is_today);
     }
 
     #[test]

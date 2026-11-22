@@ -270,7 +270,12 @@ decisions here (rounding, single active connection, …).
 - **Overview**: 3 stat cards (today, week, month against a target derived from
   the profile's expected hours per day; the design shows 8h / 40h / 21×8h), each
   with a published (neutral) / unpublished (accent) bar, then a this-week
-  bar chart by day with an 8h dashed line, and a link to web.
+  bar chart by day with an 8h dashed line, and a link to web. Until profile
+  settings exist the targets are fixed: 8h per day, weeks start on Monday and
+  the month target counts Mon–Fri. Totals follow §3 #34 (slots by the day they
+  started on). Pending and failed slots count as unpublished, and the running
+  slot is added live as unpublished. Durations use the CLI format without
+  padded minutes (`1h 5m`).
 - **Desktop settings** ("this machine only"). Window: launch at login
   (no/yes/minimized), close to menu bar. Tracking: detect idle time, idle
   after (1–30 min), detect by (lock / sleep / no input), remind me when not

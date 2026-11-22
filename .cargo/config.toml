@@ -1,2 +1,5 @@
 [target.'cfg(target_os = "macos")']
 runner = ".cargo/codesign.sh"
+
+[future-incompat-report]
+frequency = "never"

@@ -8,11 +8,13 @@ mod setup;
 mod start;
 mod tracking;
 
+pub(super) use header::header;
 use iced::widget::rule::{self, Rule};
 use iced::widget::{container, stack};
 use iced::{Element, Length, Padding};
 pub(super) use info::{info, info_size};
-pub(super) use main::{MAIN_WINDOW_SIZE, main};
+pub(super) use main::{MAIN_WINDOW_SIZE, main, main_screen};
+pub(super) use settings::{settings_bar, settings_view};
 
 use crate::gui::app::Message;
 use crate::gui::components;

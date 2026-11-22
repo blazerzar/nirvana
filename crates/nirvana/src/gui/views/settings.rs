@@ -4,7 +4,7 @@ use iced::{Element, Length, Padding, Theme};
 use nirvana_core::{IdleConfig, IdleMethod};
 
 use super::border;
-use crate::gui::app::Message;
+use crate::gui::app::{Message, Screen};
 use crate::gui::components::{Button, Size, select, toggle, toggle_chip, tracked_text};
 use crate::gui::design_system::typography::{BODY, BODY_LG, CAPTION, HEADING_SCREEN, LABEL_CAPS};
 use crate::gui::design_system::{DISABLED_OPACITY, space, tokens};
@@ -13,7 +13,10 @@ use crate::gui::state::settings::{self, IdleAfter};
 const COLUMN_GAP: f32 = 32.0;
 const BAR_HEIGHT: f32 = 52.0;
 
-pub(super) fn settings_view(idle: &IdleConfig, idle_after_open: bool) -> Element<'_, Message> {
+pub(in crate::gui) fn settings_view(
+    idle: &IdleConfig,
+    idle_after_open: bool,
+) -> Element<'_, Message> {
     let heading = row![
         HEADING_SCREEN.text("desktop settings").style(primary),
         BODY.text("this machine only").style(tertiary),
@@ -76,7 +79,7 @@ pub(super) fn settings_view(idle: &IdleConfig, idle_after_open: bool) -> Element
     column![heading, columns].height(Length::Fill).into()
 }
 
-pub(super) fn settings_bar<'a>() -> Element<'a, Message> {
+pub(in crate::gui) fn settings_bar<'a>() -> Element<'a, Message> {
     let note = row![
         BODY.text("profiles, connections and publishing rules are in")
             .style(tertiary),
@@ -89,7 +92,7 @@ pub(super) fn settings_bar<'a>() -> Element<'a, Message> {
         .size(Size::Sm)
         .key("esc")
         .primary()
-        .on_press(Message::Settings(settings::Message::Close));
+        .on_press(Message::ToggleScreen(Screen::Settings));
     let bar = container(
         row![note, iced::widget::space::horizontal(), done]
             .spacing(space::S100)

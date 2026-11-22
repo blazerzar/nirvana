@@ -2,14 +2,14 @@ use iced::event::{self, Event, Status};
 use iced::keyboard::{self, key};
 use iced::{Subscription, window};
 
-use super::app::Message;
-use super::state::{appearance, settings, start, tracking};
+use super::app::{Message, Screen};
+use super::state::{appearance, start, tracking};
 
 /// A shortcut pressed in a window, handled by the main window only.
 #[derive(Clone)]
 pub(super) enum Shortcut {
     Escape,
-    Settings(settings::Message),
+    ToggleScreen(Screen),
     Start(start::Message),
     Tracking(tracking::Message),
     /// Starts the shown recent ticket at the index.
@@ -53,7 +53,7 @@ fn shortcut(event: keyboard::Event, window: window::Id) -> Option<Message> {
     }
     let shortcut = match (key, latin) {
         (keyboard::Key::Named(key::Named::Escape), _) => Shortcut::Escape,
-        _ if is_comma(latin, physical_key) => Shortcut::Settings(settings::Message::Toggle),
+        _ if is_comma(latin, physical_key) => Shortcut::ToggleScreen(Screen::Settings),
         (_, Some('s')) => Shortcut::Start(start::Message::Open),
         (_, Some('x')) => Shortcut::Tracking(tracking::Message::Stop),
         (_, Some('r')) => Shortcut::Tracking(tracking::Message::Resume),

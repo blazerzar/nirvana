@@ -13,15 +13,12 @@ const IDLE_AFTER_MINUTES: [u64; 6] = [1, 2, 5, 10, 15, 30];
 /// Desktop settings. Available once the idle settings are loaded.
 #[derive(Default)]
 pub(in crate::gui) struct State {
-    open: bool,
     idle: Option<IdleConfig>,
     idle_after_open: bool,
 }
 
 #[derive(Clone)]
 pub(in crate::gui) enum Message {
-    Toggle,
-    Close,
     IdleEnabled(bool),
     ToggleIdleAfter,
     CloseIdleAfter,
@@ -75,13 +72,16 @@ impl State {
         self.idle.is_some()
     }
 
-    /// Returns the idle settings while the settings are open.
-    pub(in crate::gui) fn shown(&self) -> Option<&IdleConfig> {
-        self.idle.as_ref().filter(|_| self.open)
+    pub(in crate::gui) fn idle(&self) -> Option<&IdleConfig> {
+        self.idle.as_ref()
     }
 
     pub(in crate::gui) fn is_idle_after_open(&self) -> bool {
         self.idle_after_open
+    }
+
+    pub(in crate::gui) fn close_idle_after(&mut self) {
+        self.idle_after_open = false;
     }
 
     pub(in crate::gui) fn update(
@@ -96,14 +96,6 @@ impl State {
             return Task::none();
         };
         match message {
-            Message::Toggle => {
-                self.open = !self.open;
-                self.idle_after_open = false;
-            }
-            Message::Close => {
-                self.open = false;
-                self.idle_after_open = false;
-            }
             Message::ToggleIdleAfter => self.idle_after_open = !self.idle_after_open,
             Message::CloseIdleAfter => self.idle_after_open = false,
             Message::IdleEnabled(enabled) => {

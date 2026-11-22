@@ -22,7 +22,17 @@ pub(super) struct Gui {
     start: start::State,
     toast: toast::State,
     tracking: tracking::State,
+    screen: Screen,
     command_held: bool,
+}
+
+/// The screen shown between the header and the bottom bar of the main
+/// window.
+#[derive(Clone, Copy, Default, PartialEq)]
+pub(super) enum Screen {
+    #[default]
+    Main,
+    Settings,
 }
 
 /// `Nirvana` with the config values the GUI needs before its first frame.
@@ -41,6 +51,8 @@ pub(super) enum Message {
     Info(info::Message),
     Profile(profile::Message),
     Settings(settings::Message),
+    /// Shows the screen, or the main screen when it is already shown.
+    ToggleScreen(Screen),
     Shortcut(window::Id, Shortcut),
     /// ⌘ or Ctrl was pressed or released.
     CommandHeld(bool),
@@ -62,6 +74,7 @@ impl Gui {
             start: start::State::default(),
             toast: toast::State::default(),
             tracking: tracking::State::default(),
+            screen: Screen::default(),
             command_held: false,
         };
         let load = Task::perform(async { load().await.map_err(Arc::new) }, Message::Loaded);
@@ -129,17 +142,28 @@ impl Gui {
                     .update(message, self.nirvana.as_ref())
                     .map(Message::Settings);
             }
+            Message::ToggleScreen(screen)
+                if screen != Screen::Settings || self.settings.is_available() =>
+            {
+                let shown = if self.screen == screen {
+                    Screen::Main
+                } else {
+                    screen
+                };
+                self.show(shown);
+            }
+            Message::ToggleScreen(_) => {}
             Message::Shortcut(window, shortcut) => {
                 if self.windows.main() != Some(window) {
                     return Task::none();
                 }
-                let main_shown = self.settings.shown().is_none() && !self.start.is_open();
+                let main_shown = self.screen == Screen::Main && !self.start.is_open();
                 match shortcut {
-                    Shortcut::Escape if self.settings.shown().is_some() => {
-                        return self.update(Message::Settings(settings::Message::Close));
-                    }
+                    Shortcut::Escape if self.screen != Screen::Main => self.show(Screen::Main),
                     Shortcut::Escape => return self.update(Message::Start(start::Message::Cancel)),
-                    Shortcut::Settings(message) => return self.update(Message::Settings(message)),
+                    Shortcut::ToggleScreen(screen) => {
+                        return self.update(Message::ToggleScreen(screen));
+                    }
                     Shortcut::Start(message) if main_shown && self.can_start() => {
                         return self.update(Message::Start(message));
                     }
@@ -196,6 +220,11 @@ impl Gui {
         Task::none()
     }
 
+    fn show(&mut self, screen: Screen) {
+        self.screen = screen;
+        self.settings.close_idle_after();
+    }
+
     /// Returns whether the start form can open: a profile is set up.
     fn can_start(&self) -> bool {
         self.profile
@@ -239,15 +268,23 @@ impl Gui {
         let toast = self.toast.current(window);
         match self.windows.get(window) {
             Some(Window::Info(info)) => views::info(info, toast),
-            _ => views::main(
-                self.profile.as_ref(),
-                &self.settings,
-                &self.tracking,
-                &self.start,
-                self.appearance.tokens(),
-                self.command_held,
-                toast,
-            ),
+            _ => {
+                let header = views::header(self.profile.as_ref(), self.screen, &self.settings);
+                let screen = match (self.screen, self.settings.idle()) {
+                    (Screen::Settings, Some(idle)) => (
+                        views::settings_view(idle, self.settings.is_idle_after_open()),
+                        views::settings_bar(),
+                    ),
+                    _ => views::main_screen(
+                        self.profile.as_ref(),
+                        &self.tracking,
+                        &self.start,
+                        self.appearance.tokens(),
+                        self.command_held,
+                    ),
+                };
+                views::main(header, screen, toast)
+            }
         }
     }
 

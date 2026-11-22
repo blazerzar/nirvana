@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -29,9 +30,12 @@ pub(in crate::gui) struct State {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::gui) struct Recent {
+    pub(in crate::gui) id: i64,
     pub(in crate::gui) key: String,
     pub(in crate::gui) title: String,
-    connection: Option<String>,
+    pub(in crate::gui) connection: Option<String>,
+    /// The connection, shown only when another ticket has the same key.
+    pub(in crate::gui) tag: Option<String>,
 }
 
 /// The connection the ticket is searched in.
@@ -203,25 +207,48 @@ impl State {
 
 fn load(nirvana: Arc<Nirvana>) -> Task<Message> {
     Task::future(async move {
-        let connections = nirvana.list_connections().await?;
-        let tickets = nirvana
-            .list_tickets(TicketConnection::Any, TicketSort::LastWorked)
-            .await?;
-        let connections = connections
+        let connections = nirvana
+            .list_connections()
+            .await?
             .into_iter()
             .map(|connection| connection.model.name)
             .collect();
-        let recent = tickets
-            .into_iter()
-            .map(|(ticket, connection)| Recent {
-                key: ticket.ticket_key,
-                title: ticket.title,
-                connection: connection.map(|connection| connection.name),
-            })
-            .collect();
+        let recent = recent_tickets(&nirvana).await?;
         Ok::<_, NirvanaError>(Message::Loaded(connections, recent))
     })
     .map(|loaded| loaded.unwrap_or_else(|e| Message::Failed(failure(LOAD_FAILED, &e))))
+}
+
+/// Returns the tickets of the active profile by when they were last worked
+/// on.
+pub(in crate::gui) async fn recent_tickets(nirvana: &Nirvana) -> Result<Vec<Recent>, NirvanaError> {
+    let mut recent: Vec<Recent> = nirvana
+        .list_tickets(TicketConnection::Any, TicketSort::LastWorked)
+        .await?
+        .into_iter()
+        .map(|(ticket, connection)| Recent {
+            id: ticket.id,
+            key: ticket.ticket_key,
+            title: ticket.title,
+            connection: connection.map(|connection| connection.name),
+            tag: None,
+        })
+        .collect();
+    tag_shared_keys(&mut recent);
+    Ok(recent)
+}
+
+/// Tags the tickets whose key another ticket has with their connection.
+fn tag_shared_keys(recent: &mut [Recent]) {
+    let mut counts = HashMap::<String, usize>::new();
+    for ticket in recent.iter() {
+        *counts.entry(ticket.key.clone()).or_default() += 1;
+    }
+    for ticket in recent.iter_mut() {
+        if counts[&ticket.key] > 1 {
+            ticket.tag.clone_from(&ticket.connection);
+        }
+    }
 }
 
 fn start(nirvana: Arc<Nirvana>, key: String, connection: Option<String>) -> Task<Message> {
@@ -279,10 +306,16 @@ mod tests {
 
     fn ticket(key: &str, title: &str, connection: Option<&str>) -> Recent {
         Recent {
+            id: 0,
             key: key.into(),
             title: title.into(),
             connection: connection.map(str::to_owned),
+            tag: None,
         }
+    }
+
+    fn tags(recent: &[Recent]) -> Vec<Option<&str>> {
+        recent.iter().map(|recent| recent.tag.as_deref()).collect()
     }
 
     fn keys(state: &State) -> Vec<&str> {
@@ -322,6 +355,28 @@ mod tests {
             ..State::default()
         };
         assert_eq!(keys(&state), ["NIR-12", "DES-51"]);
+    }
+
+    #[test]
+    fn shared_keys_are_tagged_with_their_connection() {
+        let mut recent = vec![
+            ticket("OPS-241", "staging", Some("acme")),
+            ticket("NIR-12", "timer", Some("acme")),
+            ticket("OPS-241", "on-call", Some("acme-dc")),
+            ticket("OPS-241", "old", None),
+        ];
+        tag_shared_keys(&mut recent);
+        assert_eq!(tags(&recent), [Some("acme"), None, Some("acme-dc"), None]);
+    }
+
+    #[test]
+    fn unique_keys_are_not_tagged() {
+        let mut recent = vec![
+            ticket("NIR-12", "timer", Some("acme")),
+            ticket("NIR-9", "review", Some("linear")),
+        ];
+        tag_shared_keys(&mut recent);
+        assert_eq!(tags(&recent), [None, None]);
     }
 
     #[test]

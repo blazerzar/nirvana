@@ -6,17 +6,21 @@ use nirvana_core::{Nirvana, NirvanaError, Slot};
 use tracing::{error, info};
 
 use crate::gui::failure::{Failure, chain};
+use crate::gui::state::start::{Recent, recent_tickets};
 use crate::time::today_start;
 
 const LOAD_FAILED: &str = "couldn't load tracking";
 const STOP_FAILED: &str = "couldn't stop tracking";
 const RESUME_FAILED: &str = "couldn't resume tracking";
 const SWITCH_FAILED: &str = "couldn't switch back";
+const START_FAILED: &str = "couldn't start tracking";
+const RECENT_LIMIT: usize = 5;
 const PULSE_PERIOD_MS: i64 = 2000;
 const PULSE_MIN_OPACITY: f32 = 0.35;
 
 /// The running slot, the last stopped slot of today, the seconds of the
-/// stopped slots of today and the ticket key that resume or switch starts.
+/// stopped slots of today, the ticket key that resume or switch starts and
+/// the tickets by when they were last worked on.
 #[derive(Default)]
 pub(in crate::gui) struct State {
     running: Option<Slot>,
@@ -24,6 +28,7 @@ pub(in crate::gui) struct State {
     stopped_today: i64,
     today: i64,
     previous: Option<String>,
+    recent: Vec<Recent>,
     now_ms: i64,
 }
 
@@ -35,6 +40,7 @@ pub(in crate::gui) struct Loaded {
     stopped_today: i64,
     today: i64,
     previous: Option<String>,
+    recent: Vec<Recent>,
 }
 
 #[derive(Clone)]
@@ -43,6 +49,8 @@ pub(in crate::gui) enum Message {
     Stop,
     Resume,
     Switch,
+    /// Starts the recent ticket, or switches to it while tracking.
+    Start(Recent),
     Loaded(Box<Loaded>),
     Frame,
     /// A tracking change finished, with the text of its success toast.
@@ -98,6 +106,12 @@ impl State {
             Some(_) => window::frames().map(|_| Message::Frame),
             None => Subscription::none(),
         }
+    }
+
+    /// Returns the most recent tickets other than the running one.
+    pub(in crate::gui) fn recent(&self) -> Vec<&Recent> {
+        let running = self.running.as_ref().map(|running| running.ticket.id);
+        recent_except(&self.recent, running)
     }
 
     /// Returns the ticket key that resume starts while not tracking.
@@ -161,6 +175,21 @@ impl State {
                     Ok(Some(format!("switched back to {}", slot.ticket.ticket_key)))
                 });
             }
+            Message::Start(recent) => {
+                let is_switch = self.is_tracking();
+                return change(START_FAILED, async move {
+                    let started = nirvana
+                        .start_slot(&recent.key, None, recent.connection.as_deref())
+                        .await?;
+                    let slot = &started.started;
+                    info!(
+                        key = %slot.ticket.ticket_key,
+                        slot_id = slot.model.id,
+                        started_at = slot.model.started_at,
+                        "slot started");
+                    Ok(is_switch.then(|| format!("switched to {}", slot.ticket.ticket_key)))
+                });
+            }
             Message::Stop | Message::Resume | Message::Switch => {}
             Message::Loaded(loaded) => {
                 let Loaded {
@@ -169,12 +198,14 @@ impl State {
                     stopped_today,
                     today,
                     previous,
+                    recent,
                 } = *loaded;
                 self.running = running;
                 self.last = last;
                 self.stopped_today = stopped_today;
                 self.today = today;
                 self.previous = previous;
+                self.recent = recent;
                 self.now_ms = Utc::now().timestamp_millis();
             }
             Message::Frame => self.now_ms = Utc::now().timestamp_millis(),
@@ -210,18 +241,28 @@ fn load(nirvana: Arc<Nirvana>) -> Task<Message> {
             .filter(|slot| slot.model.stopped_at.is_some())
             .collect();
         let previous = nirvana.previous_ticket().await?;
+        let recent = recent_tickets(&nirvana).await?;
         Ok(Loaded {
             running,
             stopped_today: stopped.iter().map(Slot::elapsed).sum(),
             last: stopped.into_iter().max_by_key(|slot| slot.model.stopped_at),
             today,
             previous: previous.map(|ticket| ticket.ticket_key),
+            recent,
         })
     })
     .map(|loaded| match loaded {
         Ok(loaded) => Message::Loaded(Box::new(loaded)),
         Err(e) => Message::Failed(failure(LOAD_FAILED, &e)),
     })
+}
+
+fn recent_except(recent: &[Recent], running: Option<i64>) -> Vec<&Recent> {
+    recent
+        .iter()
+        .filter(|recent| Some(recent.id) != running)
+        .take(RECENT_LIMIT)
+        .collect()
 }
 
 /// Fades from full opacity to the minimum and back once per period, easing
@@ -259,6 +300,32 @@ pub(in crate::gui) fn clock(seconds: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn recent(count: i64) -> Vec<Recent> {
+        (1..=count)
+            .map(|id| Recent {
+                id,
+                key: format!("NIR-{id}"),
+                title: "title".into(),
+                connection: None,
+                tag: None,
+            })
+            .collect()
+    }
+
+    fn ids(recent: &[&Recent]) -> Vec<i64> {
+        recent.iter().map(|recent| recent.id).collect()
+    }
+
+    #[test]
+    fn recent_shows_the_five_most_recent_while_not_tracking() {
+        assert_eq!(ids(&recent_except(&recent(7), None)), [1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn recent_leaves_out_the_running_ticket() {
+        assert_eq!(ids(&recent_except(&recent(7), Some(2))), [1, 3, 4, 5, 6]);
+    }
 
     #[test]
     fn clock_pads_minutes_and_seconds() {

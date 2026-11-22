@@ -16,7 +16,7 @@ use crate::gui::components::{
 use crate::gui::design_system::font::MONO;
 use crate::gui::design_system::typography::{BODY, BODY_LG, BODY_STRONG, CAPTION, LABEL_CAPS};
 use crate::gui::design_system::{radius, space as spacing, tokens};
-use crate::gui::shortcuts::recent_shortcut;
+use crate::gui::shortcuts::{is_enter, recent_shortcut};
 use crate::gui::state::start::{self, Recent, TICKET_INPUT};
 use crate::gui::state::tracking::{self, clock};
 
@@ -32,7 +32,6 @@ pub(super) fn start<'a>(
     let input = text_input::TextInput::new("e.g. NIR-12", state.key())
         .id(TICKET_INPUT)
         .on_input(|key| Message::Start(start::Message::KeyChanged(key)))
-        .on_submit(Message::Start(start::Message::Start))
         .icon(Icon {
             font: MONO,
             code_point: '›',
@@ -118,6 +117,9 @@ pub(super) fn start<'a>(
         .height(Length::Fill);
     KeyListener::new(content)
         .on_key(move |event| {
+            if is_enter(event) {
+                return Some(Message::Start(start::Message::Start));
+            }
             recent_shortcut(event)
                 .filter(|&index| index < shown.get())
                 .map(|index| Message::Start(start::Message::RecentShortcut(index)))

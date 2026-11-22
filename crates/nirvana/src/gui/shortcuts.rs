@@ -75,6 +75,19 @@ pub(super) fn recent_shortcut(event: &keyboard::Event) -> Option<usize> {
     Some(index)
 }
 
+/// Returns whether the event is an Enter press without modifiers.
+pub(super) fn is_enter(event: &keyboard::Event) -> bool {
+    matches!(
+        event,
+        keyboard::Event::KeyPressed {
+            key: keyboard::Key::Named(key::Named::Enter),
+            modifiers,
+            repeat: false,
+            ..
+        } if modifiers.is_empty()
+    )
+}
+
 /// Matches the comma by its character, or by its physical key on layouts
 /// where the key has no Latin character.
 fn is_comma(latin: Option<char>, physical_key: key::Physical) -> bool {
@@ -131,6 +144,29 @@ mod tests {
             )),
             None
         );
+    }
+
+    fn enter_press(modifiers: keyboard::Modifiers, repeat: bool) -> keyboard::Event {
+        keyboard::Event::KeyPressed {
+            key: keyboard::Key::Named(key::Named::Enter),
+            modified_key: keyboard::Key::Named(key::Named::Enter),
+            physical_key: key::Physical::Code(key::Code::Enter),
+            location: keyboard::Location::Standard,
+            modifiers,
+            text: None,
+            repeat,
+        }
+    }
+
+    #[test]
+    fn enter_matches_a_plain_press() {
+        assert!(is_enter(&enter_press(keyboard::Modifiers::empty(), false)));
+    }
+
+    #[test]
+    fn enter_ignores_modifiers_and_repeats() {
+        assert!(!is_enter(&enter_press(keyboard::Modifiers::SHIFT, false)));
+        assert!(!is_enter(&enter_press(keyboard::Modifiers::empty(), true)));
     }
 
     #[test]

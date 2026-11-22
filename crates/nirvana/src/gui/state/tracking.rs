@@ -15,12 +15,14 @@ const SWITCH_FAILED: &str = "couldn't switch back";
 const PULSE_PERIOD_MS: i64 = 2000;
 const PULSE_MIN_OPACITY: f32 = 0.35;
 
-/// The running slot, the last stopped slot of today and the ticket key that
-/// resume or switch starts.
+/// The running slot, the last stopped slot of today, the seconds of the
+/// stopped slots of today and the ticket key that resume or switch starts.
 #[derive(Default)]
 pub(in crate::gui) struct State {
     running: Option<Slot>,
     last: Option<Slot>,
+    stopped_today: i64,
+    today: i64,
     previous: Option<String>,
     now_ms: i64,
 }
@@ -30,6 +32,8 @@ pub(in crate::gui) struct State {
 pub(in crate::gui) struct Loaded {
     running: Option<Slot>,
     last: Option<Slot>,
+    stopped_today: i64,
+    today: i64,
     previous: Option<String>,
 }
 
@@ -71,6 +75,17 @@ impl State {
         self.running
             .as_ref()
             .map_or(0, |running| (self.now() - running.model.started_at).max(0))
+    }
+
+    /// Returns the seconds tracked today, with the running slot when it
+    /// started today.
+    pub(in crate::gui) fn today_total(&self) -> i64 {
+        let running = self
+            .running
+            .as_ref()
+            .filter(|running| running.model.started_at >= self.today)
+            .map_or(0, |_| self.elapsed());
+        self.stopped_today + running
     }
 
     pub(in crate::gui) fn pulse_opacity(&self) -> f32 {
@@ -151,10 +166,14 @@ impl State {
                 let Loaded {
                     running,
                     last,
+                    stopped_today,
+                    today,
                     previous,
                 } = *loaded;
                 self.running = running;
                 self.last = last;
+                self.stopped_today = stopped_today;
+                self.today = today;
                 self.previous = previous;
                 self.now_ms = Utc::now().timestamp_millis();
             }
@@ -183,11 +202,19 @@ fn load(nirvana: Arc<Nirvana>) -> Task<Message> {
     };
     Task::future(async move {
         let running = nirvana.running_slot().await?;
-        let slots = nirvana.list_slots(today, None, false).await?;
+        let stopped: Vec<Slot> = nirvana
+            .list_slots(today, None, false)
+            .await?
+            .into_iter()
+            .map(|(slot, _)| slot)
+            .filter(|slot| slot.model.stopped_at.is_some())
+            .collect();
         let previous = nirvana.previous_ticket().await?;
         Ok(Loaded {
             running,
-            last: last_stopped(slots.into_iter().map(|(slot, _)| slot)),
+            stopped_today: stopped.iter().map(Slot::elapsed).sum(),
+            last: stopped.into_iter().max_by_key(|slot| slot.model.stopped_at),
+            today,
             previous: previous.map(|ticket| ticket.ticket_key),
         })
     })
@@ -195,13 +222,6 @@ fn load(nirvana: Arc<Nirvana>) -> Task<Message> {
         Ok(loaded) => Message::Loaded(Box::new(loaded)),
         Err(e) => Message::Failed(failure(LOAD_FAILED, &e)),
     })
-}
-
-fn last_stopped(slots: impl IntoIterator<Item = Slot>) -> Option<Slot> {
-    slots
-        .into_iter()
-        .filter(|slot| slot.model.stopped_at.is_some())
-        .max_by_key(|slot| slot.model.stopped_at)
 }
 
 /// Fades from full opacity to the minimum and back once per period, easing

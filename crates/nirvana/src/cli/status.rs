@@ -1,7 +1,7 @@
 use console::{Term, style};
 use nirvana_core::Nirvana;
 
-use crate::cli::time::format_duration;
+use crate::time::format_duration;
 
 pub(crate) async fn run() -> anyhow::Result<()> {
     let service = Nirvana::new().await?;

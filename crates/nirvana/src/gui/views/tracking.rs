@@ -8,10 +8,11 @@ use crate::gui::app::Message;
 use crate::gui::components::tracked_text;
 use crate::gui::design_system::font::MONO_SEMIBOLD;
 use crate::gui::design_system::typography::{
-    BODY_LG, DISPLAY_KEY, DISPLAY_TIMER, LABEL_CAPS, PARAGRAPH, TITLE,
+    BODY, BODY_LG, DISPLAY_KEY, DISPLAY_TIMER, LABEL_CAPS, PARAGRAPH, TITLE,
 };
 use crate::gui::design_system::{Tokens, radius, space as spacing, tokens};
 use crate::gui::state::tracking::{self, clock};
+use crate::time::format_duration;
 
 const PULSE_DOT_SIZE: f32 = 7.0;
 const HINT_MAX_WIDTH: f32 = 400.0;
@@ -27,7 +28,7 @@ pub(super) fn tracking<'a>(
     tokens: &'static Tokens,
 ) -> Element<'a, Message> {
     let content = match state.running() {
-        Some(running) => tracking_now(running, state.elapsed(), state.pulse_opacity()),
+        Some(running) => tracking_now(running, state),
         None => not_tracking(state.last(), tokens),
     };
     container(content)
@@ -37,7 +38,8 @@ pub(super) fn tracking<'a>(
         .into()
 }
 
-fn tracking_now(running: &Slot, elapsed: i64, pulse: f32) -> Element<'_, Message> {
+fn tracking_now<'a>(running: &'a Slot, state: &tracking::State) -> Element<'a, Message> {
+    let pulse = state.pulse_opacity();
     let dot = container(space())
         .width(PULSE_DOT_SIZE)
         .height(PULSE_DOT_SIZE)
@@ -57,7 +59,10 @@ fn tracking_now(running: &Slot, elapsed: i64, pulse: f32) -> Element<'_, Message
         Space::new().height(spacing::S075),
         TITLE.text(&running.ticket.title).style(primary),
         space::vertical(),
-        tracked_text(DISPLAY_TIMER, &clock(elapsed), primary),
+        tracked_text(DISPLAY_TIMER, &clock(state.elapsed()), primary),
+        Space::new().height(spacing::S100),
+        BODY.text(format!("today {}", format_duration(state.today_total())))
+            .style(tertiary),
     ]
     .into()
 }

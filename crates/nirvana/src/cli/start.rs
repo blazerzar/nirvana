@@ -6,8 +6,9 @@ use dialoguer::FuzzySelect;
 use nirvana_core::{Nirvana, Slot, StartResult, TicketConnection, TicketSort};
 use tracing::info;
 
-use crate::cli::time::{format_duration, parse_time};
+use crate::cli::time::parse_time;
 use crate::cli::{StartArgs, theme};
+use crate::time::format_duration;
 
 pub(crate) async fn run(args: StartArgs) -> anyhow::Result<()> {
     let service = Nirvana::new().await?;

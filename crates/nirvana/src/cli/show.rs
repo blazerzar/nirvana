@@ -2,8 +2,9 @@ use console::{Term, style};
 use nirvana_core::{Nirvana, PublishTarget, TargetState};
 
 use crate::cli::table::{self, Column};
-use crate::cli::time::{format_duration, format_timestamp};
+use crate::cli::time::format_timestamp;
 use crate::cli::{ShowArgs, slot_target};
+use crate::time::format_duration;
 
 const COLUMNS: [Column; 4] = [
     Column::new("CONNECTION"),

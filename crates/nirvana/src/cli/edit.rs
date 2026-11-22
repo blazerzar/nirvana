@@ -2,8 +2,9 @@ use console::{Term, style};
 use nirvana_core::{Change, Nirvana};
 use tracing::info;
 
-use crate::cli::time::{format_duration, local_date, parse_duration, parse_time};
+use crate::cli::time::{local_date, parse_duration, parse_time};
 use crate::cli::{EditArgs, slot_target};
+use crate::time::format_duration;
 
 pub(crate) async fn run(args: EditArgs) -> anyhow::Result<()> {
     let target = slot_target(args.id, args.at.as_deref())?;

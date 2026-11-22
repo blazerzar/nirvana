@@ -3,8 +3,9 @@ use dialoguer::Confirm;
 use nirvana_core::{Nirvana, PublishState, Slot};
 use tracing::info;
 
-use crate::cli::time::{format_duration, format_timestamp};
+use crate::cli::time::format_timestamp;
 use crate::cli::{DeleteArgs, slot_target, theme};
+use crate::time::format_duration;
 
 pub(crate) async fn run(args: DeleteArgs) -> anyhow::Result<()> {
     let target = slot_target(args.id, args.at.as_deref())?;

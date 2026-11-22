@@ -2,6 +2,8 @@ use iced::theme::Mode;
 use iced::{Subscription, Task, system};
 use nirvana_core::Theme;
 
+use super::design_system::{Tokens, tokens};
+
 #[derive(Default)]
 pub(super) struct State {
     theme: Theme,
@@ -38,6 +40,14 @@ impl State {
             Theme::Light => Some(iced::Theme::Light),
             Theme::Dark => Some(iced::Theme::Dark),
         }
+    }
+
+    pub(super) fn tokens(&self) -> &'static Tokens {
+        tokens(&if self.is_dark() {
+            iced::Theme::Dark
+        } else {
+            iced::Theme::Light
+        })
     }
 
     fn is_dark(&self) -> bool {

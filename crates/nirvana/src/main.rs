@@ -5,6 +5,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 mod about;
 mod cli;
 mod gui;
+mod time;
 
 fn main() {
     match nirvana_core::file_layer() {

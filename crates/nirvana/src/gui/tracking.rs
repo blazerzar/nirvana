@@ -1,20 +1,35 @@
 use std::sync::Arc;
 
-use iced::Task;
+use chrono::Utc;
+use iced::{Subscription, Task, window};
 use nirvana_core::{Nirvana, NirvanaError, Slot};
 use tracing::{error, info};
 
 use super::failure::{Failure, chain};
+use crate::time::today_start;
 
 const LOAD_FAILED: &str = "couldn't load tracking";
 const STOP_FAILED: &str = "couldn't stop tracking";
 const RESUME_FAILED: &str = "couldn't resume tracking";
 const SWITCH_FAILED: &str = "couldn't switch back";
+const PULSE_PERIOD_MS: i64 = 2000;
+const PULSE_MIN_OPACITY: f32 = 0.35;
 
-/// The running slot and the ticket key that resume or switch starts.
+/// The running slot, the last stopped slot of today and the ticket key that
+/// resume or switch starts.
 #[derive(Default)]
 pub(super) struct State {
     running: Option<Slot>,
+    last: Option<Slot>,
+    previous: Option<String>,
+    now_ms: i64,
+}
+
+/// The tracking state read from the database.
+#[derive(Clone)]
+pub(super) struct Loaded {
+    running: Option<Slot>,
+    last: Option<Slot>,
     previous: Option<String>,
 }
 
@@ -24,7 +39,8 @@ pub(super) enum Message {
     Stop,
     Resume,
     Switch,
-    Loaded(Option<Slot>, Option<String>),
+    Loaded(Box<Loaded>),
+    Frame,
     /// A tracking change finished, with the text of its success toast.
     Changed(Result<Option<String>, Failure>),
     Succeeded(String),
@@ -34,6 +50,33 @@ pub(super) enum Message {
 impl State {
     pub(super) fn is_tracking(&self) -> bool {
         self.running.is_some()
+    }
+
+    pub(super) fn running(&self) -> Option<&Slot> {
+        self.running.as_ref()
+    }
+
+    pub(super) fn last(&self) -> Option<&Slot> {
+        self.last.as_ref()
+    }
+
+    /// Returns the seconds the running slot has been running for.
+    pub(super) fn elapsed(&self) -> i64 {
+        self.running.as_ref().map_or(0, |running| {
+            (self.now_ms / 1000 - running.model.started_at).max(0)
+        })
+    }
+
+    pub(super) fn pulse_opacity(&self) -> f32 {
+        pulse_opacity(self.now_ms)
+    }
+
+    /// Redraws on every frame while tracking, for the timer and the pulse.
+    pub(super) fn subscription(&self) -> Subscription<Message> {
+        match self.running {
+            Some(_) => window::frames().map(|_| Message::Frame),
+            None => Subscription::none(),
+        }
     }
 
     /// Returns the ticket key that resume starts while not tracking.
@@ -98,10 +141,18 @@ impl State {
                 });
             }
             Message::Stop | Message::Resume | Message::Switch => {}
-            Message::Loaded(running, previous) => {
+            Message::Loaded(loaded) => {
+                let Loaded {
+                    running,
+                    last,
+                    previous,
+                } = *loaded;
                 self.running = running;
+                self.last = last;
                 self.previous = previous;
+                self.now_ms = Utc::now().timestamp_millis();
             }
+            Message::Frame => self.now_ms = Utc::now().timestamp_millis(),
             Message::Changed(changed) => {
                 let reload = load(nirvana);
                 return match changed {
@@ -117,15 +168,43 @@ impl State {
 }
 
 fn load(nirvana: Arc<Nirvana>) -> Task<Message> {
+    let today = match today_start() {
+        Ok(today) => today,
+        Err(e) => {
+            error!("{e:#}");
+            return Task::done(Message::Failed(Failure::new(LOAD_FAILED, None)));
+        }
+    };
     Task::future(async move {
         let running = nirvana.running_slot().await?;
+        let slots = nirvana.list_slots(today, None, false).await?;
         let previous = nirvana.previous_ticket().await?;
-        Ok((running, previous.map(|ticket| ticket.ticket_key)))
+        Ok(Loaded {
+            running,
+            last: last_stopped(slots.into_iter().map(|(slot, _)| slot)),
+            previous: previous.map(|ticket| ticket.ticket_key),
+        })
     })
     .map(|loaded| match loaded {
-        Ok((running, previous)) => Message::Loaded(running, previous),
+        Ok(loaded) => Message::Loaded(Box::new(loaded)),
         Err(e) => Message::Failed(failure(LOAD_FAILED, &e)),
     })
+}
+
+fn last_stopped(slots: impl IntoIterator<Item = Slot>) -> Option<Slot> {
+    slots
+        .into_iter()
+        .filter(|slot| slot.model.stopped_at.is_some())
+        .max_by_key(|slot| slot.model.stopped_at)
+}
+
+/// Fades from full opacity to the minimum and back once per period, easing
+/// in and out.
+fn pulse_opacity(now_ms: i64) -> f32 {
+    let phase = now_ms.rem_euclid(PULSE_PERIOD_MS) as f32 / PULSE_PERIOD_MS as f32;
+    let fade = 1.0 - (2.0 * phase - 1.0).abs();
+    let eased = fade * fade * (3.0 - 2.0 * fade);
+    1.0 - (1.0 - PULSE_MIN_OPACITY) * eased
 }
 
 /// Runs a tracking change that returns the text of its success toast.
@@ -142,7 +221,7 @@ fn failure(text: &'static str, error: &NirvanaError) -> Failure {
 }
 
 /// Formats `seconds` as `h:mm:ss`.
-fn clock(seconds: i64) -> String {
+pub(super) fn clock(seconds: i64) -> String {
     format!(
         "{}:{:02}:{:02}",
         seconds / 3600,
@@ -159,5 +238,16 @@ mod tests {
     fn clock_pads_minutes_and_seconds() {
         assert_eq!(clock(23 * 60 + 41), "0:23:41");
         assert_eq!(clock(12 * 3600 + 5), "12:00:05");
+    }
+
+    #[test]
+    fn pulse_is_opaque_at_the_start_of_a_period() {
+        assert_eq!(pulse_opacity(0), 1.0);
+        assert_eq!(pulse_opacity(PULSE_PERIOD_MS), 1.0);
+    }
+
+    #[test]
+    fn pulse_is_faintest_in_the_middle_of_a_period() {
+        assert!((pulse_opacity(PULSE_PERIOD_MS / 2) - PULSE_MIN_OPACITY).abs() < f32::EPSILON);
     }
 }

@@ -5,7 +5,8 @@ use nirvana_core::Nirvana;
 use tracing::{info, warn};
 
 use crate::cli::PublishArgs;
-use crate::cli::time::{format_duration, format_timestamp, parse_time, today_start};
+use crate::cli::time::{format_duration, format_timestamp, parse_time};
+use crate::time::today_start;
 
 pub(crate) async fn run(args: PublishArgs) -> anyhow::Result<()> {
     let today = Local::now().date_naive();

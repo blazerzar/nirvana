@@ -189,6 +189,7 @@ impl Gui {
             appearance::subscription().map(Message::Appearance),
             shortcuts::listen(),
             window::close_events().map(Message::Closed),
+            self.tracking.subscription().map(Message::Tracking),
         ])
     }
 
@@ -196,7 +197,13 @@ impl Gui {
         let toast = self.toast.current(window);
         match self.windows.get(window) {
             Some(Window::Info(info)) => views::info(info, toast),
-            _ => views::main(self.profile.as_ref(), &self.settings, &self.tracking, toast),
+            _ => views::main(
+                self.profile.as_ref(),
+                &self.settings,
+                &self.tracking,
+                self.appearance.tokens(),
+                toast,
+            ),
         }
     }
 

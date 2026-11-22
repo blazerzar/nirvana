@@ -9,7 +9,7 @@ use super::setup::setup;
 use super::tracking::tracking;
 use super::with_toast;
 use crate::gui::app::Message;
-use crate::gui::design_system::tokens;
+use crate::gui::design_system::{Tokens, tokens};
 use crate::gui::profile::ProfileState;
 use crate::gui::toast::Toast;
 use crate::gui::{settings, tracking};
@@ -21,6 +21,7 @@ pub(in crate::gui) fn main<'a>(
     profile: Option<&'a ProfileState>,
     settings: &'a settings::State,
     tracking_state: &'a tracking::State,
+    theme_tokens: &'static Tokens,
     toast: Option<&'a Toast>,
 ) -> Element<'a, Message> {
     let header = header(profile, settings);
@@ -33,7 +34,7 @@ pub(in crate::gui) fn main<'a>(
             let setup_step = profile.and_then(ProfileState::setup_step);
             let body = responsive(move |size| match setup_step {
                 Some(step) => setup(size.width, step),
-                None => row![tracking(), listing(size.width)].into(),
+                None => row![tracking(tracking_state, theme_tokens), listing(size.width)].into(),
             });
             (
                 body.into(),

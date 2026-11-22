@@ -4,7 +4,8 @@ use nirvana_core::{Nirvana, PublishState};
 
 use crate::cli::ListArgs;
 use crate::cli::table::{self, Column};
-use crate::cli::time::{format_duration, format_timestamp, parse_time, today_start};
+use crate::cli::time::{format_duration, format_timestamp, parse_time};
+use crate::time::today_start;
 
 const COLUMNS: [Column; 6] = [
     Column::new("KEY"),

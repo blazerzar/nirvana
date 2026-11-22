@@ -7,7 +7,8 @@ Main goals that need to be achieved before shipping 1.0:
 
 - rewrite and refactor core (async + SeaORM), introduce tests, new features,
 - replace Tauri with Iced,
-- add Leptos into nirvana binary for local web and API server,
+- add server-rendered Leptos with Alpine plus a REST API into the nirvana
+  binary for the local web,
 - have automatic releases and testing using CICD.
 
 To achieve this, we will first start clearing old stuff, then we will modify
@@ -297,7 +298,8 @@ thorough review to make sure we are not bringing any problems into the next stag
 ## API
 
 - [ ] Need to start building the API that will be used to control Nirvana from web.
-- [ ] Analyze design if we should put it in nirvana or core.
+- [x] Analyze design if we should put it in nirvana or core: nirvana
+      (implementation guide §3 #10).
 - [ ] Axum server bound to 127.0.0.1, Host and Origin checks, never return tokens.
 - [ ] Default port 5167, configurable.
 
@@ -342,7 +344,9 @@ thorough review to make sure we are not bringing any problems into the next stag
 
 ## Webserver
 
-- [ ] Create web page using Leptos (decide CSR or SSR, assets embedded in binary).
+- [ ] Create web page with server-rendered Leptos and Alpine, assets embedded
+      in binary (implementation guide §3 #10).
+- [ ] `nirvana serve` runs the web server headless.
 - [ ] Make it possible to toggle it from the settings.
 - [ ] Start building screens: setup, week, month, edit drawer, profiles and
       connections, add connection, new profile, settings.

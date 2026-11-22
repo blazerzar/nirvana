@@ -46,7 +46,7 @@ worklogs.
 | 7 | Git hooks with **hk** (+ mise). **Mise tasks** replace the justfile. **dprint** (TOML, YAML, JSON) replaces Tombi and sql-formatter, so Node is no longer needed. Tool versions are pinned in `mise.toml`. | Cross-platform, one tool manager, one formatter. |
 | 8 | **Idle detection** is restored from `main` (`crates/nirvana-gui/src-tauri/src/idle/{mod,macos,windows}.rs`) when the Iced app needs it. **Tray and menu-bar code is rewritten** for Iced. The GUI crate can be deleted without porting anything first. | |
 | 9 | **Portal stack: Leptos vs Phoenix, decided at the Stage 2 review** (see §8). Until then the Portal contract stays language-neutral. | |
-| 10 | Local web: **Leptos CSR (Trunk) + axum REST API**, assets embedded with `rust-embed`. *Recommended, confirm when stage 2 starts.* | Simpler single-binary build than SSR/hydration. The explicit API matches the roadmap's API section. |
+| 10 | Local web: **server-rendered Leptos + Alpine.js + axum REST API in the `nirvana` binary.** No WebAssembly. The server renders HTML with Leptos `view!` components and `.to_html()`, using only the `ssr` feature, with no hydration and no `leptos_axum`. Alpine.js handles state in the browser. It is vendored at a pinned version and calls the API with `fetch`. The API is an axum REST API under `/api` with plain JSON bodies, not the JSON:API spec. It is the only way into nirvana: the web page uses it, and browser extensions can later. Errors are the HTTP status plus `{ "error": "<message>" }`. The server lives in the `nirvana` binary, in `src/server/`, and core stays free of HTTP. It runs inside the GUI when `gui.server` is on, and headless with `nirvana serve`, both on port `core.port` (default 5167). Security: it binds only to `127.0.0.1` and checks `Host` on every request. A mutating request needs `Content-Type: application/json` and an `Origin` of `http://localhost:<port>` or `http://127.0.0.1:<port>`. Responses come only from response types (DTOs), so tokens are never returned. The first pages are an empty home page, then `/setup`. | |
 | 11 | **Migration tests are mandatory**: 0.3.0-alpha DB and config fixtures are checked in, never edited, and run in CI (§5). | Guarantees the compatibility promise. |
 | 12 | **Linear history only, no merge commits.** Feature PRs are squash-merged into `dev-1.0`, `main` is only fast-forwarded to `dev-1.0`. Code review is done by agents on the PR (§12). | |
 | 13 | **Logging with `tracing`** to a single `nirvana.log`, **no rotation**. On macOS the log lives in `~/Library/Logs/nirvana/` (other locations in `paths.rs` module docs). Levels: `info` for user issued commands (start, stop, publish, config `X` changed from `a` to `b`) and DB and config migrations, `warn`, `error`, `debug` for everything else, `trace` for dev only logs (compiled out in release with `release_max_level_debug`). Only our crates are logged, at `info` by default (`trace` in dev mode). `[log] level` in `config.toml` (new in schema version 2, written only when set) sets the level for our crates only and overrides the dev mode default. `NIRVANA_LOG` (full filter directive) overrides both and is the only way to log dependencies (sqlx, sea-orm). Each frontend logs the commands it runs at `info` after they succeed, with the names the user chose. `nirvana-core` logs at `debug`, except DB and config migrations at `info` and `warn` and `error` events. `nirvana-core` owns the log file, format and filters and exposes them as a `Layer` (`logging::file_layer`). The `nirvana` binary only installs it and sets the max level feature, as `tracing` recommends for libraries. Stdout output for GUI dev comes later. | macOS convention. Level scheme follows `tracing` verbosity order. |
@@ -493,8 +493,8 @@ Portal needs: multi-user auth (password + Microsoft SSO/OIDC), admin CRUD
 email templates, Postgres, a container. It also stores Linear worklogs.
 
 **Leptos (Rust)**
-- For: the local web is already Leptos, so components, tokens and DTO types
-  are reused (a shared `nirvana-portal-api` crate used by the desktop
+- For: the local web is already Leptos, so tokens and DTO types are reused.
+  Leptos components would only be reused as server-side templates (a shared `nirvana-portal-api` crate used by the desktop
   publisher). One language for a one-person team. A single static binary
   makes a tiny container. The libraries exist: axum-login, openidconnect,
   lettre, rust_xlsxwriter, SeaORM on Postgres, plus tokio-cron or apalis for
@@ -531,22 +531,21 @@ possible now:
 
 ## 9. Open questions
 
-1. Leptos CSR vs SSR for the local web (CSR recommended, §3 #10).
-2. The per-profile DB path in the design versus the single-DB decision:
+1. The per-profile DB path in the design versus the single-DB decision:
    adjust the copy on the profile card, Settings → data and setup ("logs are
    stored in …").
-3. Does the web server run only inside the desktop app, or also headless
-   (`nirvana serve`)? How does the desktop detect profile creation done in
-   web (shared process, or DB change notification)?
-4. Notes: export them before dropping the column?
-5. Linux packaging format (AppImage / deb / Flatpak) and Linux tray support in
+2. The web server runs inside the desktop app and headless with
+   `nirvana serve` (§3 #10). How does the desktop detect profile creation
+   done in web (shared process, or DB change notification)?
+3. Notes: export them before dropping the column?
+4. Linux packaging format (AppImage / deb / Flatpak) and Linux tray support in
    Iced.
-6. Branch flow after 1.0: keep `dev-1.0` (or a `dev` branch) or PR straight
+5. Branch flow after 1.0: keep `dev-1.0` (or a `dev` branch) or PR straight
    into `main`. Release PRs (release-plz) that land on `main` must not break
    the fast-forward from the dev branch.
-7. Logging to the terminal when running with `cargo run` (dev mode): stdout
+6. Logging to the terminal when running with `cargo run` (dev mode): stdout
    or stderr, and should it replace or add to the log file?
-8. Release boundary: the first standalone release (Stage 1 CICD) freezes the
+7. Release boundary: the first standalone release (Stage 1 CICD) freezes the
    DB and config schema it ships. Later changes then need migrations and
    fixtures from that release too. Until then, 1.0 migrations can still be
    edited.
@@ -554,8 +553,10 @@ possible now:
 ## 10. Security notes
 
 - The local server manages tokens, so: bind to `127.0.0.1` only, validate the
-  `Host` header (against DNS rebinding), check `Origin` / use CSRF tokens on
-  mutating requests, and never return tokens over the API.
+  `Host` header (against DNS rebinding), and never return tokens over the API.
+  A mutating request needs `Content-Type: application/json` and an `Origin` of
+  `http://localhost:<port>` or `http://127.0.0.1:<port>`. Browser extensions
+  will later need an origin allowlist and probably a per-install key.
 - Keyring: service `nirvana`, account =
   `nirvana_<profile>_<connection>_<key>` stored in `credentials`. The key is
   random so a dev and a production DB never overwrite each other's entries. The `env` store reads

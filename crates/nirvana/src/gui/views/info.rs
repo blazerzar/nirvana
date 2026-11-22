@@ -5,8 +5,8 @@ use iced::{Color, Element, Length, Size};
 use super::with_toast;
 use crate::gui::app::Message;
 use crate::gui::design_system::{Tokens, tokens};
-use crate::gui::info::{self, Info};
-use crate::gui::toast::Toast;
+use crate::gui::state::info::{self, Info};
+use crate::gui::state::toast::Toast;
 
 const TEXT_SIZE: f32 = 10.0;
 const LINE_HEIGHT: f32 = 1.3;

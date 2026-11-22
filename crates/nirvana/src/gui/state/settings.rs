@@ -5,21 +5,21 @@ use iced::Task;
 use nirvana_core::{IdleConfig, IdleMethod, Nirvana, NirvanaError};
 use tracing::error;
 
-use super::failure::{Failure, chain};
+use crate::gui::failure::{Failure, chain};
 
 const SAVE_FAILED: &str = "couldn't save the settings";
 const IDLE_AFTER_MINUTES: [u64; 6] = [1, 2, 5, 10, 15, 30];
 
 /// Desktop settings. Available once the idle settings are loaded.
 #[derive(Default)]
-pub(super) struct State {
+pub(in crate::gui) struct State {
     open: bool,
     idle: Option<IdleConfig>,
     idle_after_open: bool,
 }
 
 #[derive(Clone)]
-pub(super) enum Message {
+pub(in crate::gui) enum Message {
     Toggle,
     Close,
     IdleEnabled(bool),
@@ -34,7 +34,7 @@ pub(super) enum Message {
 
 /// The idle threshold in seconds.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct IdleAfter(u64);
+pub(in crate::gui) struct IdleAfter(u64);
 
 impl fmt::Display for IdleAfter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -47,13 +47,13 @@ impl fmt::Display for IdleAfter {
 }
 
 impl IdleAfter {
-    pub(super) fn of(idle: &IdleConfig) -> Self {
+    pub(in crate::gui) fn of(idle: &IdleConfig) -> Self {
         Self(idle.threshold_secs)
     }
 
     /// Returns the offered thresholds, with `current` added if it is not one
     /// of them.
-    pub(super) fn options(current: Self) -> Vec<Self> {
+    pub(in crate::gui) fn options(current: Self) -> Vec<Self> {
         let mut options: Vec<_> = IDLE_AFTER_MINUTES
             .iter()
             .map(|minutes| Self(minutes * 60))
@@ -67,24 +67,24 @@ impl IdleAfter {
 }
 
 impl State {
-    pub(super) fn load(&mut self, idle: Option<IdleConfig>) {
+    pub(in crate::gui) fn load(&mut self, idle: Option<IdleConfig>) {
         self.idle = idle;
     }
 
-    pub(super) fn is_available(&self) -> bool {
+    pub(in crate::gui) fn is_available(&self) -> bool {
         self.idle.is_some()
     }
 
     /// Returns the idle settings while the settings are open.
-    pub(super) fn shown(&self) -> Option<&IdleConfig> {
+    pub(in crate::gui) fn shown(&self) -> Option<&IdleConfig> {
         self.idle.as_ref().filter(|_| self.open)
     }
 
-    pub(super) fn is_idle_after_open(&self) -> bool {
+    pub(in crate::gui) fn is_idle_after_open(&self) -> bool {
         self.idle_after_open
     }
 
-    pub(super) fn update(
+    pub(in crate::gui) fn update(
         &mut self,
         message: Message,
         nirvana: Option<&Result<Arc<Nirvana>, Failure>>,

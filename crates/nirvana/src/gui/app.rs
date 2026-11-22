@@ -5,11 +5,12 @@ use nirvana_core::{IdleConfig, Nirvana, NirvanaError, Theme};
 use tracing::error;
 
 use super::failure::{Failure, chain};
-use super::profile::{self, ProfileState};
 use super::shortcuts::Shortcut;
-use super::toast::{self, Kind};
+use super::state::profile::{self, ProfileState};
+use super::state::toast::{self, Kind};
+use super::state::{appearance, info, settings, tracking};
 use super::windows::{Window, Windows};
-use super::{appearance, info, settings, shortcuts, tracking, views};
+use super::{shortcuts, views};
 
 pub(super) struct Gui {
     nirvana: Option<Result<Arc<Nirvana>, Failure>>,

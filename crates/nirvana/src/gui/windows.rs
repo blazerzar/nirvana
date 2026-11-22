@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use iced::{Size, Task, window};
 
-use super::info::Info;
+use super::state::info::Info;
 
 pub(super) enum Window {
     Main,

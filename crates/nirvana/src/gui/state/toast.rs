@@ -4,7 +4,7 @@ use std::time::Duration;
 use iced::{Task, window};
 
 #[derive(Clone, Copy)]
-pub(super) enum Kind {
+pub(in crate::gui) enum Kind {
     Success,
     #[allow(dead_code)]
     Warning,
@@ -21,21 +21,21 @@ impl Kind {
     }
 }
 
-pub(super) struct Toast {
-    pub(super) id: u64,
-    pub(super) kind: Kind,
-    pub(super) text: String,
-    pub(super) detail: Option<String>,
+pub(in crate::gui) struct Toast {
+    pub(in crate::gui) id: u64,
+    pub(in crate::gui) kind: Kind,
+    pub(in crate::gui) text: String,
+    pub(in crate::gui) detail: Option<String>,
 }
 
 #[derive(Default)]
-pub(super) struct State {
+pub(in crate::gui) struct State {
     next_id: u64,
     current: BTreeMap<window::Id, Toast>,
 }
 
 #[derive(Clone)]
-pub(super) enum Message {
+pub(in crate::gui) enum Message {
     Show {
         window: window::Id,
         kind: Kind,
@@ -46,15 +46,15 @@ pub(super) enum Message {
 }
 
 impl State {
-    pub(super) fn current(&self, window: window::Id) -> Option<&Toast> {
+    pub(in crate::gui) fn current(&self, window: window::Id) -> Option<&Toast> {
         self.current.get(&window)
     }
 
-    pub(super) fn close(&mut self, window: window::Id) {
+    pub(in crate::gui) fn close(&mut self, window: window::Id) {
         self.current.remove(&window);
     }
 
-    pub(super) fn update(&mut self, message: Message) -> Task<Message> {
+    pub(in crate::gui) fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Show {
                 window,

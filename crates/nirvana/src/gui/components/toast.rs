@@ -7,7 +7,7 @@ use iced::{Color, Element, Length, Padding, Point, Rectangle, Renderer, Size, Th
 
 use crate::gui::design_system::typography::{BODY, CAPTION};
 use crate::gui::design_system::{font_size, line_height, radius, space, tokens};
-use crate::gui::toast::{Kind, Toast};
+use crate::gui::state::toast::{Kind, Toast};
 
 const MIN_WIDTH: f32 = 300.0;
 const MAX_WIDTH: f32 = 500.0;

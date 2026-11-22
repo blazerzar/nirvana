@@ -12,8 +12,8 @@ use crate::gui::app::Message;
 use crate::gui::components::{Button, Size as ButtonSize};
 use crate::gui::design_system::font::INTER_BOLD;
 use crate::gui::design_system::{Tokens, tokens};
-use crate::gui::profile::{Health, Profile, ProfileState};
-use crate::gui::{info, settings};
+use crate::gui::state::profile::{Health, Profile, ProfileState};
+use crate::gui::state::{info, settings};
 
 static LOGO: LazyLock<svg::Handle> =
     LazyLock::new(|| svg::Handle::from_memory(include_bytes!("../../../assets/logo.svg")));

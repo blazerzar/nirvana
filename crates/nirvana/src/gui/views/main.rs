@@ -10,9 +10,9 @@ use super::tracking::tracking;
 use super::with_toast;
 use crate::gui::app::Message;
 use crate::gui::design_system::{Tokens, tokens};
-use crate::gui::profile::ProfileState;
-use crate::gui::toast::Toast;
-use crate::gui::{settings, tracking};
+use crate::gui::state::profile::ProfileState;
+use crate::gui::state::toast::Toast;
+use crate::gui::state::{settings, tracking};
 
 pub(in crate::gui) const MAIN_WINDOW_SIZE: Size = Size::new(960.0, 540.0);
 const TOAST_BOTTOM: f32 = 76.0;

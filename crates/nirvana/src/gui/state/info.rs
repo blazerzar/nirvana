@@ -5,10 +5,10 @@ use iced::{Task, window};
 use nirvana_core::Nirvana;
 use tracing::error;
 
-use super::failure::{Failure, chain};
-use super::views;
-use super::windows::{Window, Windows};
 use crate::about;
+use crate::gui::failure::{Failure, chain};
+use crate::gui::views;
+use crate::gui::windows::{Window, Windows};
 
 const INFO_CLICKS: u32 = 5;
 const INFO_FAILED: &str = "couldn't load the app info";
@@ -17,19 +17,19 @@ const OPEN_LOGS_FAILED: &str = "couldn't open the log file";
 const MISSING_FILE: &str = "the file doesn't exist";
 
 #[derive(Clone)]
-pub(super) struct Info {
-    pub(super) rows: Result<Vec<(&'static str, String)>, Failure>,
-    pub(super) log_file: Result<PathBuf, String>,
+pub(in crate::gui) struct Info {
+    pub(in crate::gui) rows: Result<Vec<(&'static str, String)>, Failure>,
+    pub(in crate::gui) log_file: Result<PathBuf, String>,
 }
 
 #[derive(Default)]
-pub(super) struct State {
+pub(in crate::gui) struct State {
     logo_clicks: u32,
     loading: bool,
 }
 
 #[derive(Clone)]
-pub(super) enum Message {
+pub(in crate::gui) enum Message {
     LogoClicked,
     Loaded(Info),
     ShowLogs,
@@ -37,7 +37,7 @@ pub(super) enum Message {
 }
 
 impl State {
-    pub(super) fn update(
+    pub(in crate::gui) fn update(
         &mut self,
         message: Message,
         nirvana: Option<&Result<Arc<Nirvana>, Failure>>,

@@ -11,7 +11,7 @@ use crate::gui::design_system::typography::{
     BODY_LG, DISPLAY_KEY, DISPLAY_TIMER, LABEL_CAPS, PARAGRAPH, TITLE,
 };
 use crate::gui::design_system::{Tokens, radius, space as spacing, tokens};
-use crate::gui::tracking::{self, clock};
+use crate::gui::state::tracking::{self, clock};
 
 const PULSE_DOT_SIZE: f32 = 7.0;
 const HINT_MAX_WIDTH: f32 = 400.0;

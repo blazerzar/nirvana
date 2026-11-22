@@ -4,13 +4,13 @@ use iced::Task;
 use nirvana_core::{DomainError, Nirvana, NirvanaError};
 use tracing::warn;
 
-pub(super) enum ProfileState {
+pub(in crate::gui) enum ProfileState {
     Missing,
     Active(Profile),
 }
 
-pub(super) struct Profile {
-    pub(super) name: String,
+pub(in crate::gui) struct Profile {
+    pub(in crate::gui) name: String,
     connections: usize,
     has_slots: bool,
     tested: usize,
@@ -18,14 +18,14 @@ pub(super) struct Profile {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) enum Health {
+pub(in crate::gui) enum Health {
     Healthy,
     Degraded,
     Down,
 }
 
 impl ProfileState {
-    pub(super) fn setup_step(&self) -> Option<u8> {
+    pub(in crate::gui) fn setup_step(&self) -> Option<u8> {
         match self {
             Self::Missing => Some(1),
             Self::Active(profile) if profile.connections == 0 && !profile.has_slots => Some(2),
@@ -35,13 +35,13 @@ impl ProfileState {
 }
 
 impl Profile {
-    pub(super) fn has_connections(&self) -> bool {
+    pub(in crate::gui) fn has_connections(&self) -> bool {
         self.connections > 0
     }
 
     /// Returns `None` until every connection is tested, and for a profile
     /// without connections.
-    pub(super) fn health(&self) -> Option<Health> {
+    pub(in crate::gui) fn health(&self) -> Option<Health> {
         (self.connections > 0 && self.tested == self.connections).then_some(
             if self.failed == self.connections {
                 Health::Down
@@ -55,14 +55,14 @@ impl Profile {
 }
 
 #[derive(Clone)]
-pub(super) enum Message {
+pub(in crate::gui) enum Message {
     Missing,
     Failed(Arc<NirvanaError>),
     Loaded(String, usize, bool),
     ConnectionTested(bool),
 }
 
-pub(super) fn update(profile: &mut Option<ProfileState>, message: Message) {
+pub(in crate::gui) fn update(profile: &mut Option<ProfileState>, message: Message) {
     match message {
         Message::Missing => *profile = Some(ProfileState::Missing),
         Message::Failed(_) => {}
@@ -84,7 +84,7 @@ pub(super) fn update(profile: &mut Option<ProfileState>, message: Message) {
     }
 }
 
-pub(super) fn load(nirvana: Arc<Nirvana>) -> Task<Message> {
+pub(in crate::gui) fn load(nirvana: Arc<Nirvana>) -> Task<Message> {
     let service = nirvana.clone();
     Task::future(async move {
         let active = service.active_profile().await?;

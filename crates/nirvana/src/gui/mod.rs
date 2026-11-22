@@ -1,14 +1,9 @@
 mod app;
-mod appearance;
 mod components;
 mod design_system;
 mod failure;
-mod info;
-mod profile;
-mod settings;
 mod shortcuts;
-mod toast;
-mod tracking;
+mod state;
 mod views;
 mod windows;
 

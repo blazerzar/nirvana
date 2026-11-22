@@ -16,7 +16,7 @@ pub(super) use main::{MAIN_WINDOW_SIZE, main};
 use crate::gui::app::Message;
 use crate::gui::components;
 use crate::gui::design_system::tokens;
-use crate::gui::toast::{self, Toast};
+use crate::gui::state::toast::{self, Toast};
 
 fn with_toast<'a>(
     content: Element<'a, Message>,

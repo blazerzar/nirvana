@@ -8,7 +8,7 @@ use crate::gui::app::Message;
 use crate::gui::components::{Button, Size, select, toggle, toggle_chip, tracked_text};
 use crate::gui::design_system::typography::{BODY, BODY_LG, CAPTION, HEADING_SCREEN, LABEL_CAPS};
 use crate::gui::design_system::{DISABLED_OPACITY, space, tokens};
-use crate::gui::settings::{self, IdleAfter};
+use crate::gui::state::settings::{self, IdleAfter};
 
 const COLUMN_GAP: f32 = 32.0;
 const BAR_HEIGHT: f32 = 52.0;

@@ -3,7 +3,7 @@ use iced::keyboard::{self, key};
 use iced::{Subscription, window};
 
 use super::app::Message;
-use super::{appearance, settings, tracking};
+use super::state::{appearance, settings, tracking};
 
 /// A shortcut pressed in a window, handled by the main window only.
 #[derive(Clone)]

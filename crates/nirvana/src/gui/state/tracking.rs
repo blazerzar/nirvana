@@ -5,7 +5,7 @@ use iced::{Subscription, Task, window};
 use nirvana_core::{Nirvana, NirvanaError, Slot};
 use tracing::{error, info};
 
-use super::failure::{Failure, chain};
+use crate::gui::failure::{Failure, chain};
 use crate::time::today_start;
 
 const LOAD_FAILED: &str = "couldn't load tracking";
@@ -18,7 +18,7 @@ const PULSE_MIN_OPACITY: f32 = 0.35;
 /// The running slot, the last stopped slot of today and the ticket key that
 /// resume or switch starts.
 #[derive(Default)]
-pub(super) struct State {
+pub(in crate::gui) struct State {
     running: Option<Slot>,
     last: Option<Slot>,
     previous: Option<String>,
@@ -27,14 +27,14 @@ pub(super) struct State {
 
 /// The tracking state read from the database.
 #[derive(Clone)]
-pub(super) struct Loaded {
+pub(in crate::gui) struct Loaded {
     running: Option<Slot>,
     last: Option<Slot>,
     previous: Option<String>,
 }
 
 #[derive(Clone)]
-pub(super) enum Message {
+pub(in crate::gui) enum Message {
     Load,
     Stop,
     Resume,
@@ -48,31 +48,31 @@ pub(super) enum Message {
 }
 
 impl State {
-    pub(super) fn is_tracking(&self) -> bool {
+    pub(in crate::gui) fn is_tracking(&self) -> bool {
         self.running.is_some()
     }
 
-    pub(super) fn running(&self) -> Option<&Slot> {
+    pub(in crate::gui) fn running(&self) -> Option<&Slot> {
         self.running.as_ref()
     }
 
-    pub(super) fn last(&self) -> Option<&Slot> {
+    pub(in crate::gui) fn last(&self) -> Option<&Slot> {
         self.last.as_ref()
     }
 
     /// Returns the seconds the running slot has been running for.
-    pub(super) fn elapsed(&self) -> i64 {
+    pub(in crate::gui) fn elapsed(&self) -> i64 {
         self.running.as_ref().map_or(0, |running| {
             (self.now_ms / 1000 - running.model.started_at).max(0)
         })
     }
 
-    pub(super) fn pulse_opacity(&self) -> f32 {
+    pub(in crate::gui) fn pulse_opacity(&self) -> f32 {
         pulse_opacity(self.now_ms)
     }
 
     /// Redraws on every frame while tracking, for the timer and the pulse.
-    pub(super) fn subscription(&self) -> Subscription<Message> {
+    pub(in crate::gui) fn subscription(&self) -> Subscription<Message> {
         match self.running {
             Some(_) => window::frames().map(|_| Message::Frame),
             None => Subscription::none(),
@@ -80,16 +80,16 @@ impl State {
     }
 
     /// Returns the ticket key that resume starts while not tracking.
-    pub(super) fn resumable(&self) -> Option<&str> {
+    pub(in crate::gui) fn resumable(&self) -> Option<&str> {
         self.previous.as_deref().filter(|_| !self.is_tracking())
     }
 
     /// Returns the ticket key that switch starts while tracking.
-    pub(super) fn switchable(&self) -> Option<&str> {
+    pub(in crate::gui) fn switchable(&self) -> Option<&str> {
         self.previous.as_deref().filter(|_| self.is_tracking())
     }
 
-    pub(super) fn update(
+    pub(in crate::gui) fn update(
         &mut self,
         message: Message,
         nirvana: Option<&Result<Arc<Nirvana>, Failure>>,
@@ -221,7 +221,7 @@ fn failure(text: &'static str, error: &NirvanaError) -> Failure {
 }
 
 /// Formats `seconds` as `h:mm:ss`.
-pub(super) fn clock(seconds: i64) -> String {
+pub(in crate::gui) fn clock(seconds: i64) -> String {
     format!(
         "{}:{:02}:{:02}",
         seconds / 3600,

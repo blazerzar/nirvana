@@ -7,7 +7,7 @@ use crate::gui::app::Message;
 use crate::gui::components::Button;
 use crate::gui::design_system::typography::BODY;
 use crate::gui::design_system::{space, tokens};
-use crate::gui::tracking;
+use crate::gui::state::tracking;
 
 /// The tracking buttons, or only a disabled start and stop during setup.
 pub(super) fn bottom_bar(tracking: &tracking::State, setup: bool) -> Element<'_, Message> {

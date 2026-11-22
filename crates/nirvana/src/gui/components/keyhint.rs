@@ -6,13 +6,23 @@ use crate::gui::design_system::{DISABLED_OPACITY, radius, space, tokens};
 
 pub(in crate::gui) const RETURN_KEY: &str = "↵";
 
+/// On a primary button the hint has no fill and takes the button's text color.
 pub(in crate::gui) fn keyhint<'a, Message: 'a>(
     key: &'a str,
     disabled: bool,
+    primary: bool,
 ) -> Element<'a, Message> {
     let opacity = if disabled { DISABLED_OPACITY } else { 1.0 };
-    let label = KBD.text(key).style(move |theme| text::Style {
-        color: Some(tokens(theme).text_accent.scale_alpha(opacity)),
+    let label = KBD.text(key).style(move |theme| {
+        let tokens = tokens(theme);
+        let color = if primary {
+            tokens.text_on_accent
+        } else {
+            tokens.text_accent
+        };
+        text::Style {
+            color: Some(color.scale_alpha(opacity)),
+        }
     });
     let top = if key == RETURN_KEY {
         space::S025
@@ -23,13 +33,17 @@ pub(in crate::gui) fn keyhint<'a, Message: 'a>(
         .padding(Padding::from([space::S0, space::S050]).top(top))
         .style(move |theme| {
             let tokens = tokens(theme);
-            container::Style::default()
-                .background(tokens.fill_accent_subtle.scale_alpha(opacity))
-                .border(Border {
-                    color: tokens.border_accent.scale_alpha(opacity),
-                    width: 1.0,
-                    radius: radius::SM.into(),
-                })
+            let style = container::Style::default();
+            let style = if primary {
+                style
+            } else {
+                style.background(tokens.fill_accent_subtle.scale_alpha(opacity))
+            };
+            style.border(Border {
+                color: tokens.border_accent.scale_alpha(opacity),
+                width: 1.0,
+                radius: radius::SM.into(),
+            })
         })
         .into()
 }

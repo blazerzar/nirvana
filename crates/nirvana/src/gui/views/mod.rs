@@ -3,6 +3,7 @@ mod header;
 mod info;
 mod listing;
 mod main;
+mod settings;
 mod setup;
 mod tracking;
 

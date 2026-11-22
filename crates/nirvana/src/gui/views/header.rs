@@ -9,15 +9,19 @@ use iced::{Border, Color, Element, Length, Point, Rectangle, Renderer, Size, mou
 
 use super::border;
 use crate::gui::app::Message;
+use crate::gui::components::{Button, Size as ButtonSize};
 use crate::gui::design_system::font::INTER_BOLD;
 use crate::gui::design_system::{Tokens, tokens};
-use crate::gui::info;
 use crate::gui::profile::{Health, Profile, ProfileState};
+use crate::gui::{info, settings};
 
 static LOGO: LazyLock<svg::Handle> =
     LazyLock::new(|| svg::Handle::from_memory(include_bytes!("../../../assets/logo.svg")));
 
-pub(super) fn header(profile: Option<&ProfileState>) -> Element<'_, Message> {
+pub(super) fn header<'a>(
+    profile: Option<&'a ProfileState>,
+    settings: &settings::State,
+) -> Element<'a, Message> {
     let logo = mouse_area(
         svg(LOGO.clone())
             .width(24)
@@ -40,9 +44,25 @@ pub(super) fn header(profile: Option<&ProfileState>) -> Element<'_, Message> {
         ProfileState::Active(profile) => profile_chip(profile),
     });
 
+    let open_web = Button::new("open web ↗").size(ButtonSize::Sm).key("o");
+    let settings_label = if settings.shown().is_some() {
+        "done"
+    } else {
+        "settings"
+    };
+    let settings_button = Button::new(settings_label).size(ButtonSize::Sm).key(",");
+    let settings_button = if settings.is_available() {
+        settings_button.on_press(Message::Settings(settings::Message::Toggle))
+    } else {
+        settings_button
+    };
+
     let bar = container(
         row![logo, wordmark]
             .push(chip)
+            .push(space::horizontal())
+            .push(open_web)
+            .push(settings_button)
             .spacing(12)
             .align_y(Vertical::Center),
     )

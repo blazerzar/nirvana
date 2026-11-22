@@ -5,6 +5,7 @@ mod design_system;
 mod failure;
 mod info;
 mod profile;
+mod settings;
 mod shortcuts;
 mod toast;
 mod views;

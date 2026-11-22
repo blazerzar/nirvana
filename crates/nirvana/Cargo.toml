@@ -21,7 +21,7 @@ tracing-subscriber = "0.3.23"
 [dependencies.iced]
 version = "0.14.0"
 default-features = false
-features = ["canvas", "svg", "wgpu", "tokio", "x11", "wayland"]
+features = ["advanced", "canvas", "svg", "wgpu", "tokio", "x11", "wayland"]
 
 [dev-dependencies]
 assert_cmd = "2.2.2"

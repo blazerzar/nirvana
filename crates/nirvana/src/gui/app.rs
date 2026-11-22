@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
-use iced::{Element, Subscription, Task, keyboard, window};
-use nirvana_core::{Nirvana, NirvanaError};
+use iced::{Element, Subscription, Task, window};
+use nirvana_core::{IdleConfig, Nirvana, NirvanaError, Theme};
 use tracing::error;
 
 use super::failure::{Failure, chain};
 use super::profile::{self, ProfileState};
-use super::shortcuts::shortcut;
 use super::toast::{self, Kind};
 use super::windows::{Window, Windows};
-use super::{appearance, info, views};
+use super::{appearance, info, settings, shortcuts, views};
 
 pub(super) struct Gui {
     nirvana: Option<Result<Arc<Nirvana>, Failure>>,
@@ -17,16 +16,28 @@ pub(super) struct Gui {
     appearance: appearance::State,
     info: info::State,
     profile: Option<ProfileState>,
+    settings: settings::State,
     toast: toast::State,
+}
+
+/// `Nirvana` with the config values the GUI needs before its first frame.
+#[derive(Clone)]
+pub(super) struct Loaded {
+    nirvana: Arc<Nirvana>,
+    theme: Theme,
+    idle: Option<IdleConfig>,
 }
 
 #[derive(Clone)]
 pub(super) enum Message {
-    Loaded(Result<Arc<Nirvana>, Arc<NirvanaError>>),
+    Loaded(Result<Loaded, Arc<NirvanaError>>),
     Closed(window::Id),
     Appearance(appearance::Message),
     Info(info::Message),
     Profile(profile::Message),
+    Settings(settings::Message),
+    /// A settings shortcut pressed in the window.
+    Shortcut(window::Id, settings::Message),
     Toast(toast::Message),
     Failed(window::Id, Failure),
 }
@@ -39,12 +50,10 @@ impl Gui {
             appearance: appearance::State::default(),
             info: info::State::default(),
             profile: None,
+            settings: settings::State::default(),
             toast: toast::State::default(),
         };
-        let load = Task::perform(
-            async { Nirvana::new().await.map(Arc::new).map_err(Arc::new) },
-            Message::Loaded,
-        );
+        let load = Task::perform(async { load().await.map_err(Arc::new) }, Message::Loaded);
         let boot = appearance::system_mode()
             .map(Message::Appearance)
             .chain(load);
@@ -53,9 +62,13 @@ impl Gui {
 
     pub(super) fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Loaded(Ok(nirvana)) => {
-                self.appearance
-                    .set_theme(nirvana.theme().unwrap_or_default());
+            Message::Loaded(Ok(Loaded {
+                nirvana,
+                theme,
+                idle,
+            })) => {
+                self.appearance.set_theme(theme);
+                self.settings.load(idle);
                 self.nirvana = Some(Ok(nirvana.clone()));
                 return profile::load(nirvana).map(Message::Profile);
             }
@@ -89,6 +102,20 @@ impl Gui {
                 profile::update(&mut self.profile, message);
                 return self.open_main().discard();
             }
+            Message::Settings(settings::Message::Failed(failure)) => {
+                return self.show_error_in_main(failure);
+            }
+            Message::Settings(message) => {
+                return self
+                    .settings
+                    .update(message, self.nirvana.as_ref())
+                    .map(Message::Settings);
+            }
+            Message::Shortcut(window, message) => {
+                if self.windows.main() == Some(window) {
+                    return self.update(Message::Settings(message));
+                }
+            }
             Message::Toast(message) => return self.toast.update(message).map(Message::Toast),
             Message::Failed(window, failure) => return self.show_error(window, failure),
         }
@@ -121,7 +148,7 @@ impl Gui {
     pub(super) fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
             appearance::subscription().map(Message::Appearance),
-            keyboard::listen().filter_map(shortcut),
+            shortcuts::listen(),
             window::close_events().map(Message::Closed),
         ])
     }
@@ -130,11 +157,20 @@ impl Gui {
         let toast = self.toast.current(window);
         match self.windows.get(window) {
             Some(Window::Info(info)) => views::info(info, toast),
-            _ => views::main(self.profile.as_ref(), toast),
+            _ => views::main(self.profile.as_ref(), &self.settings, toast),
         }
     }
 
     pub(super) fn theme(&self, _window: window::Id) -> Option<iced::Theme> {
         self.appearance.theme()
     }
+}
+
+async fn load() -> Result<Loaded, NirvanaError> {
+    let nirvana = Nirvana::new().await?;
+    Ok(Loaded {
+        theme: nirvana.theme().await.unwrap_or_default(),
+        idle: nirvana.idle().await.ok(),
+        nirvana: Arc::new(nirvana),
+    })
 }

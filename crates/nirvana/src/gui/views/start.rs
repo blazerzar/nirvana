@@ -1,7 +1,10 @@
+use std::cell::Cell;
+use std::rc::Rc;
+
 use iced::alignment::Vertical;
 use iced::widget::text::Wrapping;
 use iced::widget::text_input::{self, Icon, Side};
-use iced::widget::{Column, Space, button, column, container, row, space, stack, text};
+use iced::widget::{Column, Space, button, column, container, responsive, row, space, stack, text};
 use iced::{Border, Color, Element, Length, Theme};
 use nirvana_core::Slot;
 
@@ -63,14 +66,11 @@ pub(super) fn start<'a>(
     .push(connection)
     .spacing(spacing::S100);
 
-    let recent = Column::with_children(
-        state
-            .recent()
-            .into_iter()
-            .enumerate()
-            .map(|(index, recent)| recent_row(recent, index, state.is_picked(recent))),
-    )
-    .spacing(spacing::S025);
+    let shown = Rc::new(Cell::new(0));
+    let recent = responsive({
+        let shown = Rc::clone(&shown);
+        move |size| recent_list(state, size.height, &shown)
+    });
 
     let has_key = !state.key().trim().is_empty();
     let start_label = if tracking.is_tracking() {
@@ -109,10 +109,7 @@ pub(super) fn start<'a>(
     .extend([
         ticket.into(),
         Space::new().height(spacing::S150).into(),
-        field_label("recent"),
-        Space::new().height(spacing::S050).into(),
         recent.into(),
-        space::vertical().into(),
         actions.into(),
     ]);
     let content = container(content)
@@ -120,8 +117,9 @@ pub(super) fn start<'a>(
         .width(Length::Fill)
         .height(Length::Fill);
     KeyListener::new(content)
-        .on_key(|event| {
+        .on_key(move |event| {
             recent_shortcut(event)
+                .filter(|&index| index < shown.get())
                 .map(|index| Message::Start(start::Message::RecentShortcut(index)))
         })
         .into()
@@ -159,6 +157,40 @@ fn running_row(running: &Slot, now: i64, elapsed: i64) -> Element<'_, Message> {
 
 fn field_label(label: &str) -> Element<'_, Message> {
     CAPTION.text(label).style(tertiary).into()
+}
+
+/// The recent tickets that fit in `height` under their label, or nothing
+/// when none fit. `shown` is set to the number of rows shown.
+fn recent_list<'a>(
+    state: &'a start::State,
+    height: f32,
+    shown: &Cell<usize>,
+) -> Element<'a, Message> {
+    let label_height = CAPTION.line_height.to_absolute(CAPTION.size.into()).0;
+    let fitting = recent_rows_fitting(height - label_height - spacing::S050);
+    shown.set(fitting);
+    if fitting == 0 {
+        return Space::new().into();
+    }
+    let rows = Column::with_children(
+        state
+            .recent()
+            .into_iter()
+            .take(fitting)
+            .enumerate()
+            .map(|(index, recent)| recent_row(recent, index, state.is_picked(recent))),
+    )
+    .spacing(spacing::S025);
+    column![field_label("recent"), rows]
+        .spacing(spacing::S050)
+        .into()
+}
+
+/// Returns how many recent rows fit in `height`.
+fn recent_rows_fitting(height: f32) -> usize {
+    let text_height = BODY.line_height.to_absolute(BODY.size.into()).0;
+    let row_height = text_height + 2.0 * (spacing::S075 + RECENT_BORDER_WIDTH);
+    ((height + spacing::S025) / (row_height + spacing::S025)) as usize
 }
 
 fn recent_row(recent: &Recent, index: usize, is_selected: bool) -> Element<'_, Message> {

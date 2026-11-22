@@ -240,9 +240,10 @@ decisions here (rounding, single active connection, …).
   ticket · stops at HH:MM · elapsed". Buttons `[esc] cancel`, `[↵] start` /
   `stop & start`. With more than one connection, a connection select sits
   right of the input, "all connections" by default. The recent list shows
-  the 5 most recent tickets that match the input fuzzily (key characters in
-  order, or part of the title). Picking a recent ticket, by click or
-  `⌘1`–`⌘5` (`^1`–`^5`, Ctrl, off macOS), fills in its key and connection.
+  as many of the most recent tickets that match the input fuzzily (key
+  characters in order, or part of the title) as fit the window, up to 9,
+  without scrolling. Picking a recent ticket, by click or
+  `⌘1`–`⌘9` (`^1`–`^9`, Ctrl, off macOS), fills in its key and connection.
   Typing a key never picks a ticket by itself. A key found in more than one connection
   shows an error toast.
 - **Right panel (400px)**: scope segmented control (today / unpublished · N

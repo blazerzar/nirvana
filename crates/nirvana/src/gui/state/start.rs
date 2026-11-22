@@ -10,7 +10,7 @@ use crate::gui::failure::{Failure, chain};
 
 const LOAD_FAILED: &str = "couldn't load recent tickets";
 const START_FAILED: &str = "couldn't start tracking";
-const RECENT_LIMIT: usize = 5;
+const RECENT_MAX: usize = 9;
 pub(in crate::gui) const TICKET_INPUT: Id = Id::new("start-ticket");
 
 /// The start form: the ticket key, the connection to search in, the tickets
@@ -109,7 +109,7 @@ impl State {
         self.recent
             .iter()
             .filter(|recent| recent.matches(&query))
-            .take(RECENT_LIMIT)
+            .take(RECENT_MAX)
             .collect()
     }
 
@@ -296,12 +296,17 @@ mod tests {
     #[test]
     fn recent_shows_the_most_recent_without_a_key() {
         let state = State {
-            recent: (1..=7)
+            recent: (1..=11)
                 .map(|n| ticket(&format!("NIR-{n}"), "title", None))
                 .collect(),
             ..State::default()
         };
-        assert_eq!(keys(&state), ["NIR-1", "NIR-2", "NIR-3", "NIR-4", "NIR-5"]);
+        assert_eq!(
+            keys(&state),
+            [
+                "NIR-1", "NIR-2", "NIR-3", "NIR-4", "NIR-5", "NIR-6", "NIR-7", "NIR-8", "NIR-9"
+            ]
+        );
     }
 
     #[test]

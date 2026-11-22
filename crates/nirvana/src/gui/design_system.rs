@@ -35,9 +35,14 @@ pub(super) struct Tokens {
     pub status_danger: Color,
     pub shadow_sm: Shadow,
     pub shadow_lg: Shadow,
+    pub disabled_opacity: f32,
 }
 
-pub(super) const DISABLED_OPACITY: f32 = 0.38;
+impl Tokens {
+    pub(super) fn opacity(&self, enabled: bool) -> f32 {
+        if enabled { 1.0 } else { self.disabled_opacity }
+    }
+}
 
 pub(super) fn tokens(theme: &Theme) -> &'static Tokens {
     if theme.mode() == Mode::Dark {
@@ -88,6 +93,7 @@ const LIGHT: Tokens = Tokens {
         offset: Vector::new(0.0, 24.0),
         blur_radius: 60.0,
     },
+    disabled_opacity: 0.38,
 };
 
 const DARK: Tokens = Tokens {
@@ -131,6 +137,7 @@ const DARK: Tokens = Tokens {
         offset: Vector::new(0.0, 30.0),
         blur_radius: 80.0,
     },
+    disabled_opacity: 0.28,
 };
 
 #[allow(dead_code)]

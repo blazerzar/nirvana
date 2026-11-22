@@ -7,7 +7,7 @@ use super::border;
 use crate::gui::app::{Message, Screen};
 use crate::gui::components::{Button, Size, select, toggle, toggle_chip, tracked_text};
 use crate::gui::design_system::typography::{BODY, BODY_LG, CAPTION, HEADING_SCREEN, LABEL_CAPS};
-use crate::gui::design_system::{DISABLED_OPACITY, space, tokens};
+use crate::gui::design_system::{space, tokens};
 use crate::gui::state::settings::{self, IdleAfter};
 
 const COLUMN_GAP: f32 = 32.0;
@@ -125,13 +125,18 @@ fn setting<'a>(
     enabled: bool,
     control: impl Into<Element<'a, Message>>,
 ) -> Element<'a, Message> {
-    let opacity = if enabled { 1.0 } else { DISABLED_OPACITY };
-    let label = column![BODY_LG.text(label).style(move |theme| text::Style {
-        color: Some(tokens(theme).text_primary.scale_alpha(opacity)),
+    let label = column![BODY_LG.text(label).style(move |theme| {
+        let tokens = tokens(theme);
+        text::Style {
+            color: Some(tokens.text_primary.scale_alpha(tokens.opacity(enabled))),
+        }
     })]
     .push(description.map(|description| {
-        CAPTION.text(description).style(move |theme| text::Style {
-            color: Some(tokens(theme).text_tertiary.scale_alpha(opacity)),
+        CAPTION.text(description).style(move |theme| {
+            let tokens = tokens(theme);
+            text::Style {
+                color: Some(tokens.text_tertiary.scale_alpha(tokens.opacity(enabled))),
+            }
         })
     }))
     .spacing(space::S025);

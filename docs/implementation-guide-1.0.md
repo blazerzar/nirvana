@@ -400,8 +400,8 @@ button), drawn in brand color. Geometry is in `V4Logo` in `v6-theme.jsx`.
   for primary, fillAccentHover/fillAccentPressed). Size, border and text stay
   put. Timeline blocks get a 1px accent ring on hover and 2px when pressed or
   selected. Focus is a 2px accent outline at offset 2, keyboard only.
-  Disabled is 38% opacity with the arrow cursor. Every pressable uses the
-  pointing-hand cursor.
+  Disabled is 38% opacity in light and 28% in dark, with the arrow cursor.
+  Every pressable uses the pointing-hand cursor.
 - Key hint chips (`[s]`) use the accent-subtle fill with borderAccent and
   textAccent.
 

@@ -2,7 +2,7 @@ use iced::widget::button;
 use iced::{Border, Element};
 
 use crate::gui::design_system::typography::{CAPTION, CAPTION_STRONG};
-use crate::gui::design_system::{DISABLED_OPACITY, radius, space, tokens};
+use crate::gui::design_system::{radius, space, tokens};
 
 /// One option of a multi-select group. Disabled until `on_press` is set.
 pub(in crate::gui) fn toggle_chip<'a, Message: Clone + 'a>(
@@ -47,11 +47,7 @@ pub(in crate::gui) fn toggle_chip<'a, Message: Clone + 'a>(
                     tokens.border_default,
                 ),
             };
-            let opacity = if status == button::Status::Disabled {
-                DISABLED_OPACITY
-            } else {
-                1.0
-            };
+            let opacity = tokens.opacity(status != button::Status::Disabled);
             button::Style {
                 background: Some(background.scale_alpha(opacity).into()),
                 text_color: text.scale_alpha(opacity),

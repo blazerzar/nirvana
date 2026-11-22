@@ -5,7 +5,7 @@ use iced::{Border, Element, Length, Theme};
 
 use super::keyhint;
 use crate::gui::design_system::typography::{BODY, BODY_STRONG, LABEL, LABEL_SM, LABEL_STRONG};
-use crate::gui::design_system::{DISABLED_OPACITY, radius, space, tokens};
+use crate::gui::design_system::{radius, space, tokens};
 
 #[derive(Clone, Copy, Default)]
 pub(in crate::gui) enum Size {
@@ -73,7 +73,6 @@ impl<'a, Message> Button<'a, Message> {
 impl<'a, Message: Clone + 'a> From<Button<'a, Message>> for Element<'a, Message> {
     fn from(button: Button<'a, Message>) -> Self {
         let disabled = button.on_press.is_none();
-        let opacity = if disabled { DISABLED_OPACITY } else { 1.0 };
         let primary = button.primary;
         let outline = button.outline;
         let (height, padding, label_style) = match (button.size, primary) {
@@ -94,7 +93,7 @@ impl<'a, Message: Clone + 'a> From<Button<'a, Message>> for Element<'a, Message>
                     tokens.text_tertiary
                 };
                 text::Style {
-                    color: Some(color.scale_alpha(opacity)),
+                    color: Some(color.scale_alpha(tokens.opacity(!disabled))),
                 }
             })
         });
@@ -142,7 +141,7 @@ fn style(theme: &Theme, status: button::Status, primary: bool, outline: bool) ->
         button::Status::Active => (active, 1.0),
         button::Status::Hovered => (hovered, 1.0),
         button::Status::Pressed => (pressed, 1.0),
-        button::Status::Disabled => (active, DISABLED_OPACITY),
+        button::Status::Disabled => (active, tokens.disabled_opacity),
     };
     button::Style {
         background: Some(background.scale_alpha(opacity).into()),

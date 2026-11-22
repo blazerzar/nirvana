@@ -3,7 +3,7 @@ use iced::widget::{container, text};
 use iced::{Border, Element, Padding};
 
 use crate::gui::design_system::typography::KBD;
-use crate::gui::design_system::{DISABLED_OPACITY, radius, space, tokens};
+use crate::gui::design_system::{radius, space, tokens};
 
 pub(in crate::gui) const RETURN_KEY: &str = "↵";
 
@@ -19,9 +19,9 @@ pub(in crate::gui) fn keyhint<'a, Message: 'a>(
     } else {
         space::S0
     };
-    let opacity = if disabled { DISABLED_OPACITY } else { 1.0 };
     let label = KBD.text(key).style(move |theme| {
         let tokens = tokens(theme);
+        let opacity = tokens.opacity(!disabled);
         let color = if primary {
             tokens.text_on_accent
         } else {
@@ -35,6 +35,7 @@ pub(in crate::gui) fn keyhint<'a, Message: 'a>(
         .padding(Padding::from([space::S0, space::S050]).top(top))
         .style(move |theme| {
             let tokens = tokens(theme);
+            let opacity = tokens.opacity(!disabled);
             let style = container::Style::default();
             let style = if primary {
                 style

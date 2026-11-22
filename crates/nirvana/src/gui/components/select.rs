@@ -7,7 +7,7 @@ use iced::{Border, Color, Element, Length, Theme};
 use super::Size;
 use super::dropdown::Dropdown;
 use crate::gui::design_system::typography::{BODY, BODY_LG, BODY_STRONG, MICRO};
-use crate::gui::design_system::{DISABLED_OPACITY, radius, space, tokens};
+use crate::gui::design_system::{radius, space, tokens};
 
 const SM_TRIGGER_HEIGHT: f32 = 26.0;
 const SM_ITEM_HEIGHT: f32 = 28.0;
@@ -34,15 +34,14 @@ where
         Size::Sm => (SM_TRIGGER_HEIGHT, space::S100, BODY, SM_ITEM_HEIGHT),
         Size::Lg => (LG_TRIGGER_HEIGHT, space::S150, BODY_LG, LG_ITEM_HEIGHT),
     };
-    let opacity = if on_toggle.is_some() {
-        1.0
-    } else {
-        DISABLED_OPACITY
-    };
+    let enabled = on_toggle.is_some();
     let chevron = MICRO
         .text(if is_open { "▲" } else { "▼" })
-        .style(move |theme| text::Style {
-            color: Some(tokens(theme).text_tertiary.scale_alpha(opacity)),
+        .style(move |theme| {
+            let tokens = tokens(theme);
+            text::Style {
+                color: Some(tokens.text_tertiary.scale_alpha(tokens.opacity(enabled))),
+            }
         });
     let trigger = button(
         row![label_style.text(selected.to_string()), chevron]
@@ -119,7 +118,7 @@ fn trigger_style(theme: &Theme, status: button::Status, is_open: bool) -> button
     let tokens = tokens(theme);
     let (background, opacity) = match status {
         button::Status::Hovered | button::Status::Pressed if !is_open => (tokens.fill_hover, 1.0),
-        button::Status::Disabled => (tokens.bg_raised, DISABLED_OPACITY),
+        button::Status::Disabled => (tokens.bg_raised, tokens.disabled_opacity),
         _ => (tokens.bg_raised, 1.0),
     };
     let border = if is_open {

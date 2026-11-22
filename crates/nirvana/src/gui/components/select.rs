@@ -4,17 +4,21 @@ use iced::alignment::Vertical;
 use iced::widget::{Column, Space, button, container, row, stack, text};
 use iced::{Border, Color, Element, Length, Theme};
 
+use super::Size;
 use super::dropdown::Dropdown;
-use crate::gui::design_system::typography::{BODY, BODY_STRONG, MICRO};
+use crate::gui::design_system::typography::{BODY, BODY_LG, BODY_STRONG, MICRO};
 use crate::gui::design_system::{DISABLED_OPACITY, radius, space, tokens};
 
-const TRIGGER_HEIGHT: f32 = 26.0;
-const ITEM_HEIGHT: f32 = 28.0;
+const SM_TRIGGER_HEIGHT: f32 = 26.0;
+const SM_ITEM_HEIGHT: f32 = 28.0;
+const LG_TRIGGER_HEIGHT: f32 = 36.0;
+const LG_ITEM_HEIGHT: f32 = 32.0;
 const CHECK_WIDTH: f32 = 12.0;
 
 /// A desktop select. The menu opens below the trigger while `is_open` and
 /// marks `selected` with a check. Disabled until `on_toggle` is set.
 pub(in crate::gui) fn select<'a, T, Message>(
+    size: Size,
     options: Vec<T>,
     selected: T,
     is_open: bool,
@@ -26,6 +30,10 @@ where
     T: Display + PartialEq + 'a,
     Message: Clone + 'a,
 {
+    let (trigger_height, padding, label_style, item_height) = match size {
+        Size::Sm => (SM_TRIGGER_HEIGHT, space::S100, BODY, SM_ITEM_HEIGHT),
+        Size::Lg => (LG_TRIGGER_HEIGHT, space::S150, BODY_LG, LG_ITEM_HEIGHT),
+    };
     let opacity = if on_toggle.is_some() {
         1.0
     } else {
@@ -37,13 +45,13 @@ where
             color: Some(tokens(theme).text_tertiary.scale_alpha(opacity)),
         });
     let trigger = button(
-        row![BODY.text(selected.to_string()), chevron]
+        row![label_style.text(selected.to_string()), chevron]
             .spacing(space::S100)
             .height(Length::Fill)
             .align_y(Vertical::Center),
     )
-    .height(TRIGGER_HEIGHT)
-    .padding([space::S0, space::S100])
+    .height(trigger_height)
+    .padding([space::S0, padding])
     .on_press_maybe(on_toggle)
     .style(move |theme, status| trigger_style(theme, status, is_open));
 
@@ -55,7 +63,7 @@ where
         .unwrap_or_default();
     let items = options.into_iter().zip(labels).map(|(option, label)| {
         let is_selected = option == selected;
-        item(label, &widest, is_selected, on_select(option))
+        item(label, &widest, is_selected, item_height, on_select(option))
     });
     let menu = container(Column::with_children(items).spacing(space::S025))
         .padding(space::S050)
@@ -80,6 +88,7 @@ fn item<'a, Message: Clone + 'a>(
     label: String,
     widest: &str,
     is_selected: bool,
+    height: f32,
     on_press: Message,
 ) -> Element<'a, Message> {
     let (check, label) = if is_selected {
@@ -99,7 +108,7 @@ fn item<'a, Message: Clone + 'a>(
             .height(Length::Fill)
             .align_y(Vertical::Center),
     )
-    .height(ITEM_HEIGHT)
+    .height(height)
     .padding([space::S0, space::S100])
     .on_press(on_press)
     .style(move |theme, status| item_style(theme, status, is_selected))

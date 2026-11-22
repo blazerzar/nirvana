@@ -3,12 +3,14 @@ use iced::keyboard::{self, key};
 use iced::{Subscription, window};
 
 use super::app::Message;
-use super::state::{appearance, settings, tracking};
+use super::state::{appearance, settings, start, tracking};
 
 /// A shortcut pressed in a window, handled by the main window only.
 #[derive(Clone)]
 pub(super) enum Shortcut {
+    Escape,
     Settings(settings::Message),
+    Start(start::Message),
     Tracking(tracking::Message),
 }
 
@@ -41,10 +43,9 @@ fn shortcut(event: keyboard::Event, window: window::Id) -> Option<Message> {
         return None;
     }
     let shortcut = match (key, latin) {
-        (keyboard::Key::Named(key::Named::Escape), _) => {
-            Shortcut::Settings(settings::Message::Close)
-        }
+        (keyboard::Key::Named(key::Named::Escape), _) => Shortcut::Escape,
         _ if is_comma(latin, physical_key) => Shortcut::Settings(settings::Message::Toggle),
+        (_, Some('s')) => Shortcut::Start(start::Message::Open),
         (_, Some('x')) => Shortcut::Tracking(tracking::Message::Stop),
         (_, Some('r')) => Shortcut::Tracking(tracking::Message::Resume),
         (_, Some('w')) => Shortcut::Tracking(tracking::Message::Switch),

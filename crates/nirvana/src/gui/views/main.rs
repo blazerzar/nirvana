@@ -6,13 +6,14 @@ use super::header::header;
 use super::listing::listing;
 use super::settings::{settings_bar, settings_view};
 use super::setup::setup;
+use super::start::start;
 use super::tracking::tracking;
 use super::with_toast;
 use crate::gui::app::Message;
 use crate::gui::design_system::{Tokens, tokens};
 use crate::gui::state::profile::ProfileState;
 use crate::gui::state::toast::Toast;
-use crate::gui::state::{settings, tracking};
+use crate::gui::state::{settings, start as start_form, tracking};
 
 pub(in crate::gui) const MAIN_WINDOW_SIZE: Size = Size::new(960.0, 540.0);
 const TOAST_BOTTOM: f32 = 76.0;
@@ -21,6 +22,7 @@ pub(in crate::gui) fn main<'a>(
     profile: Option<&'a ProfileState>,
     settings: &'a settings::State,
     tracking_state: &'a tracking::State,
+    start_state: &'a start_form::State,
     theme_tokens: &'static Tokens,
     toast: Option<&'a Toast>,
 ) -> Element<'a, Message> {
@@ -34,11 +36,14 @@ pub(in crate::gui) fn main<'a>(
             let setup_step = profile.and_then(ProfileState::setup_step);
             let body = responsive(move |size| match setup_step {
                 Some(step) => setup(size.width, step),
+                None if start_state.is_open() => {
+                    row![start(start_state), listing(size.width)].into()
+                }
                 None => row![tracking(tracking_state, theme_tokens), listing(size.width)].into(),
             });
             (
                 body.into(),
-                bottom_bar(tracking_state, setup_step.is_some()),
+                bottom_bar(tracking_state, start_state.is_open(), setup_step.is_some()),
             )
         }
     };

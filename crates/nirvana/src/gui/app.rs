@@ -8,7 +8,7 @@ use super::failure::{Failure, chain};
 use super::shortcuts::Shortcut;
 use super::state::profile::{self, ProfileState};
 use super::state::toast::{self, Kind};
-use super::state::{appearance, info, settings, tracking};
+use super::state::{appearance, info, settings, start, tracking};
 use super::windows::{Window, Windows};
 use super::{shortcuts, views};
 
@@ -19,6 +19,7 @@ pub(super) struct Gui {
     info: info::State,
     profile: Option<ProfileState>,
     settings: settings::State,
+    start: start::State,
     toast: toast::State,
     tracking: tracking::State,
 }
@@ -40,6 +41,7 @@ pub(super) enum Message {
     Profile(profile::Message),
     Settings(settings::Message),
     Shortcut(window::Id, Shortcut),
+    Start(start::Message),
     Toast(toast::Message),
     Tracking(tracking::Message),
     Failed(window::Id, Failure),
@@ -54,6 +56,7 @@ impl Gui {
             info: info::State::default(),
             profile: None,
             settings: settings::State::default(),
+            start: start::State::default(),
             toast: toast::State::default(),
             tracking: tracking::State::default(),
         };
@@ -126,13 +129,33 @@ impl Gui {
                 if self.windows.main() != Some(window) {
                     return Task::none();
                 }
+                let main_shown = self.settings.shown().is_none() && !self.start.is_open();
                 match shortcut {
+                    Shortcut::Escape if self.settings.shown().is_some() => {
+                        return self.update(Message::Settings(settings::Message::Close));
+                    }
+                    Shortcut::Escape => return self.update(Message::Start(start::Message::Cancel)),
                     Shortcut::Settings(message) => return self.update(Message::Settings(message)),
-                    Shortcut::Tracking(message) if self.settings.shown().is_none() => {
+                    Shortcut::Start(message) if main_shown && self.can_start() => {
+                        return self.update(Message::Start(message));
+                    }
+                    Shortcut::Tracking(message) if main_shown => {
                         return self.update(Message::Tracking(message));
                     }
-                    Shortcut::Tracking(_) => {}
+                    Shortcut::Start(_) | Shortcut::Tracking(_) => {}
                 }
+            }
+            Message::Start(start::Message::Succeeded) => {
+                return self.update(Message::Tracking(tracking::Message::Load));
+            }
+            Message::Start(start::Message::Failed(failure)) => {
+                return self.show_error_in_main(failure);
+            }
+            Message::Start(message) => {
+                return self
+                    .start
+                    .update(message, self.nirvana.as_ref())
+                    .map(Message::Start);
             }
             Message::Toast(message) => return self.toast.update(message).map(Message::Toast),
             Message::Tracking(tracking::Message::Succeeded(text)) => {
@@ -160,6 +183,13 @@ impl Gui {
             Message::Failed(window, failure) => return self.show_error(window, failure),
         }
         Task::none()
+    }
+
+    /// Returns whether the start form can open: a profile is set up.
+    fn can_start(&self) -> bool {
+        self.profile
+            .as_ref()
+            .is_some_and(|profile| profile.setup_step().is_none())
     }
 
     fn show_error(&mut self, window: window::Id, failure: Failure) -> Task<Message> {
@@ -202,6 +232,7 @@ impl Gui {
                 self.profile.as_ref(),
                 &self.settings,
                 &self.tracking,
+                &self.start,
                 self.appearance.tokens(),
                 toast,
             ),

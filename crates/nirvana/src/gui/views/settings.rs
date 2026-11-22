@@ -48,6 +48,7 @@ pub(super) fn settings_view(idle: &IdleConfig, idle_after_open: bool) -> Element
                 None,
                 idle.enabled,
                 select(
+                    Size::Sm,
                     IdleAfter::options(idle_after),
                     idle_after,
                     idle_after_open,

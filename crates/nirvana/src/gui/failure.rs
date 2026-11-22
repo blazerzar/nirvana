@@ -60,6 +60,10 @@ fn domain_reason(error: &(dyn Error + 'static)) -> Option<&'static str> {
         NirvanaError::Domain(DomainError::RunningSlotJustStarted) => {
             Some("tracking started less than a second ago, try again")
         }
+        NirvanaError::Domain(DomainError::AmbiguousTicket(..)) => {
+            Some("the ticket is in more than one connection, pick one")
+        }
+        NirvanaError::Domain(DomainError::TicketNotFound(_)) => Some("ticket not found"),
         _ => None,
     }
 }
@@ -103,6 +107,27 @@ mod tests {
         assert_eq!(
             Failure::from_error(START_FAILED, &error).detail.as_deref(),
             Some("tracking started less than a second ago, try again")
+        );
+    }
+
+    #[test]
+    fn ambiguous_ticket_gives_a_reason() {
+        let error = NirvanaError::from(DomainError::AmbiguousTicket(
+            "NIR-1".into(),
+            vec!["jira".into(), "linear".into()],
+        ));
+        assert_eq!(
+            Failure::from_error(START_FAILED, &error).detail.as_deref(),
+            Some("the ticket is in more than one connection, pick one")
+        );
+    }
+
+    #[test]
+    fn ticket_not_found_gives_a_reason() {
+        let error = NirvanaError::from(DomainError::TicketNotFound("NIR-1".into()));
+        assert_eq!(
+            Failure::from_error(START_FAILED, &error).detail.as_deref(),
+            Some("ticket not found")
         );
     }
 

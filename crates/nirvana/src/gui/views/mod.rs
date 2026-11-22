@@ -5,6 +5,7 @@ mod listing;
 mod main;
 mod settings;
 mod setup;
+mod start;
 mod tracking;
 
 use iced::widget::rule::{self, Rule};

@@ -237,7 +237,10 @@ decisions here (rounding, single active connection, …).
 - **Start / switch form** (replaces the left pane): ticket input with a `›`
   prefix, a recent list (key + title), and for a switch a dashed row "current
   ticket · stops at HH:MM · elapsed". Buttons `[esc] cancel`, `[↵] start` /
-  `stop & start`.
+  `stop & start`. With more than one connection, a connection select sits
+  right of the input, "all connections" by default. Picking a recent ticket
+  fills in its key and connection. A key found in more than one connection
+  shows an error toast.
 - **Right panel (400px)**: scope segmented control (today / unpublished · N
   days) and view segmented control (by time / by ticket). The list rows are:
   a `►` running row, then `●` unpublished / `✓` published marks, time range,

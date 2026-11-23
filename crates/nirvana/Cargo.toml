@@ -6,26 +6,31 @@ license.workspace = true
 
 [dependencies]
 anyhow = "1.0.104"
+axum = "0.8.9"
 chrono = "0.4.45"
 clap = { version = "4.6.7", features = ["derive", "string"] }
 console = "0.16.6"
 dialoguer = { version = "0.12.0", features = ["fuzzy-select"] }
 indicatif = "0.18.6"
+leptos = { version = "0.8.23", default-features = false, features = ["ssr"] }
 nirvana-core = { path = "../nirvana-core" }
 opener = "0.9.0"
 secrecy = "0.10.3"
-tokio = { version = "1.53.3", features = ["rt", "time"] }
+serde = { version = "1.0.229", features = ["derive"] }
+tokio = { version = "1.53.3", features = ["net", "rt", "signal", "time"] }
 tracing = { version = "0.1.44", features = ["release_max_level_debug"] }
 tracing-subscriber = "0.3.23"
 
 [dependencies.iced]
 version = "0.14.0"
 default-features = false
-features = ["advanced", "canvas", "svg", "wgpu", "tokio", "x11", "wayland"]
+features = ["advanced", "canvas", "svg", "wgpu", "tokio", "web-colors", "x11", "wayland"]
 
 [dev-dependencies]
 assert_cmd = "2.2.2"
+nirvana-core = { path = "../nirvana-core", features = ["test-support"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls"] }
 serde_json = "1.0.154"
 tempfile = "3.27.0"
 tokio = { version = "1.53.3", features = ["macros", "rt", "sync", "time"] }
+tower = { version = "0.5.3", features = ["util"] }

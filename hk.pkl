@@ -7,6 +7,7 @@ local formatters = new Mapping<String, Step> {
   ["trailing-whitespace"] = Builtins.trailing_whitespace
   ["newlines"] = Builtins.newlines
   ["dprint"] = Builtins.dprint
+  ["biome"] = (Builtins.biome) { glob = List("**/*.css") }
   ["pkl-format"] = Builtins.pkl_format
   ["cargo-fmt"] = (Builtins.cargo_fmt) {
     check {

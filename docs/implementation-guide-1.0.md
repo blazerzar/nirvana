@@ -25,7 +25,7 @@ One `nirvana` binary:
 - **Desktop GUI** (Iced): a small tracker (960×540). It only does start, stop,
   resume, switch, publish, overview and its own machine settings. Everything
   else opens in the browser.
-- **Local web** (Leptos) at `localhost:5167`, served by an embedded axum
+- **Local web** (Leptos) at `127.0.0.1:5167`, served by an embedded axum
   server. It covers timesheets, editing logs, profiles, connections, profile
   settings and first-run setup.
 - No TUI in 1.0.
@@ -46,7 +46,7 @@ worklogs.
 | 7 | Git hooks with **hk** (+ mise). **Mise tasks** replace the justfile. **dprint** (TOML, YAML, JSON) replaces Tombi and sql-formatter, so Node is no longer needed. Tool versions are pinned in `mise.toml`. | Cross-platform, one tool manager, one formatter. |
 | 8 | **Idle detection** is restored from `main` (`crates/nirvana-gui/src-tauri/src/idle/{mod,macos,windows}.rs`) when the Iced app needs it. **Tray and menu-bar code is rewritten** for Iced. The GUI crate can be deleted without porting anything first. | |
 | 9 | **Portal stack: Leptos vs Phoenix, decided at the Stage 2 review** (see §8). Until then the Portal contract stays language-neutral. | |
-| 10 | Local web: **server-rendered Leptos + Alpine.js + axum REST API in the `nirvana` binary.** No WebAssembly. The server renders HTML with Leptos `view!` components and `.to_html()`, using only the `ssr` feature, with no hydration and no `leptos_axum`. Alpine.js handles state in the browser. It is vendored at a pinned version and calls the API with `fetch`. The API is an axum REST API under `/api` with plain JSON bodies, not the JSON:API spec. It is the only way into nirvana: the web page uses it, and browser extensions can later. Errors are the HTTP status plus `{ "error": "<message>" }`. The server lives in the `nirvana` binary, in `src/server/`, and core stays free of HTTP. It runs inside the GUI when `gui.server` is on, and headless with `nirvana serve`, both on port `core.port` (default 5167). Security: it binds only to `127.0.0.1` and checks `Host` on every request. A mutating request needs `Content-Type: application/json` and an `Origin` of `http://localhost:<port>` or `http://127.0.0.1:<port>`. Responses come only from response types (DTOs), so tokens are never returned. The first pages are an empty home page, then `/setup`. | |
+| 10 | Local web: **server-rendered Leptos + Alpine.js + axum REST API in the `nirvana` binary.** No WebAssembly. The server renders HTML with Leptos `view!` components and `.to_html()`, using only the `ssr` feature, with no hydration and no `leptos_axum`. Alpine.js handles state in the browser. It is vendored at a pinned version and calls the API with `fetch`. The API is an axum REST API under `/api` with plain JSON bodies, not the JSON:API spec. It is the only way into nirvana: the web page uses it, and browser extensions can later. Errors are the HTTP status plus `{ "error": "<message>" }`. The server lives in the `nirvana` binary, in `src/web/`, and core stays free of HTTP. It runs inside the GUI when `gui.server` is on, and headless with `nirvana serve`, both on port `core.port` (default 5167). Security: it binds only to `127.0.0.1` and checks `Host` on every request. It accepts only `127.0.0.1:<port>` as `Host`, not `localhost`, so the web has a single origin. A mutating request needs `Content-Type: application/json` and an `Origin` of `http://127.0.0.1:<port>`. Responses come only from response types (DTOs), so tokens are never returned. The first pages are an empty home page, then `/setup`. | |
 | 11 | **Migration tests are mandatory**: 0.3.0-alpha DB and config fixtures are checked in, never edited, and run in CI (§5). | Guarantees the compatibility promise. |
 | 12 | **Linear history only, no merge commits.** Feature PRs are squash-merged into `dev-1.0`, `main` is only fast-forwarded to `dev-1.0`. Code review is done by agents on the PR (§12). | |
 | 13 | **Logging with `tracing`** to a single `nirvana.log`, **no rotation**. On macOS the log lives in `~/Library/Logs/nirvana/` (other locations in `paths.rs` module docs). Levels: `info` for user issued commands (start, stop, publish, config `X` changed from `a` to `b`) and DB and config migrations, `warn`, `error`, `debug` for everything else, `trace` for dev only logs (compiled out in release with `release_max_level_debug`). Only our crates are logged, at `info` by default (`trace` in dev mode). `[log] level` in `config.toml` (new in schema version 2, written only when set) sets the level for our crates only and overrides the dev mode default. `NIRVANA_LOG` (full filter directive) overrides both and is the only way to log dependencies (sqlx, sea-orm). Each frontend logs the commands it runs at `info` after they succeed, with the names the user chose. `nirvana-core` logs at `debug`, except DB and config migrations at `info` and `warn` and `error` events. `nirvana-core` owns the log file, format and filters and exposes them as a `Layer` (`logging::file_layer`). The `nirvana` binary only installs it and sets the max level feature, as `tracing` recommends for libraries. Stdout output for GUI dev comes later. | macOS convention. Level scheme follows `tracing` verbosity order. |
@@ -287,7 +287,7 @@ decisions here (rounding, single active connection, …).
   start/stop buttons stay disabled. The desktop picks up the new profile by
   itself.
 
-### 6.3 Web screens (localhost:5167)
+### 6.3 Web screens (127.0.0.1:5167)
 
 - **Shell**: sidebar 232px (≥1200px). Logo, profile switcher (avatar letter,
   name, status dot + first host; the dropdown has a checkmark, connection
@@ -553,9 +553,10 @@ possible now:
 ## 10. Security notes
 
 - The local server manages tokens, so: bind to `127.0.0.1` only, validate the
-  `Host` header (against DNS rebinding), and never return tokens over the API.
-  A mutating request needs `Content-Type: application/json` and an `Origin` of
-  `http://localhost:<port>` or `http://127.0.0.1:<port>`. Browser extensions
+  `Host` header against `127.0.0.1:<port>` (against DNS rebinding), and never
+  return tokens over the API. A mutating request needs
+  `Content-Type: application/json` and an `Origin` of
+  `http://127.0.0.1:<port>`. Browser extensions
   will later need an origin allowlist and probably a per-install key.
 - Keyring: service `nirvana`, account =
   `nirvana_<profile>_<connection>_<key>` stored in `credentials`. The key is

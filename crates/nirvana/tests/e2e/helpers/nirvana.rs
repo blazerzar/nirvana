@@ -1,4 +1,7 @@
-use std::{env, fs};
+use std::net::{Ipv4Addr, TcpListener, TcpStream};
+use std::process::{self, Child, Stdio};
+use std::time::Duration;
+use std::{env, fs, thread};
 
 use assert_cmd::Command;
 use assert_cmd::assert::Assert;
@@ -42,15 +45,42 @@ impl Nirvana {
     }
 
     fn assert(&self, args: &[&str]) -> Assert {
-        let assert = Command::new(&self.bin)
+        let assert = Command::from_std(self.command(args)).assert();
+        let log = fs::read_to_string(self.dir.path().join("nirvana.log")).unwrap_or_default();
+        assert.append_context("nirvana.log", log)
+    }
+
+    fn command(&self, args: &[&str]) -> process::Command {
+        let mut command = process::Command::new(&self.bin);
+        command
             .args(args)
             .env_remove("NIRVANA_DEV")
             .env("NIRVANA_CONFIG_DIR", self.dir.path())
             .env("NIRVANA_DATA_DIR", self.dir.path())
-            .env("NIRVANA_LOG_DIR", self.dir.path())
-            .assert();
-        let log = fs::read_to_string(self.dir.path().join("nirvana.log")).unwrap_or_default();
-        assert.append_context("nirvana.log", log)
+            .env("NIRVANA_LOG_DIR", self.dir.path());
+        command
+    }
+
+    /// Runs `serve` on a free port and waits until it accepts connections.
+    pub fn serve(&self) -> Server {
+        let port = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .and_then(|listener| listener.local_addr())
+            .unwrap()
+            .port();
+        self.run(&["config", "set", "core.port", &port.to_string()]);
+        let child = self
+            .command(&["serve"])
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let server = Server { child, port };
+        for _ in 0..50 {
+            if TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_ok() {
+                return server;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        panic!("nirvana serve is not listening on port {port}");
     }
 
     pub fn setup(&self) {
@@ -157,5 +187,18 @@ impl Nirvana {
                 )
             })
             .collect()
+    }
+}
+
+/// A running `nirvana serve`, killed on drop.
+pub struct Server {
+    child: Child,
+    pub port: u16,
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }

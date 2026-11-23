@@ -300,7 +300,7 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [ ] Need to start building the API that will be used to control Nirvana from web.
 - [x] Analyze design if we should put it in nirvana or core: nirvana
       (implementation guide §3 #10).
-- [ ] Axum server bound to 127.0.0.1, Host and Origin checks, never return tokens.
+- [x] Axum server bound to 127.0.0.1, Host and Origin checks, never return tokens.
 - [x] Default port 5167, configurable.
 
 ## GUI
@@ -344,9 +344,9 @@ thorough review to make sure we are not bringing any problems into the next stag
 
 ## Webserver
 
-- [ ] Create web page with server-rendered Leptos and Alpine, assets embedded
+- [x] Create web page with server-rendered Leptos and Alpine, assets embedded
       in binary (implementation guide §3 #10).
-- [ ] `nirvana serve` runs the web server headless.
+- [x] `nirvana serve` runs the web server headless.
 - [ ] Make it possible to toggle it from the settings.
 - [ ] Start building screens: setup, week, month, edit drawer, profiles and
       connections, add connection, new profile, settings.

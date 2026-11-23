@@ -2,6 +2,7 @@
 hk = "2.6.0"
 pkl = "0.32.1"
 dprint = "0.63.0"
+biome = "2.6.8"
 jactionlint = "2.2.0"
 editorconfig-checker = "4.0.2"
 shellcheck = "0.11.0"

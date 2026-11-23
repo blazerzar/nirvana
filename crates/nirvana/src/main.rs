@@ -7,6 +7,7 @@ mod cli;
 mod gui;
 mod time;
 mod tokens;
+mod web;
 
 fn main() {
     match nirvana_core::file_layer() {

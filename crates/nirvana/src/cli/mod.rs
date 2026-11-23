@@ -10,6 +10,7 @@ mod logs;
 mod profile;
 mod publish;
 mod resume;
+mod serve;
 mod settings;
 mod show;
 mod start;
@@ -103,6 +104,8 @@ enum Command {
         #[command(subcommand)]
         command: Config,
     },
+    /// Serve nirvana web and the REST API until stopped with ctrl-c
+    Serve,
 }
 
 #[derive(Args, Debug)]
@@ -619,6 +622,7 @@ pub(crate) async fn run() -> anyhow::Result<()> {
             Config::Set { key, value } => config::set(key, value).await,
             Config::Unset { key } => config::unset(key).await,
         },
+        Command::Serve => serve::run().await,
     }
 }
 

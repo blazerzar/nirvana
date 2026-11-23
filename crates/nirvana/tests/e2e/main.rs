@@ -12,6 +12,7 @@ mod info;
 mod logs;
 mod profile;
 mod publish;
+mod serve;
 mod settings;
 mod ticket;
 mod tracking;

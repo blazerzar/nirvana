@@ -160,7 +160,6 @@ fn scales_css() -> String {
         .collect()
 }
 
-#[allow(dead_code)]
 pub(crate) fn tokens_css() -> String {
     format!(
         ":root {{\n{}{}}}\n\n@media (prefers-color-scheme: dark) {{\n:root {{\n{}}}\n}}\n",

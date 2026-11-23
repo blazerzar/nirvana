@@ -43,10 +43,12 @@ Tool versions are pinned in `mise.toml` (`mise install`). Git hooks run through
 
 - Formatting: `cargo +$NIGHTLY_TOOLCHAIN fmt` (Rust, pinned nightly rustfmt
   for import grouping, installed by `mise run setup`), dprint (TOML, YAML,
-  JSON, shell scripts through shfmt, `dprint.json`), `pkl format` (Pkl).
-  Indentation and line endings follow `.editorconfig`.
+  JSON, shell scripts through shfmt, `dprint.json`), `pkl format` (Pkl),
+  Biome (CSS, `biome.json`). Indentation and line endings follow
+  `.editorconfig`.
 - Linting: clippy with `-D warnings`, jactionlint (GitHub workflows, actions
-  pinned to commit SHAs), shellcheck (shell scripts), editorconfig-checker.
+  pinned to commit SHAs), shellcheck (shell scripts), Biome (CSS),
+  editorconfig-checker.
 - `pre-commit` fixes formatting, `pre-push` runs all checks, `commit-msg`
   enforces conventional commits. CI runs the same `hk check`, and the
   `pr-title` workflow checks that the PR title is a conventional commit.
@@ -76,7 +78,7 @@ run by the application.
 
 `nirvana` is the terminal app. It exposes Clap subcommands for app info,
 connections, settings, publishing, task timing, listing, editing, starting,
-stopping, and deleting.
+stopping, deleting, and serving nirvana web (`src/web/`).
 
 ## Rust Guidance
 

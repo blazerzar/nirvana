@@ -255,7 +255,7 @@ fn recent_style(theme: &Theme, status: button::Status, is_selected: bool) -> but
     }
 }
 
-fn input_style(theme: &Theme, status: text_input::Status) -> text_input::Style {
+pub(super) fn input_style(theme: &Theme, status: text_input::Status) -> text_input::Style {
     let tokens = tokens(theme);
     let border = match status {
         text_input::Status::Focused { .. } => tokens.border_focus,

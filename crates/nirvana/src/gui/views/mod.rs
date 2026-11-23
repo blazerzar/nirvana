@@ -21,9 +21,10 @@ pub(super) use overview::{overview_bar, overview_view};
 pub(super) use settings::{settings_bar, settings_view};
 
 use crate::gui::app::{Message, Screen};
-use crate::gui::components::{self, Button, Size};
+use crate::gui::components::{self, Button, Size, link};
 use crate::gui::design_system::typography::{BODY, HEADING_SCREEN};
 use crate::gui::design_system::{space, tokens};
+use crate::gui::state;
 use crate::gui::state::toast::{self, Toast};
 
 const DONE_BAR_HEIGHT: f32 = 52.0;
@@ -59,16 +60,21 @@ fn screen_heading<'a>(title: &'a str, note: impl IntoFragment<'a>) -> Row<'a, Me
     .align_y(Vertical::Bottom)
 }
 
-/// The bottom bar of a screen: a note pointing to nirvana web and a done
-/// button that goes back to the main screen.
-fn done_bar<'a>(note: &'a str, screen: Screen) -> Element<'a, Message> {
+/// The bottom bar of a screen: a note pointing to nirvana web, a link while
+/// it is available, and a done button that goes back to the main screen.
+fn done_bar<'a>(note: &'a str, screen: Screen, web_available: bool) -> Element<'a, Message> {
     let note = row![
         BODY.text(note).style(|theme| text::Style {
             color: Some(tokens(theme).text_tertiary),
         }),
-        BODY.text("nirvana web").style(|theme| text::Style {
-            color: Some(tokens(theme).text_accent),
-        }),
+        link(
+            BODY.text(if web_available {
+                "nirvana web ↗"
+            } else {
+                "nirvana web"
+            }),
+            web_available.then_some(Message::Settings(state::settings::Message::OpenWeb)),
+        ),
     ]
     .spacing(space::S075);
     let done = Button::new("done")

@@ -42,10 +42,11 @@ pub(in crate::gui) fn overview_view(
         .into()
 }
 
-pub(in crate::gui) fn overview_bar<'a>() -> Element<'a, Message> {
+pub(in crate::gui) fn overview_bar<'a>(web_available: bool) -> Element<'a, Message> {
     done_bar(
         "per-ticket breakdown and month view are in",
         Screen::Overview,
+        web_available,
     )
 }
 

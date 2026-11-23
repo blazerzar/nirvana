@@ -38,10 +38,11 @@ pub(in crate::gui) fn main_screen<'a>(
     start_state: &'a start_form::State,
     theme_tokens: &'static Tokens,
     command_held: bool,
+    web_available: bool,
 ) -> (Element<'a, Message>, Element<'a, Message>) {
     let setup_step = profile.and_then(ProfileState::setup_step);
     let body = responsive(move |size| match setup_step {
-        Some(step) => setup(size.width, step),
+        Some(step) => setup(size.width, step, web_available),
         None if start_state.is_open() => {
             row![start(start_state, tracking_state), listing(size.width)].into()
         }

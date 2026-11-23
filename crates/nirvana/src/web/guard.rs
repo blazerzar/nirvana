@@ -16,9 +16,10 @@ pub(super) struct Guard {
 
 impl Guard {
     pub(super) fn new(port: u16) -> Self {
-        let host = format!("127.0.0.1:{port}");
-        let origin = format!("http://{host}");
-        Self { host, origin }
+        Self {
+            host: super::host(port),
+            origin: super::url(port),
+        }
     }
 
     /// Accepts a request with the allowed `Host`. A request other than `GET`

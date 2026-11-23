@@ -43,6 +43,8 @@ pub(super) struct Loaded {
     nirvana: Arc<Nirvana>,
     theme: Theme,
     idle: Option<IdleConfig>,
+    server: bool,
+    port: Option<u16>,
 }
 
 #[derive(Clone)]
@@ -94,11 +96,16 @@ impl Gui {
                 nirvana,
                 theme,
                 idle,
+                server,
+                port,
             })) => {
                 self.appearance.set_theme(theme);
-                self.settings.load(idle);
+                let server = self
+                    .settings
+                    .load(&nirvana, idle, server, port)
+                    .map(Message::Settings);
                 self.nirvana = Some(Ok(nirvana.clone()));
-                return profile::load(nirvana).map(Message::Profile);
+                return Task::batch([server, profile::load(nirvana).map(Message::Profile)]);
             }
             Message::Loaded(Err(e)) => {
                 error!("{}", chain(e.as_ref()));
@@ -175,6 +182,12 @@ impl Gui {
                 match shortcut {
                     Shortcut::Escape if self.screen != Screen::Main => self.show(Screen::Main),
                     Shortcut::Escape => return self.update(Message::Start(start::Message::Cancel)),
+                    Shortcut::OpenWeb => {
+                        return self.update(Message::Settings(settings::Message::OpenWeb));
+                    }
+                    Shortcut::Return if main_shown && self.is_in_setup() => {
+                        return self.update(Message::Settings(settings::Message::OpenWeb));
+                    }
                     Shortcut::ToggleScreen(screen) => {
                         return self.update(Message::ToggleScreen(screen));
                     }
@@ -190,7 +203,10 @@ impl Gui {
                             return self.update(Message::Tracking(start));
                         }
                     }
-                    Shortcut::Start(_) | Shortcut::Tracking(_) | Shortcut::Recent(_) => {}
+                    Shortcut::Return
+                    | Shortcut::Start(_)
+                    | Shortcut::Tracking(_)
+                    | Shortcut::Recent(_) => {}
                 }
             }
             Message::CommandHeld(held) => self.command_held = held,
@@ -246,6 +262,7 @@ impl Gui {
     fn show(&mut self, screen: Screen) {
         self.screen = screen;
         self.settings.close_idle_after();
+        self.settings.reset_port_input();
     }
 
     fn can_show(&self, screen: Screen) -> bool {
@@ -262,6 +279,14 @@ impl Gui {
         self.profile
             .as_ref()
             .is_some_and(|profile| profile.setup_step().is_none())
+    }
+
+    /// Returns whether the setup steps are shown.
+    fn is_in_setup(&self) -> bool {
+        self.profile
+            .as_ref()
+            .and_then(ProfileState::setup_step)
+            .is_some()
     }
 
     fn show_error(&mut self, window: window::Id, failure: Failure) -> Task<Message> {
@@ -304,8 +329,8 @@ impl Gui {
                 let header = views::header(self.profile.as_ref(), self.screen, &self.settings);
                 let screen = match (self.screen, self.settings.idle(), self.profile.as_ref()) {
                     (Screen::Settings, Some(idle), _) => (
-                        views::settings_view(idle, self.settings.is_idle_after_open()),
-                        views::settings_bar(),
+                        views::settings_view(idle, &self.settings),
+                        views::settings_bar(self.settings.is_web_available()),
                     ),
                     (Screen::Overview, _, Some(ProfileState::Active(profile))) => {
                         let elapsed = self.tracking.elapsed();
@@ -313,7 +338,7 @@ impl Gui {
                         let week = self.overview.week(elapsed);
                         (
                             views::overview_view(&profile.name, stats, week),
-                            views::overview_bar(),
+                            views::overview_bar(self.settings.is_web_available()),
                         )
                     }
                     _ => views::main_screen(
@@ -322,6 +347,7 @@ impl Gui {
                         &self.start,
                         self.appearance.tokens(),
                         self.command_held,
+                        self.settings.is_web_available(),
                     ),
                 };
                 views::main(header, screen, toast)
@@ -339,6 +365,8 @@ async fn load() -> Result<Loaded, NirvanaError> {
     Ok(Loaded {
         theme: nirvana.theme().await.unwrap_or_default(),
         idle: nirvana.idle().await.ok(),
+        server: nirvana.server().await.unwrap_or_default(),
+        port: nirvana.port().await.ok(),
         nirvana: Arc::new(nirvana),
     })
 }

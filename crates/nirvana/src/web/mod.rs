@@ -5,20 +5,41 @@ mod assets;
 mod guard;
 mod pages;
 
-use std::io;
-use std::net::Ipv4Addr;
+use std::io::{self, ErrorKind};
+use std::net::{Ipv4Addr, SocketAddrV4};
 use std::sync::Arc;
 
 use axum::routing::get;
 use axum::{Router, middleware};
 use nirvana_core::Nirvana;
 use tokio::net::TcpListener;
+use tracing::info;
 
 use crate::web::guard::Guard;
 
+const ADDRESS: Ipv4Addr = Ipv4Addr::LOCALHOST;
+
+/// Returns the `Host` of the server on `port`.
+fn host(port: u16) -> String {
+    SocketAddrV4::new(ADDRESS, port).to_string()
+}
+
+/// Returns the URL of nirvana web on `port`.
+pub(crate) fn url(port: u16) -> String {
+    format!("http://{}", host(port))
+}
+
 /// Binds `127.0.0.1:port`.
 pub(crate) async fn bind(port: u16) -> io::Result<TcpListener> {
-    TcpListener::bind((Ipv4Addr::LOCALHOST, port)).await
+    TcpListener::bind((ADDRESS, port))
+        .await
+        .map_err(|e| match e.kind() {
+            ErrorKind::AddrInUse => io::Error::new(
+                ErrorKind::AddrInUse,
+                format!("port {port} is already in use"),
+            ),
+            _ => e,
+        })
 }
 
 /// Serves on `listener` until `shutdown` resolves.
@@ -28,9 +49,12 @@ pub(crate) async fn run(
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> io::Result<()> {
     let port = listener.local_addr()?.port();
+    info!(url = url(port), "web server started");
     axum::serve(listener, router(nirvana, port))
         .with_graceful_shutdown(shutdown)
-        .await
+        .await?;
+    info!("web server stopped");
+    Ok(())
 }
 
 fn router(nirvana: Arc<Nirvana>, port: u16) -> Router {

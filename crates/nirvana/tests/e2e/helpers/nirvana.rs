@@ -54,7 +54,7 @@ impl Nirvana {
         let mut command = process::Command::new(&self.bin);
         command
             .args(args)
-            .env_remove("NIRVANA_DEV")
+            .env("NIRVANA_DEV", "0")
             .env("NIRVANA_CONFIG_DIR", self.dir.path())
             .env("NIRVANA_DATA_DIR", self.dir.path())
             .env("NIRVANA_LOG_DIR", self.dir.path());

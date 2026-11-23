@@ -8,23 +8,24 @@ const KNOB_INSET: f32 = 0.1;
 
 pub(in crate::gui) fn toggle<'a, Message: 'a>(
     is_on: bool,
-    on_toggle: impl Fn(bool) -> Message + 'a,
+    on_toggle: Option<impl Fn(bool) -> Message + 'a>,
 ) -> Element<'a, Message> {
     toggler(is_on)
         .size(HEIGHT)
-        .on_toggle(on_toggle)
-        .style(move |theme, _| {
+        .on_toggle_maybe(on_toggle)
+        .style(move |theme, status| {
             let tokens = tokens(theme);
             let background = if is_on {
                 tokens.accent
             } else {
                 tokens.fill_neutral_strong
             };
+            let opacity = tokens.opacity(!matches!(status, toggler::Status::Disabled { .. }));
             toggler::Style {
-                background: background.into(),
+                background: background.scale_alpha(opacity).into(),
                 background_border_width: 0.0,
                 background_border_color: Color::TRANSPARENT,
-                foreground: Color::WHITE.into(),
+                foreground: Color::WHITE.scale_alpha(opacity).into(),
                 foreground_border_width: 0.0,
                 foreground_border_color: Color::TRANSPARENT,
                 text_color: None,

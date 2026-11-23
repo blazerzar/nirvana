@@ -347,7 +347,7 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [x] Create web page with server-rendered Leptos and Alpine, assets embedded
       in binary (implementation guide §3 #10).
 - [x] `nirvana serve` runs the web server headless.
-- [ ] Make it possible to toggle it from the settings.
+- [x] Make it possible to toggle it from the settings.
 - [ ] Start building screens: setup, week, month, edit drawer, profiles and
       connections, add connection, new profile, settings.
 - [ ] Responsive layouts (below 1200 px and 720 px).

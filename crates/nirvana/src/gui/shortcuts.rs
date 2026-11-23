@@ -9,6 +9,9 @@ use super::state::{appearance, start, tracking};
 #[derive(Clone)]
 pub(super) enum Shortcut {
     Escape,
+    /// Return pressed outside a text input.
+    Return,
+    OpenWeb,
     ToggleScreen(Screen),
     Start(start::Message),
     Tracking(tracking::Message),
@@ -30,6 +33,9 @@ pub(super) fn listen() -> Subscription<Message> {
 fn shortcut(event: keyboard::Event, window: window::Id) -> Option<Message> {
     if let Some(index) = recent_shortcut(&event) {
         return Some(Message::Shortcut(window, Shortcut::Recent(index)));
+    }
+    if is_enter(&event) {
+        return Some(Message::Shortcut(window, Shortcut::Return));
     }
     let keyboard::Event::KeyPressed {
         key,
@@ -55,6 +61,7 @@ fn shortcut(event: keyboard::Event, window: window::Id) -> Option<Message> {
         (keyboard::Key::Named(key::Named::Escape), _) => Shortcut::Escape,
         _ if is_comma(latin, physical_key) => Shortcut::ToggleScreen(Screen::Settings),
         (_, Some('v')) => Shortcut::ToggleScreen(Screen::Overview),
+        (_, Some('o')) => Shortcut::OpenWeb,
         (_, Some('s')) => Shortcut::Start(start::Message::Open),
         (_, Some('x')) => Shortcut::Tracking(tracking::Message::Stop),
         (_, Some('r')) => Shortcut::Tracking(tracking::Message::Resume),

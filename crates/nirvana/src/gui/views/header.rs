@@ -56,6 +56,11 @@ pub(in crate::gui) fn header<'a>(
             .on_press(Message::ToggleScreen(Screen::Overview))
     });
     let open_web = Button::new("open web ↗").size(ButtonSize::Sm).key("o");
+    let open_web = if settings.is_web_available() {
+        open_web.on_press(Message::Settings(settings::Message::OpenWeb))
+    } else {
+        open_web
+    };
     let settings_label = if screen == Screen::Settings {
         "done"
     } else {

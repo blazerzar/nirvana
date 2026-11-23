@@ -9,8 +9,13 @@ use crate::gui::design_system::typography::{
     BODY, HEADING_PAGE, LABEL_CAPS, LABEL_STRONG, PARAGRAPH,
 };
 use crate::gui::design_system::{space, tokens};
+use crate::gui::state::settings;
 
-pub(super) fn setup<'a>(available_width: f32, active_step: u8) -> Element<'a, Message> {
+pub(super) fn setup<'a>(
+    available_width: f32,
+    active_step: u8,
+    web_available: bool,
+) -> Element<'a, Message> {
     let steps = column![
         tracked_text(LABEL_CAPS, "SETUP · 3 STEPS", tertiary),
         step(
@@ -34,7 +39,7 @@ pub(super) fn setup<'a>(available_width: f32, active_step: u8) -> Element<'a, Me
     ]
     .spacing(space::S200)
     .padding(Padding::from(space::S200).right(space::S250));
-    row![welcome(), side_pane(steps, available_width)].into()
+    row![welcome(web_available), side_pane(steps, available_width)].into()
 }
 
 fn step<'a>(
@@ -54,7 +59,7 @@ fn step<'a>(
         .into()
 }
 
-fn welcome<'a>() -> Element<'a, Message> {
+fn welcome<'a>(web_available: bool) -> Element<'a, Message> {
     let label = tracked_text(LABEL_CAPS, "WELCOME", tertiary);
     let heading = HEADING_PAGE
         .text("Set up nirvana in the browser")
@@ -74,6 +79,11 @@ fn welcome<'a>() -> Element<'a, Message> {
     )
     .max_width(440);
     let open_web = Button::new("open nirvana web ↗").key(RETURN_KEY);
+    let open_web = if web_available {
+        open_web.on_press(Message::Settings(settings::Message::OpenWeb))
+    } else {
+        open_web
+    };
 
     let content = column![
         label,

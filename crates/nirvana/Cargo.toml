@@ -17,7 +17,7 @@ nirvana-core = { path = "../nirvana-core" }
 opener = "0.9.0"
 secrecy = "0.10.3"
 serde = { version = "1.0.229", features = ["derive"] }
-tokio = { version = "1.53.3", features = ["net", "rt", "signal", "time"] }
+tokio = { version = "1.53.3", features = ["net", "rt", "signal", "sync", "time"] }
 tracing = { version = "0.1.44", features = ["release_max_level_debug"] }
 tracing-subscriber = "0.3.23"
 

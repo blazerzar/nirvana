@@ -7,7 +7,7 @@ mod profile;
 mod slot;
 mod ticket;
 
-pub use config::ConfigEntry;
+pub use config::{ConfigEntry, DesktopSettings};
 pub use connection::{
     Connection, ConnectionData, ConnectionEdit, JiraSettings, JiraSettingsEdit, Kind,
     LinearSettings, LinearSettingsEdit, Settings, SettingsEdit,

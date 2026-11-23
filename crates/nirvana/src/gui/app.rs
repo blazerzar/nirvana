@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use iced::{Element, Subscription, Task, window};
-use nirvana_core::{IdleConfig, Nirvana, NirvanaError, Theme};
+use nirvana_core::{DesktopSettings, Nirvana, NirvanaError};
 use tracing::error;
 
 use super::failure::{Failure, chain};
@@ -41,10 +41,7 @@ pub(super) enum Screen {
 #[derive(Clone)]
 pub(super) struct Loaded {
     nirvana: Arc<Nirvana>,
-    theme: Theme,
-    idle: Option<IdleConfig>,
-    server: bool,
-    port: Option<u16>,
+    settings: Option<DesktopSettings>,
 }
 
 #[derive(Clone)]
@@ -92,17 +89,16 @@ impl Gui {
 
     pub(super) fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Loaded(Ok(Loaded {
-                nirvana,
-                theme,
-                idle,
-                server,
-                port,
-            })) => {
-                self.appearance.set_theme(theme);
+            Message::Loaded(Ok(Loaded { nirvana, settings })) => {
+                self.appearance.set_theme(
+                    settings
+                        .as_ref()
+                        .map(|settings| settings.theme)
+                        .unwrap_or_default(),
+                );
                 let server = self
                     .settings
-                    .load(&nirvana, idle, server, port)
+                    .load(&nirvana, settings)
                     .map(Message::Settings);
                 self.nirvana = Some(Ok(nirvana.clone()));
                 return Task::batch([server, profile::load(nirvana).map(Message::Profile)]);
@@ -363,10 +359,7 @@ impl Gui {
 async fn load() -> Result<Loaded, NirvanaError> {
     let nirvana = Nirvana::new().await?;
     Ok(Loaded {
-        theme: nirvana.theme().await.unwrap_or_default(),
-        idle: nirvana.idle().await.ok(),
-        server: nirvana.server().await.unwrap_or_default(),
-        port: nirvana.port().await.ok(),
+        settings: nirvana.desktop_settings().await.ok(),
         nirvana: Arc::new(nirvana),
     })
 }

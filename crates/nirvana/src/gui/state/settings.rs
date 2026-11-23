@@ -3,7 +3,7 @@ use std::time::Duration;
 use std::{fmt, io};
 
 use iced::Task;
-use nirvana_core::{IdleConfig, IdleMethod, Nirvana, NirvanaError};
+use nirvana_core::{DesktopSettings, IdleConfig, IdleMethod, Nirvana, NirvanaError};
 use tokio::sync::oneshot;
 use tracing::error;
 
@@ -11,7 +11,6 @@ use crate::gui::failure::{Failure, chain};
 use crate::web;
 
 const SAVE_FAILED: &str = "couldn't save the settings";
-const PORT_KEY: &str = "core.port";
 /// How long the starting status shows at least, so a change is visible.
 const MIN_STARTING: Duration = Duration::from_millis(500);
 const OPEN_WEB_FAILED: &str = "couldn't open nirvana web";
@@ -20,9 +19,8 @@ const IDLE_AFTER_MINUTES: [u64; 6] = [1, 2, 5, 10, 15, 30];
 /// Desktop settings. Available once the config is loaded.
 #[derive(Default)]
 pub(in crate::gui) struct State {
-    idle: Option<IdleConfig>,
+    settings: Option<DesktopSettings>,
     idle_after_open: bool,
-    port: Option<u16>,
     port_input: String,
     /// Stops the local web server when dropped.
     server: Option<oneshot::Sender<()>>,
@@ -52,8 +50,8 @@ pub(in crate::gui) enum Message {
     PortInput(String),
     PortSaved(u16),
     OpenWeb,
-    /// The error and the idle settings that are still saved.
-    SaveFailed(Arc<NirvanaError>, Option<IdleConfig>),
+    /// The error and the settings that are still saved.
+    SaveFailed(Arc<NirvanaError>, Option<DesktopSettings>),
     Failed(Failure),
 }
 
@@ -92,16 +90,14 @@ impl IdleAfter {
 }
 
 impl State {
-    /// Loads the settings and starts the local web server if `server` is on.
+    /// Loads the settings and starts the local web server if it is on.
     pub(in crate::gui) fn load(
         &mut self,
         nirvana: &Arc<Nirvana>,
-        idle: Option<IdleConfig>,
-        server: bool,
-        port: Option<u16>,
+        settings: Option<DesktopSettings>,
     ) -> Task<Message> {
-        self.idle = idle;
-        self.port = port;
+        let server = settings.as_ref().is_some_and(|settings| settings.server);
+        self.settings = settings;
         self.reset_port_input();
         if server {
             self.start_server(nirvana.clone())
@@ -111,11 +107,11 @@ impl State {
     }
 
     pub(in crate::gui) fn is_available(&self) -> bool {
-        self.idle.is_some()
+        self.settings.is_some()
     }
 
     pub(in crate::gui) fn idle(&self) -> Option<&IdleConfig> {
-        self.idle.as_ref()
+        self.settings.as_ref().map(|settings| &settings.idle)
     }
 
     pub(in crate::gui) fn is_idle_after_open(&self) -> bool {
@@ -133,7 +129,11 @@ impl State {
     /// Shows the saved port, replacing an empty field or a port that failed
     /// to save.
     pub(in crate::gui) fn reset_port_input(&mut self) {
-        self.port_input = self.port.map(|port| port.to_string()).unwrap_or_default();
+        self.port_input = self
+            .settings
+            .as_ref()
+            .map(|settings| settings.port.to_string())
+            .unwrap_or_default();
     }
 
     pub(in crate::gui) fn is_server_enabled(&self) -> bool {
@@ -174,14 +174,16 @@ impl State {
     /// Saves the typed port unless it is empty or already saved. A running
     /// server keeps its port until it starts again.
     fn save_port_input(&self, nirvana: &Arc<Nirvana>) -> Task<Message> {
-        match self.port_input.parse().ok() {
-            Some(port) if Some(port) != self.port => save_port(nirvana.clone(), port),
+        match (self.port_input.parse().ok(), &self.settings) {
+            (Some(port), Some(settings)) if port != settings.port => {
+                save_port(nirvana.clone(), port)
+            }
             _ => Task::none(),
         }
     }
 
     fn start_server(&mut self, nirvana: Arc<Nirvana>) -> Task<Message> {
-        let Some(port) = self.port else {
+        let Some(port) = self.settings.as_ref().map(|settings| settings.port) else {
             return Task::none();
         };
         let (stop, stopped) = oneshot::channel();
@@ -217,6 +219,9 @@ impl State {
         };
         match message {
             Message::ServerEnabled(enabled) => {
+                if let Some(settings) = &mut self.settings {
+                    settings.server = enabled;
+                }
                 let save = save_server(nirvana.clone(), enabled);
                 if !enabled {
                     self.server = None;
@@ -245,15 +250,12 @@ impl State {
                 return self.save_port_input(nirvana);
             }
             Message::OpenWeb => return self.open_web(),
-            Message::PortSaved(port) => {
-                self.port = Some(port);
-                return self.save_port_input(nirvana);
-            }
             _ => {}
         }
-        let Some(idle) = &mut self.idle else {
+        let Some(settings) = &mut self.settings else {
             return Task::none();
         };
+        let idle = &mut settings.idle;
         match message {
             Message::ToggleIdleAfter => self.idle_after_open = !self.idle_after_open,
             Message::CloseIdleAfter => self.idle_after_open = false,
@@ -271,18 +273,21 @@ impl State {
                 idle.methods = toggled(&idle.methods, method);
                 return save(nirvana.clone(), idle.clone());
             }
+            Message::PortSaved(port) => {
+                settings.port = port;
+                return self.save_port_input(nirvana);
+            }
             Message::ServerEnabled(_)
             | Message::ServerStarted(_)
             | Message::PortInput(_)
-            | Message::PortSaved(_)
             | Message::OpenWeb
             | Message::Failed(_) => {}
             Message::SaveFailed(e, saved) => {
                 error!("{}", chain(e.as_ref()));
-                self.port_input = self.port.map(|port| port.to_string()).unwrap_or_default();
                 if let Some(saved) = saved {
-                    *idle = saved;
+                    *settings = saved;
                 }
+                self.reset_port_input();
                 return Task::done(Message::Failed(Failure::from_error(
                     SAVE_FAILED,
                     e.as_ref(),
@@ -313,7 +318,7 @@ fn save(nirvana: Arc<Nirvana>, idle: IdleConfig) -> Task<Message> {
     Task::future(async move {
         match nirvana.set_idle(idle).await {
             Ok(()) => None,
-            Err(e) => Some(Message::SaveFailed(Arc::new(e), nirvana.idle().await.ok())),
+            Err(e) => Some(save_failed(&nirvana, e).await),
         }
     })
     .and_then(Task::done)
@@ -321,22 +326,26 @@ fn save(nirvana: Arc<Nirvana>, idle: IdleConfig) -> Task<Message> {
 
 fn save_server(nirvana: Arc<Nirvana>, server: bool) -> Task<Message> {
     Task::future(async move {
-        nirvana
-            .set_server(server)
-            .await
-            .err()
-            .map(|e| Message::SaveFailed(Arc::new(e), None))
+        match nirvana.set_server(server).await {
+            Ok(()) => None,
+            Err(e) => Some(save_failed(&nirvana, e).await),
+        }
     })
     .and_then(Task::done)
 }
 
 fn save_port(nirvana: Arc<Nirvana>, port: u16) -> Task<Message> {
     Task::future(async move {
-        match nirvana.set_config(PORT_KEY, &port.to_string()).await {
+        match nirvana.set_port(port).await {
             Ok(()) => Message::PortSaved(port),
-            Err(e) => Message::SaveFailed(Arc::new(e), None),
+            Err(e) => save_failed(&nirvana, e).await,
         }
     })
+}
+
+/// Returns [`Message::SaveFailed`] with the settings that are still saved.
+async fn save_failed(nirvana: &Nirvana, e: NirvanaError) -> Message {
+    Message::SaveFailed(Arc::new(e), nirvana.desktop_settings().await.ok())
 }
 
 /// Returns whether `input` is empty or a port from 1 to 65535.
@@ -348,6 +357,8 @@ fn is_port_input(input: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use nirvana_core::DomainError;
+
     use super::*;
 
     #[test]
@@ -360,14 +371,24 @@ mod tests {
         }
     }
 
+    /// Returns the state with the saved settings and port 0, so the server
+    /// binds to any free port.
+    async fn on_any_port(nirvana: &Nirvana) -> State {
+        State {
+            settings: Some(DesktopSettings {
+                port: 0,
+                ..nirvana.desktop_settings().await.unwrap()
+            }),
+            ..State::default()
+        }
+    }
+
     #[tokio::test]
     async fn saved_port_keeps_a_running_server() {
         let dir = tempfile::tempdir().unwrap();
-        let nirvana = Some(Ok(Arc::new(Nirvana::open_in(dir.path()).await.unwrap())));
-        let mut state = State {
-            port: Some(0),
-            ..State::default()
-        };
+        let nirvana = Arc::new(Nirvana::open_in(dir.path()).await.unwrap());
+        let mut state = on_any_port(&nirvana).await;
+        let nirvana = Some(Ok(nirvana));
         _ = state.update(Message::ServerEnabled(true), nirvana.as_ref());
 
         _ = state.update(Message::ServerStarted(Ok(5167)), nirvana.as_ref());
@@ -375,17 +396,15 @@ mod tests {
         _ = state.update(Message::PortSaved(8080), nirvana.as_ref());
 
         assert!(matches!(state.server_status(), ServerStatus::Running(5167)));
-        assert_eq!(state.port, Some(8080));
+        assert_eq!(state.settings.unwrap().port, 8080);
     }
 
     #[tokio::test]
     async fn server_status_follows_the_toggle() {
         let dir = tempfile::tempdir().unwrap();
-        let nirvana = Some(Ok(Arc::new(Nirvana::open_in(dir.path()).await.unwrap())));
-        let mut state = State {
-            port: Some(0),
-            ..State::default()
-        };
+        let nirvana = Arc::new(Nirvana::open_in(dir.path()).await.unwrap());
+        let mut state = on_any_port(&nirvana).await;
+        let nirvana = Some(Ok(nirvana));
 
         _ = state.update(Message::ServerEnabled(true), nirvana.as_ref());
         assert!(matches!(state.server_status(), ServerStatus::Starting));
@@ -403,11 +422,9 @@ mod tests {
     #[tokio::test]
     async fn server_status_shows_the_bind_error() {
         let dir = tempfile::tempdir().unwrap();
-        let nirvana = Some(Ok(Arc::new(Nirvana::open_in(dir.path()).await.unwrap())));
-        let mut state = State {
-            port: Some(0),
-            ..State::default()
-        };
+        let nirvana = Arc::new(Nirvana::open_in(dir.path()).await.unwrap());
+        let mut state = on_any_port(&nirvana).await;
+        let nirvana = Some(Ok(nirvana));
 
         _ = state.update(Message::ServerEnabled(true), nirvana.as_ref());
         let refused = Arc::new(io::Error::from(io::ErrorKind::AddrInUse));
@@ -415,6 +432,28 @@ mod tests {
 
         assert!(state.is_server_enabled());
         assert!(matches!(state.server_status(), ServerStatus::Failed(_)));
+    }
+
+    #[tokio::test]
+    async fn failed_save_restores_the_saved_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let nirvana = Arc::new(Nirvana::open_in(dir.path()).await.unwrap());
+        let saved = nirvana.desktop_settings().await.unwrap();
+        let mut state = on_any_port(&nirvana).await;
+        let nirvana = Some(Ok(nirvana));
+        _ = state.update(Message::IdleEnabled(false), nirvana.as_ref());
+        _ = state.update(Message::PortInput("80".into()), nirvana.as_ref());
+
+        let e = Arc::new(NirvanaError::from(DomainError::ConfigKeyRequired(
+            "core.port".into(),
+        )));
+        _ = state.update(
+            Message::SaveFailed(e, Some(saved.clone())),
+            nirvana.as_ref(),
+        );
+
+        assert_eq!(state.settings, Some(saved));
+        assert_eq!(state.port_input(), "5167");
     }
 
     #[test]

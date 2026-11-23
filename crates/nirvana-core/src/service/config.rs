@@ -3,8 +3,8 @@
 //! Keys are `section.key`, see [`KEYS`]. `core.profile` is changed by
 //! switching the active profile and cannot be unset.
 
-use crate::config::{self, AppConfig, ConfigError, IdleConfig, KEYS, Theme};
-use crate::domain::ConfigEntry;
+use crate::config::{self, AppConfig, ConfigError, IdleConfig, KEYS};
+use crate::domain::{ConfigEntry, DesktopSettings};
 use crate::errors::{DomainError, NirvanaError};
 use crate::logging;
 use crate::service::Nirvana;
@@ -104,13 +104,19 @@ impl Nirvana {
         Ok(())
     }
 
-    /// Returns `gui.theme`.
+    /// Returns the config values shown in the desktop settings.
     ///
     /// # Errors
     ///
     /// Returns an error if the config is unavailable.
-    pub async fn theme(&self) -> Result<Theme, NirvanaError> {
-        Ok(self.config().await?.gui.theme)
+    pub async fn desktop_settings(&self) -> Result<DesktopSettings, NirvanaError> {
+        let config = self.config().await?;
+        Ok(DesktopSettings {
+            theme: config.gui.theme,
+            server: config.gui.server,
+            port: config.core.port,
+            idle: config.idle.clone(),
+        })
     }
 
     /// Returns `core.port`.
@@ -122,13 +128,13 @@ impl Nirvana {
         Ok(self.config().await?.core.port)
     }
 
-    /// Returns `gui.server`.
+    /// Sets `core.port` and saves the config.
     ///
     /// # Errors
     ///
-    /// Returns an error if the config is unavailable.
-    pub async fn server(&self) -> Result<bool, NirvanaError> {
-        Ok(self.config().await?.gui.server)
+    /// Returns an error if the config is unavailable or cannot be saved.
+    pub async fn set_port(&self, port: u16) -> Result<(), NirvanaError> {
+        self.save_config(|config| config.core.port = port).await
     }
 
     /// Sets `gui.server` and saves the config.
@@ -137,21 +143,7 @@ impl Nirvana {
     ///
     /// Returns an error if the config is unavailable or cannot be saved.
     pub async fn set_server(&self, server: bool) -> Result<(), NirvanaError> {
-        let mut config = self.config_mut().await?;
-        let mut edited = config.clone();
-        edited.gui.server = server;
-        edited.save(&self.paths).await?;
-        *config = edited;
-        Ok(())
-    }
-
-    /// Returns the `idle` section.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the config is unavailable.
-    pub async fn idle(&self) -> Result<IdleConfig, NirvanaError> {
-        Ok(self.config().await?.idle.clone())
+        self.save_config(|config| config.gui.server = server).await
     }
 
     /// Replaces the `idle` section and saves the config.
@@ -160,9 +152,15 @@ impl Nirvana {
     ///
     /// Returns an error if the config is unavailable or cannot be saved.
     pub async fn set_idle(&self, idle: IdleConfig) -> Result<(), NirvanaError> {
+        self.save_config(|config| config.idle = idle).await
+    }
+
+    /// Saves the config with `edit` applied, keeping the held config if the
+    /// save fails.
+    async fn save_config(&self, edit: impl FnOnce(&mut AppConfig)) -> Result<(), NirvanaError> {
         let mut config = self.config_mut().await?;
         let mut edited = config.clone();
-        edited.idle = idle;
+        edit(&mut edited);
         edited.save(&self.paths).await?;
         *config = edited;
         Ok(())
@@ -218,7 +216,7 @@ mod tests {
     use std::io::Write;
 
     use super::*;
-    use crate::config::{IdleMethod, LogLevel};
+    use crate::config::{IdleMethod, LogLevel, Theme};
     use crate::service::test_service::TestService;
 
     fn append_default_theme(service: &TestService) {
@@ -303,13 +301,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn theme_returns_saved_theme() {
+    async fn desktop_settings_returns_defaults() {
         let service = TestService::new(&[]).await;
-        assert_eq!(service.theme().await.unwrap(), Theme::System);
+
+        assert_eq!(
+            service.desktop_settings().await.unwrap(),
+            DesktopSettings {
+                theme: Theme::System,
+                server: true,
+                port: 5167,
+                idle: IdleConfig::default(),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn desktop_settings_returns_saved_values() {
+        let service = TestService::new(&[]).await;
 
         service.set_config("gui.theme", "dark").await.unwrap();
+        service.set_config("gui.server", "false").await.unwrap();
+        service.set_config("core.port", "8080").await.unwrap();
+        service.set_config("idle.enabled", "false").await.unwrap();
 
-        assert_eq!(service.theme().await.unwrap(), Theme::Dark);
+        let settings = service.desktop_settings().await.unwrap();
+        assert_eq!(settings.theme, Theme::Dark);
+        assert!(!settings.server);
+        assert_eq!(settings.port, 8080);
+        assert!(!settings.idle.enabled);
     }
 
     #[tokio::test]
@@ -323,13 +342,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn set_port_saves_port() {
+        let service = TestService::new(&[]).await;
+
+        service.set_port(8080).await.unwrap();
+
+        assert_eq!(service.desktop_settings().await.unwrap().port, 8080);
+        let saved = AppConfig::load(&service.paths).await.unwrap();
+        assert_eq!(saved.core.port, 8080);
+    }
+
+    #[tokio::test]
     async fn set_server_saves_server() {
         let service = TestService::new(&[]).await;
-        assert!(service.server().await.unwrap());
 
         service.set_server(false).await.unwrap();
 
-        assert!(!service.server().await.unwrap());
+        assert!(!service.desktop_settings().await.unwrap().server);
         let saved = AppConfig::load(&service.paths).await.unwrap();
         assert!(!saved.gui.server);
     }
@@ -345,9 +374,27 @@ mod tests {
 
         service.set_idle(idle.clone()).await.unwrap();
 
-        assert_eq!(service.idle().await.unwrap(), idle);
+        assert_eq!(service.desktop_settings().await.unwrap().idle, idle);
         let saved = AppConfig::load(&service.paths).await.unwrap();
         assert_eq!(saved.idle, idle);
+    }
+
+    #[tokio::test]
+    async fn set_idle_keeps_config_when_save_fails() {
+        let service = TestService::new(&[]).await;
+        std::fs::remove_file(&service.paths.config_file).unwrap();
+        std::fs::create_dir(&service.paths.config_file).unwrap();
+        let idle = IdleConfig {
+            enabled: false,
+            ..IdleConfig::default()
+        };
+
+        service.set_idle(idle).await.unwrap_err();
+
+        assert_eq!(
+            service.desktop_settings().await.unwrap().idle,
+            IdleConfig::default()
+        );
     }
 
     #[tokio::test]

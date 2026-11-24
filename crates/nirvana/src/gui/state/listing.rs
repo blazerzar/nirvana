@@ -16,11 +16,13 @@ pub(in crate::gui) const LIST: Id = Id::new("listing");
 
 /// The shown scope and view, the stopped slots of today, the summary of the
 /// unpublished stopped slots, and those slots by day while their scope is
-/// shown, with their publish states.
+/// shown, with their publish states. The unpublished scope is shown once its
+/// slots are loaded.
 #[derive(Default)]
 pub(in crate::gui) struct State {
     scope: Scope,
     view: View,
+    opening_unpublished: bool,
     today: Option<Today>,
     unpublished: Option<Vec<Day<(Slot, PublishState)>>>,
 }
@@ -94,23 +96,30 @@ impl State {
             Message::UnpublishedLoaded(days) => {
                 if self.scope == Scope::Unpublished {
                     self.unpublished = Some(days);
+                } else if self.opening_unpublished {
+                    self.opening_unpublished = false;
+                    self.scope = Scope::Unpublished;
+                    self.unpublished = Some(days);
+                    return operation::snap_to(LIST, RelativeOffset::START);
                 }
             }
             Message::Failed(_) => {}
-            Message::SelectScope(scope) if scope != self.scope => {
-                self.scope = scope;
-                let snap = operation::snap_to(LIST, RelativeOffset::START);
-                match scope {
-                    Scope::Today => self.unpublished = None,
-                    Scope::Unpublished => {
-                        if let Some(nirvana) = nirvana {
-                            return Task::batch([snap, load_unpublished(nirvana)]);
-                        }
-                    }
+            Message::SelectScope(Scope::Today) => {
+                self.opening_unpublished = false;
+                if self.scope != Scope::Today {
+                    self.scope = Scope::Today;
+                    self.unpublished = None;
+                    return operation::snap_to(LIST, RelativeOffset::START);
                 }
-                return snap;
             }
-            Message::SelectScope(_) => {}
+            Message::SelectScope(Scope::Unpublished) => {
+                if self.scope != Scope::Unpublished
+                    && let Some(nirvana) = nirvana
+                {
+                    self.opening_unpublished = true;
+                    return load_unpublished(nirvana);
+                }
+            }
             Message::SelectView(view) if view != self.view => {
                 self.view = view;
                 return operation::snap_to(LIST, RelativeOffset::START);
@@ -376,10 +385,48 @@ mod tests {
         );
     }
 
+    fn opening_unpublished() -> State {
+        State {
+            opening_unpublished: true,
+            ..State::default()
+        }
+    }
+
+    #[test]
+    fn loaded_unpublished_slots_show_their_scope() {
+        let mut state = opening_unpublished();
+
+        let _ = state.update(Message::UnpublishedLoaded(Vec::new()), None);
+
+        assert_eq!(state.scope(), Scope::Unpublished);
+        assert!(state.unpublished.is_some());
+    }
+
+    #[test]
+    fn selecting_today_while_opening_unpublished_drops_the_loaded_slots() {
+        let mut state = opening_unpublished();
+        let _ = state.update(Message::SelectScope(Scope::Today), None);
+
+        let _ = state.update(Message::UnpublishedLoaded(vec![day(22, Vec::new())]), None);
+
+        assert_eq!(state.scope(), Scope::Today);
+        assert!(state.unpublished.is_none());
+    }
+
+    #[test]
+    fn unpublished_slots_loaded_without_opening_are_dropped() {
+        let mut state = State::default();
+
+        let _ = state.update(Message::UnpublishedLoaded(vec![day(22, Vec::new())]), None);
+
+        assert_eq!(state.scope(), Scope::Today);
+        assert!(state.unpublished.is_none());
+    }
+
     #[test]
     fn select_view_keeps_the_scope() {
-        let mut state = State::default();
-        let _ = state.update(Message::SelectScope(Scope::Unpublished), None);
+        let mut state = opening_unpublished();
+        let _ = state.update(Message::UnpublishedLoaded(Vec::new()), None);
 
         let _ = state.update(Message::SelectView(View::ByTicket), None);
 

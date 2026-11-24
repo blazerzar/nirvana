@@ -331,7 +331,7 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [x] Listing pane: today by time (running row, publish marks, empty state).
 - [ ] Listing pane: by ticket view (segmented control).
 - [x] Listing pane: unpublished scope with day headers.
-- [ ] Listing pane: footer (unpublished days and total, link to web).
+- [x] Listing pane: footer (unpublished days and total, link to web).
 - [ ] Listing pane: expand to full width.
 - [ ] Minimum size for the main window, so the listing pane (at least 400px)
       always fits.

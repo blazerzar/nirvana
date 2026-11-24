@@ -5,17 +5,17 @@
 //! do not overlap. Starting a slot stops the running one at the same time.
 //! Slot times cannot be in the future.
 
-use chrono::Utc;
+use chrono::{DateTime, Local, Utc};
 use nirvana_entity::{connection, publish_entry, slot, ticket};
 use sea_orm::sea_query::{Expr, Order, WindowStatement};
 use sea_orm::{
     ActiveModelTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, ExprTrait, LoaderTrait,
-    ModelTrait, PaginatorTrait, QueryFilter, QueryOrder, QueryTrait, SelectExt, Set,
-    TransactionTrait,
+    ModelTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait, SelectExt, Set, TransactionTrait,
 };
 
 use crate::domain::{
     Change, PublishState, PublishTarget, Slot, SlotTarget, StartResult, TargetState,
+    UnpublishedSummary,
 };
 use crate::errors::{DomainError, NirvanaError};
 use crate::service::Nirvana;
@@ -120,18 +120,24 @@ impl Nirvana {
         with_publish_states(&self.db, rows).await
     }
 
-    /// Returns the number of stopped slots of the active profile that are not
-    /// published.
+    /// Returns the number, the summed seconds and the local days of the
+    /// stopped slots of the active profile that are not published.
     ///
     /// # Errors
     ///
     /// Returns an error if no profile is active, the config is unavailable or
     /// a database query fails.
-    pub async fn count_unpublished_slots(&self) -> Result<u64, NirvanaError> {
+    pub async fn unpublished_summary(&self) -> Result<UnpublishedSummary, NirvanaError> {
         let profile = self.find_active_profile().await?;
-        Ok(slot::Entity::find_unpublished(profile.id)
-            .count(&self.db)
-            .await?)
+        let spans: Vec<(i64, Option<i64>)> = slot::Entity::find_unpublished(profile.id)
+            .select_only()
+            .column(slot::Column::StartedAt)
+            .column(slot::Column::StoppedAt)
+            .order_by_asc(slot::COLUMN.started_at)
+            .into_tuple()
+            .all(&self.db)
+            .await?;
+        Ok(summarize(&spans))
     }
 
     /// Starts tracking the ticket `key` of the active profile at `at`, or
@@ -625,6 +631,33 @@ fn reject_future_time(timestamp: i64) -> Result<(), DomainError> {
     Ok(())
 }
 
+/// Sums the stopped `spans`, which are ordered by start, and collects the
+/// local days they started on.
+fn summarize(spans: &[(i64, Option<i64>)]) -> UnpublishedSummary {
+    let mut days = Vec::new();
+    for (started_at, _) in spans {
+        if let Some(day) = local_day(*started_at)
+            && days.last() != Some(&day)
+        {
+            days.push(day);
+        }
+    }
+    UnpublishedSummary {
+        slots: u64::try_from(spans.len()).unwrap_or(u64::MAX),
+        seconds: spans
+            .iter()
+            .map(|(started_at, stopped_at)| {
+                stopped_at.map_or(0, |stopped_at| Ord::max(stopped_at - started_at, 0))
+            })
+            .sum(),
+        days,
+    }
+}
+
+fn local_day(timestamp: i64) -> Option<chrono::NaiveDate> {
+    DateTime::from_timestamp(timestamp, 0).map(|utc| utc.with_timezone(&Local).date_naive())
+}
+
 /// Pairs each slot with its ticket and its publish state.
 async fn with_publish_states(
     db: &impl ConnectionTrait,
@@ -647,6 +680,7 @@ async fn with_publish_states(
 
 #[cfg(test)]
 mod tests {
+    use sea_orm::PaginatorTrait;
 
     use super::*;
     use crate::service::test_service::TestConnection::{Jira, Linear};
@@ -1418,7 +1452,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_and_count_unpublished_slots_return_stopped_slots_not_published() {
+    async fn list_and_summarize_unpublished_slots() {
         let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
         let old = service
@@ -1444,7 +1478,19 @@ mod tests {
             .seed_publish_entry(&failed, Linear, None, Some("error"), now)
             .await;
 
-        assert_eq!(service.count_unpublished_slots().await.unwrap(), 3);
+        let mut days: Vec<_> = [old.started_at, pending.started_at, failed.started_at]
+            .into_iter()
+            .filter_map(local_day)
+            .collect();
+        days.dedup();
+        assert_eq!(
+            service.unpublished_summary().await.unwrap(),
+            UnpublishedSummary {
+                slots: 3,
+                seconds: 1000 + 300 + 300,
+                days,
+            }
+        );
         let states: Vec<_> = service
             .list_unpublished_slots()
             .await

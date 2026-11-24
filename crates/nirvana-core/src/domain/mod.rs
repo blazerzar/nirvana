@@ -18,7 +18,7 @@ pub use logs::LogReader;
 pub use profile::{ActiveProfile, Profile};
 pub use slot::{
     PublishFailure, PublishResult, PublishState, PublishTarget, Slot, SlotTarget, StartResult,
-    TargetState,
+    TargetState, UnpublishedSummary,
 };
 pub use ticket::{TicketConnection, TicketSort, TicketTarget};
 

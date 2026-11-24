@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{NaiveDate, Utc};
 use nirvana_entity::{connection, publish_entry, slot, ticket};
 
 #[derive(Clone, Debug)]
@@ -85,6 +85,15 @@ pub struct PublishTarget {
 pub enum SlotTarget {
     Id(i64),
     At(i64),
+}
+
+/// The stopped slots of a profile that are not published.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UnpublishedSummary {
+    pub slots: u64,
+    pub seconds: i64,
+    /// The local days the slots started on, oldest first.
+    pub days: Vec<NaiveDate>,
 }
 
 #[derive(Debug)]

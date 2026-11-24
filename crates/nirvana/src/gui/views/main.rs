@@ -46,12 +46,12 @@ pub(in crate::gui) fn main_screen<'a>(
         Some(step) => setup(size.width, step, web_available),
         None if start_state.is_open() => row![
             start(start_state, tracking_state),
-            listing(listing_state, tracking_state, size.width)
+            listing(listing_state, tracking_state, web_available, size.width)
         ]
         .into(),
         None => row![
             tracking(tracking_state, theme_tokens, command_held),
-            listing(listing_state, tracking_state, size.width)
+            listing(listing_state, tracking_state, web_available, size.width)
         ]
         .into(),
     });

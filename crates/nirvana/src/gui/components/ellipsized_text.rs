@@ -13,13 +13,14 @@ const ELLIPSIS: char = '…';
 /// fit the width it is given.
 pub(in crate::gui) fn ellipsized_text<'a, Message: 'a>(
     style: TextStyle,
-    content: &'a str,
+    content: impl Into<Cow<'a, str>>,
     color: fn(&Theme) -> text::Style,
 ) -> Element<'a, Message> {
+    let content = content.into();
     responsive(move |size| {
         let fitting = fitting_chars(size.width, style.size);
         style
-            .text(ellipsize(content, fitting))
+            .text(ellipsize(&content, fitting).into_owned())
             .wrapping(Wrapping::None)
             .style(color)
             .into()

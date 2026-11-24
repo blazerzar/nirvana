@@ -252,11 +252,13 @@ decisions here (rounding, single active connection, …).
   The list rows are:
   a `►` running row, then `●` unpublished / `✓` published marks (`○` pending
   in statusWarning and `×` failed in statusDanger, like `nirvana list`), time
-  range, key + title, duration. "By ticket" groups rows with a slot count. Unpublished
-  scope shows day headers, newest first, under a border below the pane
-  header. The design's sticky headers are not possible in iced 0.14. Footer:
-  "unpublished · days · total" and "edit logs and see your week in nirvana
-  web ↗". A `«`/`»` control expands the list to full width.
+  range, key + title, duration. "By ticket" groups rows by ticket with a
+  slot count, the running ticket first, then the others by total, rows
+  newest first. Unpublished scope shows day headers, newest first, under a
+  border below the pane header. The design's sticky headers are not
+  possible in iced 0.14. Footer: "unpublished · days · total" and "edit logs
+  and see your week in nirvana web ↗". A `«`/`»` control expands the list to
+  full width.
 - **Bottom bar**: `[s] start`, `[x] stop`, `[r] resume <key>`,
   `[w] switch ⇄ <prevKey>`, spacer, `[p] publish <unpub total>`. Disabled
   states follow availability.

@@ -7,11 +7,12 @@ use nirvana_core::{PublishState, Slot, UnpublishedSummary};
 use super::{MAIN_WINDOW_SIZE, border};
 use crate::gui::app::Message;
 use crate::gui::components::{
-    Mark, ellipsized_text, link, pane_label, scroll_area, segmented, slot_row,
+    GroupSlot, Mark, ellipsized_text, link, pane_label, scroll_area, segmented, slot_row,
+    ticket_group,
 };
 use crate::gui::design_system::typography::{BODY, BODY_LG, BODY_STRONG, CAPTION, LABEL_STRONG};
 use crate::gui::design_system::{space as spacing, tokens};
-use crate::gui::state::listing::{self, Day, Scope};
+use crate::gui::state::listing::{self, Day, Scope, View, group_by_ticket};
 use crate::gui::state::{settings, tracking};
 use crate::time::{format_duration, local_date, time_of_day};
 
@@ -46,7 +47,13 @@ pub(super) fn listing<'a>(
             days.iter()
                 .map(|day| day_total(day, running_day, tracking_state))
                 .sum(),
-            unpublished_list(&days, state.today(), running_day, tracking_state),
+            unpublished_list(
+                &days,
+                state.view(),
+                state.today(),
+                running_day,
+                tracking_state,
+            ),
         ),
     };
     let total = LABEL_STRONG.text(format_duration(total)).style(primary);
@@ -65,7 +72,16 @@ pub(super) fn listing<'a>(
         state.scope(),
         |scope| Message::Listing(listing::Message::SelectScope(scope)),
     );
-    let header = container(column![pane_label(&label, total), scope].spacing(spacing::S100))
+    let view = segmented(
+        [
+            (View::ByTime, "by time".to_owned()),
+            (View::ByTicket, "by ticket".to_owned()),
+        ],
+        state.view(),
+        |view| Message::Listing(listing::Message::SelectView(view)),
+    );
+    let controls = row![scope, space::horizontal(), view].spacing(spacing::S100);
+    let header = container(column![pane_label(&label, total), controls].spacing(spacing::S100))
         .padding(Padding::from(spacing::S200).bottom(spacing::S100));
     let header_border = (state.scope() == Scope::Unpublished && !days.is_empty())
         .then(|| border(rule::horizontal(1)));
@@ -126,8 +142,9 @@ fn today_list<'a>(
     state: &'a listing::State,
     tracking_state: &'a tracking::State,
 ) -> Element<'a, Message> {
-    let slots = state.slots();
-    if tracking_state.running().is_none() && slots.is_empty() {
+    let slots: Vec<_> = state.slots().iter().collect();
+    let running = tracking_state.running();
+    if running.is_none() && slots.is_empty() {
         return empty(
             "nothing tracked yet today",
             "logs appear here as you start and stop tickets.",
@@ -135,9 +152,7 @@ fn today_list<'a>(
     }
     scroll_area(
         listing::LIST,
-        Column::new()
-            .push(running_row(tracking_state))
-            .extend(slots.iter().map(stopped_row))
+        rows(state.view(), &slots, running, tracking_state)
             .padding(Padding::from([spacing::S0, spacing::S150]).bottom(spacing::S100)),
     )
 }
@@ -146,6 +161,7 @@ fn today_list<'a>(
 /// of its day.
 fn unpublished_list<'a>(
     days: &[Day<&'a (Slot, PublishState)>],
+    view: View,
     today: Option<NaiveDate>,
     running_day: Option<NaiveDate>,
     tracking_state: &'a tracking::State,
@@ -158,16 +174,13 @@ fn unpublished_list<'a>(
     }
     let sections = days.iter().enumerate().map(|(index, day)| {
         let running = (Some(day.date) == running_day)
-            .then(|| running_row(tracking_state))
+            .then(|| tracking_state.running())
             .flatten();
-        let rows = Column::new()
-            .push(running)
-            .extend(day.items.iter().map(|slot| stopped_row(slot)))
-            .padding(
-                Padding::from([spacing::S0, spacing::S150])
-                    .top(spacing::S050)
-                    .bottom(spacing::S075),
-            );
+        let rows = rows(view, &day.items, running, tracking_state).padding(
+            Padding::from([spacing::S0, spacing::S150])
+                .top(spacing::S050)
+                .bottom(spacing::S075),
+        );
         let total = day_total(day, running_day, tracking_state);
         let is_first = index == 0;
         column![
@@ -179,29 +192,96 @@ fn unpublished_list<'a>(
     scroll_area(listing::LIST, Column::with_children(sections))
 }
 
-fn running_row(tracking_state: &tracking::State) -> Option<Element<'_, Message>> {
-    tracking_state.running().map(|running| {
-        slot_row(
-            Mark::Running,
-            (time_of_day(running.model.started_at), "now".to_owned()),
-            &running.ticket.ticket_key,
-            &running.ticket.title,
-            format_duration(tracking_state.elapsed()),
-        )
+/// The `running` slot and the stopped `slots`, newest first, by time, or
+/// grouped by ticket.
+fn rows<'a>(
+    view: View,
+    slots: &[&'a (Slot, PublishState)],
+    running: Option<&'a Slot>,
+    tracking_state: &tracking::State,
+) -> Column<'a, Message> {
+    let elapsed = tracking_state.elapsed();
+    match view {
+        View::ByTime => Column::new()
+            .push(running.map(|running| {
+                let row = running_slot(running, elapsed);
+                slot_row(
+                    row.mark,
+                    row.range,
+                    &running.ticket.ticket_key,
+                    &running.ticket.title,
+                    row.duration,
+                )
+            }))
+            .extend(slots.iter().map(|(slot, publish_state)| {
+                let row = stopped_slot(slot, *publish_state);
+                slot_row(
+                    row.mark,
+                    row.range,
+                    &slot.ticket.ticket_key,
+                    &slot.ticket.title,
+                    row.duration,
+                )
+            })),
+        View::ByTicket => {
+            Column::with_children(ticket_groups(slots, running, elapsed)).spacing(spacing::S075)
+        }
+    }
+}
+
+/// A group per ticket of the `running` slot and the stopped `slots`, with
+/// the running ticket first.
+fn ticket_groups<'a>(
+    slots: &[&'a (Slot, PublishState)],
+    running: Option<&'a Slot>,
+    elapsed: i64,
+) -> impl Iterator<Item = Element<'a, Message>> {
+    let seconds_of = |(slot, _): &&(Slot, PublishState)| slot.elapsed();
+    group_by_ticket(
+        slots.to_vec(),
+        running.map(|running| running.ticket.id),
+        |(slot, _)| slot.ticket.id,
+        seconds_of,
+    )
+    .into_iter()
+    .filter_map(move |group| {
+        let running = running.filter(|running| running.ticket.id == group.id);
+        let ticket = running
+            .map(|running| &running.ticket)
+            .or_else(|| group.items.first().map(|(slot, _)| &slot.ticket))?;
+        let stopped: i64 = group.items.iter().map(seconds_of).sum();
+        let total = stopped + running.map_or(0, |_| elapsed);
+        let running = running.map(|running| running_slot(running, elapsed));
+        let stopped = group
+            .items
+            .iter()
+            .map(|(slot, publish_state)| stopped_slot(slot, *publish_state));
+        Some(ticket_group(
+            &ticket.ticket_key,
+            &ticket.title,
+            format_duration(total),
+            running.into_iter().chain(stopped).collect(),
+        ))
     })
 }
 
-fn stopped_row((slot, publish_state): &(Slot, PublishState)) -> Element<'_, Message> {
-    slot_row(
-        Mark::Stopped(*publish_state),
-        (
+fn running_slot(running: &Slot, elapsed: i64) -> GroupSlot {
+    GroupSlot {
+        mark: Mark::Running,
+        range: (time_of_day(running.model.started_at), "now".to_owned()),
+        duration: format_duration(elapsed),
+    }
+}
+
+fn stopped_slot(slot: &Slot, publish_state: PublishState) -> GroupSlot {
+    GroupSlot {
+        mark: Mark::Stopped(publish_state),
+        range: (
             time_of_day(slot.model.started_at),
             slot.model.stopped_at.map(time_of_day).unwrap_or_default(),
         ),
-        &slot.ticket.ticket_key,
-        &slot.ticket.title,
-        format_duration(slot.elapsed()),
-    )
+        duration: format_duration(slot.elapsed()),
+    }
 }
 
 /// The date of a day, `today` when it is today, and its total, above a

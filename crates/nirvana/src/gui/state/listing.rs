@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::sync::Arc;
 
 use chrono::{Local, NaiveDate};
@@ -13,12 +14,13 @@ use crate::time::{day_start, local_date};
 const LOAD_FAILED: &str = "couldn't load slots";
 pub(in crate::gui) const LIST: Id = Id::new("listing");
 
-/// The shown scope, the stopped slots of today, the summary of the
+/// The shown scope and view, the stopped slots of today, the summary of the
 /// unpublished stopped slots, and those slots by day while their scope is
 /// shown, with their publish states.
 #[derive(Default)]
 pub(in crate::gui) struct State {
     scope: Scope,
+    view: View,
     today: Option<Today>,
     unpublished: Option<Vec<Day<(Slot, PublishState)>>>,
 }
@@ -29,6 +31,14 @@ pub(in crate::gui) enum Scope {
     #[default]
     Today,
     Unpublished,
+}
+
+/// How the listing orders the slots.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(in crate::gui) enum View {
+    #[default]
+    ByTime,
+    ByTicket,
 }
 
 #[derive(Clone, Debug)]
@@ -45,6 +55,13 @@ pub(in crate::gui) struct Day<T> {
     pub(in crate::gui) items: Vec<T>,
 }
 
+/// The items of a ticket, newest first.
+#[derive(Clone, Debug, PartialEq)]
+pub(in crate::gui) struct Ticket<T> {
+    pub(in crate::gui) id: i64,
+    pub(in crate::gui) items: Vec<T>,
+}
+
 #[derive(Clone)]
 pub(in crate::gui) enum Message {
     Load,
@@ -52,6 +69,7 @@ pub(in crate::gui) enum Message {
     UnpublishedLoaded(Vec<Day<(Slot, PublishState)>>),
     Failed(Failure),
     SelectScope(Scope),
+    SelectView(View),
 }
 
 impl State {
@@ -93,12 +111,21 @@ impl State {
                 return snap;
             }
             Message::SelectScope(_) => {}
+            Message::SelectView(view) if view != self.view => {
+                self.view = view;
+                return operation::snap_to(LIST, RelativeOffset::START);
+            }
+            Message::SelectView(_) => {}
         }
         Task::none()
     }
 
     pub(in crate::gui) fn scope(&self) -> Scope {
         self.scope
+    }
+
+    pub(in crate::gui) fn view(&self) -> View {
+        self.view
     }
 
     pub(in crate::gui) fn today(&self) -> Option<NaiveDate> {
@@ -201,6 +228,42 @@ fn group_by_day<T>(
     Ok(days)
 }
 
+/// Groups `items`, which are newest first, by the ticket `ticket_of`
+/// returns. The ticket `first` comes first, also without items, then the
+/// others by the summed `seconds_of` of their items, most first, and newest
+/// first when equal.
+pub(in crate::gui) fn group_by_ticket<T>(
+    items: Vec<T>,
+    first: Option<i64>,
+    ticket_of: impl Fn(&T) -> i64,
+    seconds_of: impl Fn(&T) -> i64,
+) -> Vec<Ticket<T>> {
+    let mut tickets: Vec<Ticket<T>> = first
+        .map(|id| Ticket {
+            id,
+            items: Vec::new(),
+        })
+        .into_iter()
+        .collect();
+    for item in items {
+        let id = ticket_of(&item);
+        match tickets.iter_mut().find(|ticket| ticket.id == id) {
+            Some(ticket) => ticket.items.push(item),
+            None => tickets.push(Ticket {
+                id,
+                items: vec![item],
+            }),
+        }
+    }
+    tickets.sort_by_key(|ticket| {
+        (
+            Some(ticket.id) != first,
+            Reverse(ticket.items.iter().map(&seconds_of).sum::<i64>()),
+        )
+    });
+    tickets
+}
+
 /// Returns `days`, which are newest first, with an empty day for `running`
 /// when it is not one of them.
 fn with_running_day<T>(days: &[Day<T>], running: Option<NaiveDate>) -> Vec<Day<&T>> {
@@ -261,6 +324,67 @@ mod tests {
     fn group_by_day_fails_when_a_date_fails() {
         let result = group_by_day(vec![1], |_| anyhow::bail!("out of range"));
         assert!(result.is_err());
+    }
+
+    fn ticket(id: i64, items: Vec<(i64, i64)>) -> Ticket<(i64, i64)> {
+        Ticket { id, items }
+    }
+
+    fn group(items: Vec<(i64, i64)>, first: Option<i64>) -> Vec<Ticket<(i64, i64)>> {
+        group_by_ticket(items, first, |(id, _)| *id, |(_, seconds)| *seconds)
+    }
+
+    #[test]
+    fn group_by_ticket_orders_by_seconds_and_keeps_items_newest_first() {
+        let items = vec![(1, 10), (2, 30), (1, 15), (3, 5)];
+
+        assert_eq!(
+            group(items, None),
+            [
+                ticket(2, vec![(2, 30)]),
+                ticket(1, vec![(1, 10), (1, 15)]),
+                ticket(3, vec![(3, 5)]),
+            ]
+        );
+    }
+
+    #[test]
+    fn group_by_ticket_keeps_newest_first_when_seconds_are_equal() {
+        let items = vec![(1, 10), (2, 10)];
+
+        assert_eq!(
+            group(items, None),
+            [ticket(1, vec![(1, 10)]), ticket(2, vec![(2, 10)])]
+        );
+    }
+
+    #[test]
+    fn group_by_ticket_puts_the_first_ticket_first() {
+        let items = vec![(1, 30), (2, 5)];
+
+        assert_eq!(
+            group(items, Some(2)),
+            [ticket(2, vec![(2, 5)]), ticket(1, vec![(1, 30)])]
+        );
+    }
+
+    #[test]
+    fn group_by_ticket_adds_the_first_ticket_without_items() {
+        assert_eq!(
+            group(vec![(1, 30)], Some(2)),
+            [ticket(2, vec![]), ticket(1, vec![(1, 30)])]
+        );
+    }
+
+    #[test]
+    fn select_view_keeps_the_scope() {
+        let mut state = State::default();
+        let _ = state.update(Message::SelectScope(Scope::Unpublished), None);
+
+        let _ = state.update(Message::SelectView(View::ByTicket), None);
+
+        assert_eq!(state.view(), View::ByTicket);
+        assert_eq!(state.scope(), Scope::Unpublished);
     }
 
     #[test]

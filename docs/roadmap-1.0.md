@@ -329,7 +329,7 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [x] Overview screen: today, week and month cards and this week by day
       (implementation guide §6.2).
 - [x] Listing pane: today by time (running row, publish marks, empty state).
-- [ ] Listing pane: by ticket view (segmented control).
+- [x] Listing pane: by ticket view (segmented control).
 - [x] Listing pane: unpublished scope with day headers.
 - [x] Listing pane: footer (unpublished days and total, link to web).
 - [ ] Listing pane: expand to full width.

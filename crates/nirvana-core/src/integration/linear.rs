@@ -55,6 +55,7 @@ struct IssueData {
 struct Issue {
     identifier: String,
     title: String,
+    trashed: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -89,11 +90,14 @@ impl LinearIntegration {
     ) -> Result<IssueInfo, IntegrationError> {
         let data: IssueData = self
             .query(
-                "query($id: String!) { issue(id: $id) { identifier title } }",
+                "query($id: String!) { issue(id: $id) { identifier title trashed } }",
                 json!({ "id": ticket_key }),
             )
             .await
             .map_err(|e| not_found(e, ticket_key))?;
+        if data.issue.trashed == Some(true) {
+            return Err(IntegrationError::TicketNotFound(ticket_key.to_string()));
+        }
         Ok(IssueInfo {
             key: data.issue.identifier,
             title: data.issue.title,
@@ -199,6 +203,21 @@ mod tests {
             Url::parse(&server.uri()).unwrap(),
             "token".into(),
         )
+    }
+
+    #[tokio::test]
+    async fn fetch_trashed_issue_fails() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": { "issue": { "identifier": "NIR-1", "title": "Deleted", "trashed": true } },
+            })))
+            .mount(&server)
+            .await;
+
+        let err = linear(&server).fetch_issue("NIR-1").await.unwrap_err();
+
+        assert!(matches!(err, IntegrationError::TicketNotFound(key) if key == "NIR-1"));
     }
 
     #[tokio::test]

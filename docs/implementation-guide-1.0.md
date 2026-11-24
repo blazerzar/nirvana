@@ -247,8 +247,8 @@ decisions here (rounding, single active connection, …).
   Typing a key never picks a ticket by itself. A key found in more than one connection
   shows an error toast.
 - **Right panel (400px)**: scope segmented control (today / unpublished · N
-  slots) and view segmented control (by time / by ticket). The unpublished
-  slots load only while their scope is shown, so the count shows only then.
+  slots) and view segmented control (by time / by ticket). The count loads
+  with today's slots, the unpublished slots only while their scope is shown.
   The list rows are:
   a `►` running row, then `●` unpublished / `✓` published marks (`○` pending
   in statusWarning and `×` failed in statusDanger, like `nirvana list`), time

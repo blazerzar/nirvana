@@ -50,7 +50,7 @@ pub(super) fn listing<'a>(
             (Scope::Today, "today".to_owned()),
             (
                 Scope::Unpublished,
-                unpublished_option(days.iter().map(|day| day.items.len()).sum()),
+                unpublished_option(state.unpublished_count()),
             ),
         ],
         state.scope(),
@@ -208,7 +208,7 @@ fn unpublished_label(days: usize) -> String {
 }
 
 /// Formats the unpublished scope option as e.g. `unpublished · 3`.
-fn unpublished_option(slots: usize) -> String {
+fn unpublished_option(slots: u64) -> String {
     match slots {
         0 => UNPUBLISHED.to_owned(),
         slots => format!("{UNPUBLISHED} · {slots}"),

@@ -10,7 +10,8 @@ use nirvana_entity::{connection, publish_entry, slot, ticket};
 use sea_orm::sea_query::{Expr, Order, WindowStatement};
 use sea_orm::{
     ActiveModelTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, ExprTrait, LoaderTrait,
-    ModelTrait, QueryFilter, QueryOrder, QueryTrait, SelectExt, Set, TransactionTrait,
+    ModelTrait, PaginatorTrait, QueryFilter, QueryOrder, QueryTrait, SelectExt, Set,
+    TransactionTrait,
 };
 
 use crate::domain::{
@@ -111,15 +112,26 @@ impl Nirvana {
     /// a database query fails.
     pub async fn list_unpublished_slots(&self) -> Result<Vec<(Slot, PublishState)>, NirvanaError> {
         let profile = self.find_active_profile().await?;
-        let rows = slot::Entity::find()
-            .filter(slot::COLUMN.profile_id.eq(profile.id))
-            .filter(slot::COLUMN.stopped_at.is_not_null())
-            .filter(publish_entry::Entity::not_published())
+        let rows = slot::Entity::find_unpublished(profile.id)
             .find_also_related(ticket::Entity)
             .order_by_asc(slot::COLUMN.started_at)
             .all(&self.db)
             .await?;
         with_publish_states(&self.db, rows).await
+    }
+
+    /// Returns the number of stopped slots of the active profile that are not
+    /// published.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no profile is active, the config is unavailable or
+    /// a database query fails.
+    pub async fn count_unpublished_slots(&self) -> Result<u64, NirvanaError> {
+        let profile = self.find_active_profile().await?;
+        Ok(slot::Entity::find_unpublished(profile.id)
+            .count(&self.db)
+            .await?)
     }
 
     /// Starts tracking the ticket `key` of the active profile at `at`, or
@@ -635,7 +647,6 @@ async fn with_publish_states(
 
 #[cfg(test)]
 mod tests {
-    use sea_orm::PaginatorTrait;
 
     use super::*;
     use crate::service::test_service::TestConnection::{Jira, Linear};
@@ -1407,7 +1418,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_unpublished_slots_returns_stopped_slots_not_published() {
+    async fn list_and_count_unpublished_slots_return_stopped_slots_not_published() {
         let (service, [ticket, _]) = setup().await;
         let now = Utc::now().timestamp();
         let old = service
@@ -1433,6 +1444,7 @@ mod tests {
             .seed_publish_entry(&failed, Linear, None, Some("error"), now)
             .await;
 
+        assert_eq!(service.count_unpublished_slots().await.unwrap(), 3);
         let states: Vec<_> = service
             .list_unpublished_slots()
             .await

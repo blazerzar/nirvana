@@ -4,7 +4,7 @@ use chrono::{Local, NaiveDate};
 use iced::Task;
 use iced::widget::operation::RelativeOffset;
 use iced::widget::{Id, operation};
-use nirvana_core::{Nirvana, PublishState, Slot};
+use nirvana_core::{Nirvana, NirvanaError, PublishState, Slot};
 use tracing::error;
 
 use crate::gui::failure::{Failure, chain};
@@ -13,8 +13,9 @@ use crate::time::{day_start, local_date};
 const LOAD_FAILED: &str = "couldn't load slots";
 pub(in crate::gui) const LIST: Id = Id::new("listing");
 
-/// The shown scope, the stopped slots of today, and the unpublished stopped
-/// slots by day while that scope is shown, with their publish states.
+/// The shown scope, the stopped slots of today, the number of unpublished
+/// stopped slots, and those slots by day while their scope is shown, with
+/// their publish states.
 #[derive(Default)]
 pub(in crate::gui) struct State {
     scope: Scope,
@@ -34,6 +35,7 @@ pub(in crate::gui) enum Scope {
 pub(in crate::gui) struct Today {
     date: NaiveDate,
     slots: Vec<(Slot, PublishState)>,
+    unpublished: u64,
 }
 
 /// The items of a day, newest first.
@@ -103,6 +105,11 @@ impl State {
         self.today.as_ref().map(|today| today.date)
     }
 
+    /// Returns the number of unpublished stopped slots.
+    pub(in crate::gui) fn unpublished_count(&self) -> u64 {
+        self.today.as_ref().map_or(0, |today| today.unpublished)
+    }
+
     /// Returns the stopped slots of today, newest first.
     pub(in crate::gui) fn slots(&self) -> &[(Slot, PublishState)] {
         self.today.as_ref().map_or(&[], |today| &today.slots)
@@ -129,16 +136,20 @@ fn load_today(nirvana: Arc<Nirvana>) -> Task<Message> {
             return Task::done(Message::Failed(Failure::new(LOAD_FAILED, None)));
         }
     };
-    Task::future(async move { nirvana.list_slots(from, None, false).await }).map(move |listed| {
-        match listed {
-            Ok(listed) => Message::TodayLoaded(Today {
-                date,
-                slots: stopped_newest_first(listed),
-            }),
-            Err(e) => {
-                error!("{}", chain(&e));
-                Message::Failed(Failure::from_error(LOAD_FAILED, &e))
-            }
+    Task::future(async move {
+        let listed = nirvana.list_slots(from, None, false).await?;
+        let unpublished = nirvana.count_unpublished_slots().await?;
+        Ok::<_, NirvanaError>((listed, unpublished))
+    })
+    .map(move |loaded| match loaded {
+        Ok((listed, unpublished)) => Message::TodayLoaded(Today {
+            date,
+            slots: stopped_newest_first(listed),
+            unpublished,
+        }),
+        Err(e) => {
+            error!("{}", chain(&e));
+            Message::Failed(Failure::from_error(LOAD_FAILED, &e))
         }
     })
 }

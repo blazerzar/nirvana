@@ -40,6 +40,14 @@ impl ActiveModelBehavior for ActiveModel {
 }
 
 impl Entity {
+    /// Selects the stopped slots that are not published.
+    pub fn find_unpublished(profile_id: i64) -> Select<Self> {
+        Self::find()
+            .filter(COLUMN.profile_id.eq(profile_id))
+            .filter(COLUMN.stopped_at.is_not_null())
+            .filter(super::publish_entry::Entity::not_published())
+    }
+
     pub fn find_running(profile_id: i64) -> Select<Self> {
         Self::find()
             .filter(COLUMN.profile_id.eq(profile_id))

@@ -455,7 +455,7 @@ level = "debug"
             },
         };
 
-        let keys: Vec<String> = toml::Table::try_from(config)
+        let mut keys: Vec<String> = toml::Table::try_from(config)
             .unwrap()
             .into_iter()
             .filter_map(|(section, keys)| Some((section, keys.as_table()?.clone())))
@@ -464,8 +464,11 @@ level = "debug"
                     .map(move |(key, _)| format!("{section}.{key}"))
             })
             .collect();
+        keys.sort();
+        let mut expected = KEYS.to_vec();
+        expected.sort();
 
-        assert_eq!(keys, KEYS);
+        assert_eq!(keys, expected);
     }
 
     #[test]

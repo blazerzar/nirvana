@@ -5,7 +5,7 @@ use iced::{Border, Color, Element, Length, Theme};
 use nirvana_core::PublishState;
 
 use super::ellipsized_text;
-use crate::gui::design_system::typography::{BODY, BODY_LG, LABEL_STRONG};
+use crate::gui::design_system::typography::{BODY, BODY_LG, LABEL_STRONG, MICRO, TextStyle};
 use crate::gui::design_system::{Tokens, radius, space, tokens};
 
 const MARK_WIDTH: f32 = 14.0;
@@ -28,6 +28,15 @@ impl Mark {
             Self::Stopped(PublishState::Pending) => "○",
             Self::Stopped(PublishState::Failed) => "×",
             Self::Stopped(PublishState::Published) => "✓",
+        }
+    }
+
+    fn style(self) -> TextStyle {
+        match self {
+            Self::Stopped(PublishState::Unpublished | PublishState::Pending) => MICRO,
+            Self::Running | Self::Stopped(PublishState::Failed | PublishState::Published) => {
+                BODY_LG
+            }
         }
     }
 
@@ -85,7 +94,7 @@ pub(in crate::gui) fn slot_row<'a, Message: 'a>(
         .style(colored(value_color));
     let content = row![
         container(
-            BODY_LG
+            mark.style()
                 .text(mark.glyph())
                 .style(colored(move |tokens| mark.color(tokens)))
         )

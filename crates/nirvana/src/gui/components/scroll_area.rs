@@ -1,51 +1,55 @@
-use iced::widget::container;
+use iced::widget::Id;
 use iced::widget::scrollable::{self, Rail, Scrollbar, Scroller, Status};
-use iced::{Border, Element, Length, Padding, Theme};
+use iced::{Border, Color, Element, Length, Theme};
 
 use crate::gui::design_system::{radius, tokens};
 
 const GUTTER_WIDTH: f32 = 10.0;
-const THUMB_WIDTH: f32 = 6.0;
-const THUMB_INSET: f32 = (GUTTER_WIDTH - THUMB_WIDTH) / 2.0;
+const THUMB_INSET: f32 = 2.0;
+const ACTIVE_THUMB_INSET: f32 = 1.0;
 
 /// A vertical scrollable with a thin thumb and no track. The thumb is inset
-/// from every edge of the gutter.
+/// from every edge of the gutter, less while hovered or dragged.
 pub(in crate::gui) fn scroll_area<'a, Message: 'a>(
+    id: Id,
     content: impl Into<Element<'a, Message>>,
 ) -> Element<'a, Message> {
-    let scrollable = scrollable::Scrollable::new(content)
+    scrollable::Scrollable::new(content)
+        .id(id)
         .direction(scrollable::Direction::Vertical(
             Scrollbar::new()
                 .width(GUTTER_WIDTH)
-                .scroller_width(THUMB_WIDTH),
+                .scroller_width(GUTTER_WIDTH),
         ))
         .height(Length::Fill)
-        .style(style);
-    container(scrollable)
-        .padding(Padding::ZERO.top(THUMB_INSET).bottom(THUMB_INSET))
-        .height(Length::Fill)
+        .style(style)
         .into()
 }
 
+/// A transparent border clears the edge of the scroller it is drawn over,
+/// which insets the thumb.
 fn style(theme: &Theme, status: Status) -> scrollable::Style {
     let tokens = tokens(theme);
-    let thumb = match status {
+    let (thumb, inset) = match status {
         Status::Dragged {
             is_vertical_scrollbar_dragged: true,
             ..
-        } => tokens.text_tertiary,
+        } => (tokens.text_tertiary, ACTIVE_THUMB_INSET),
         Status::Hovered {
             is_vertical_scrollbar_hovered: true,
             ..
-        } => tokens.fill_neutral_strong,
-        _ => tokens.text_disabled,
+        } => (tokens.fill_neutral_strong, ACTIVE_THUMB_INSET),
+        _ => (tokens.text_disabled, THUMB_INSET),
     };
     let rail = Rail {
         background: None,
         border: Border::default(),
         scroller: Scroller {
             background: thumb.into(),
-            border: Border::default().rounded(radius::FULL),
+            border: Border::default()
+                .width(inset)
+                .color(Color::TRANSPARENT)
+                .rounded(radius::FULL),
         },
     };
     scrollable::Style {

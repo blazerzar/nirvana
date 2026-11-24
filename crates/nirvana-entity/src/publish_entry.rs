@@ -46,6 +46,18 @@ impl Entity {
         )
     }
 
+    /// Returns a condition matching slots without publish entries or with an
+    /// entry that is not published.
+    pub fn not_published() -> Expr {
+        Self::unpublished().or(super::slot::COLUMN.id.in_subquery(
+            Self::find()
+                .select_only()
+                .column(Column::SlotId)
+                .filter(COLUMN.published_at.is_null())
+                .into_query(),
+        ))
+    }
+
     /// Returns a condition matching [pending](Model::is_pending) entries.
     pub fn pending() -> Expr {
         COLUMN.published_at.is_null().and(COLUMN.error.is_null())

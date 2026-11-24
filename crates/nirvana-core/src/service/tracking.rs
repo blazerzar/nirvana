@@ -95,24 +95,31 @@ impl Nirvana {
                 )
                 .order_by(TICKET_STARTED_AT, Order::Asc);
         }
-        let (models, tickets): (Vec<_>, Vec<_>) = query
+        let rows = query
             .order_by_asc(slot::COLUMN.started_at)
             .all(&self.db)
-            .await?
-            .into_iter()
-            .unzip();
-        let entries = models.load_many(publish_entry::Entity, &self.db).await?;
-        let stuck_before = stuck_before();
-        models
-            .into_iter()
-            .zip(tickets)
-            .zip(entries)
-            .map(|((model, ticket), entries)| {
-                let ticket = ticket.ok_or(DomainError::TicketIdNotFound(model.ticket_id))?;
-                let state = PublishState::from_entries(&entries, stuck_before);
-                Ok((Slot { model, ticket }, state))
-            })
-            .collect()
+            .await?;
+        with_publish_states(&self.db, rows).await
+    }
+
+    /// Returns the stopped slots of the active profile that are not
+    /// published, with their tickets and publish states, ordered by start.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no profile is active, the config is unavailable or
+    /// a database query fails.
+    pub async fn list_unpublished_slots(&self) -> Result<Vec<(Slot, PublishState)>, NirvanaError> {
+        let profile = self.find_active_profile().await?;
+        let rows = slot::Entity::find()
+            .filter(slot::COLUMN.profile_id.eq(profile.id))
+            .filter(slot::COLUMN.stopped_at.is_not_null())
+            .filter(publish_entry::Entity::not_published())
+            .find_also_related(ticket::Entity)
+            .order_by_asc(slot::COLUMN.started_at)
+            .all(&self.db)
+            .await?;
+        with_publish_states(&self.db, rows).await
     }
 
     /// Starts tracking the ticket `key` of the active profile at `at`, or
@@ -604,6 +611,26 @@ fn reject_future_time(timestamp: i64) -> Result<(), DomainError> {
         return Err(DomainError::FutureTime);
     }
     Ok(())
+}
+
+/// Pairs each slot with its ticket and its publish state.
+async fn with_publish_states(
+    db: &impl ConnectionTrait,
+    rows: Vec<(slot::Model, Option<ticket::Model>)>,
+) -> Result<Vec<(Slot, PublishState)>, NirvanaError> {
+    let (models, tickets): (Vec<_>, Vec<_>) = rows.into_iter().unzip();
+    let entries = models.load_many(publish_entry::Entity, db).await?;
+    let stuck_before = stuck_before();
+    models
+        .into_iter()
+        .zip(tickets)
+        .zip(entries)
+        .map(|((model, ticket), entries)| {
+            let ticket = ticket.ok_or(DomainError::TicketIdNotFound(model.ticket_id))?;
+            let state = PublishState::from_entries(&entries, stuck_before);
+            Ok((Slot { model, ticket }, state))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -1374,6 +1401,51 @@ mod tests {
                 (published.id, PublishState::Published),
                 (pending.id, PublishState::Pending),
                 (stuck.id, PublishState::Failed),
+                (failed.id, PublishState::Failed),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn list_unpublished_slots_returns_stopped_slots_not_published() {
+        let (service, [ticket, _]) = setup().await;
+        let now = Utc::now().timestamp();
+        let old = service
+            .seed_slot(&ticket, now - 90_000, Some(now - 89_000))
+            .await;
+        let published = service
+            .seed_slot(&ticket, now - 2400, Some(now - 2100))
+            .await;
+        let pending = service
+            .seed_slot(&ticket, now - 1800, Some(now - 1500))
+            .await;
+        let failed = service
+            .seed_slot(&ticket, now - 1200, Some(now - 900))
+            .await;
+        service.seed_slot(&ticket, now - 300, None).await;
+        service
+            .seed_publish_entry(&published, Linear, Some(now), None, now)
+            .await;
+        service
+            .seed_publish_entry(&pending, Linear, None, None, now)
+            .await;
+        service
+            .seed_publish_entry(&failed, Linear, None, Some("error"), now)
+            .await;
+
+        let states: Vec<_> = service
+            .list_unpublished_slots()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|(slot, state)| (slot.model.id, state))
+            .collect();
+
+        assert_eq!(
+            states,
+            [
+                (old.id, PublishState::Unpublished),
+                (pending.id, PublishState::Pending),
                 (failed.id, PublishState::Failed),
             ]
         );

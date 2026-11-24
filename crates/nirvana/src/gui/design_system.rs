@@ -68,6 +68,8 @@ pub(super) mod font {
     pub(in crate::gui) const MONO_MEDIUM: Font = mono(MEDIUM);
     pub(in crate::gui) const MONO_SEMIBOLD: Font = mono(SEMIBOLD);
     pub(in crate::gui) const MONO_BOLD: Font = mono(BOLD);
+    /// The advance width of every JetBrains Mono glyph, in em.
+    pub(in crate::gui) const MONO_ADVANCE: f32 = 0.6;
 }
 
 #[allow(dead_code)]
@@ -88,7 +90,7 @@ pub(super) mod typography {
     use iced::Font;
     use iced::widget::text::{IntoFragment, LineHeight, Text};
 
-    use super::font::{INTER_BOLD, MONO, MONO_BOLD, MONO_MEDIUM, MONO_SEMIBOLD};
+    use super::font::{INTER_BOLD, MONO, MONO_ADVANCE, MONO_BOLD, MONO_MEDIUM, MONO_SEMIBOLD};
     use super::font_size::{LG, MD, SM, TIMER, XL, XL2, XL3, XL4, XL5, XS, XS2};
     use super::line_height::{DEFAULT, NONE, RELAXED, SNUG, TIGHT};
     use super::tracking::{self, CAPS, DISPLAY, HEADING};
@@ -107,6 +109,12 @@ pub(super) mod typography {
                 .font(self.font)
                 .size(self.size)
                 .line_height(self.line_height)
+        }
+
+        /// Returns the width of `chars` characters in this style, for
+        /// monospace fonts.
+        pub(in crate::gui) fn mono_width(self, chars: usize) -> f32 {
+            chars as f32 * self.size * MONO_ADVANCE
         }
     }
 

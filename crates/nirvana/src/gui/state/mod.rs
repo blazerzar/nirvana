@@ -1,5 +1,6 @@
 pub(super) mod appearance;
 pub(super) mod info;
+pub(super) mod listing;
 pub(super) mod overview;
 pub(super) mod profile;
 pub(super) mod settings;

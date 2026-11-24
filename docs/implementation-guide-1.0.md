@@ -248,8 +248,9 @@ decisions here (rounding, single active connection, …).
   shows an error toast.
 - **Right panel (400px)**: scope segmented control (today / unpublished · N
   days) and view segmented control (by time / by ticket). The list rows are:
-  a `►` running row, then `●` unpublished / `✓` published marks, time range,
-  key + title, duration. "By ticket" groups rows with a slot count. Unpublished
+  a `►` running row, then `●` unpublished / `✓` published marks (`○` pending
+  in statusWarning and `×` failed in statusDanger, like `nirvana list`), time
+  range, key + title, duration. "By ticket" groups rows with a slot count. Unpublished
   scope shows sticky day headers, newest first. Footer: "unpublished · days ·
   total" and "edit logs and see your week in nirvana web ↗". A `«`/`»`
   control expands the list to full width.
@@ -409,6 +410,11 @@ button), drawn in brand color. Geometry is in `V4Logo` in `v6-theme.jsx`.
   Every pressable uses the pointing-hand cursor.
 - Key hint chips (`[s]`) use the accent-subtle fill with borderAccent and
   textAccent.
+- Scrollbar: a thin thumb in a 10px gutter, no track. The thumb is 6px wide
+  (inset 2, radius full) in textDisabled, fillNeutralStrong on hover and
+  textTertiary while dragging. The design widens it to 8px on hover and sets
+  a 32px minimum length, which iced 0.14 cannot do (fixed scroller width,
+  2px minimum).
 
 ### 6.6 Keyboard
 

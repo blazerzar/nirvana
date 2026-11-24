@@ -328,6 +328,10 @@ thorough review to make sure we are not bringing any problems into the next stag
       form, publish modal, settings, first launch.
 - [x] Overview screen: today, week and month cards and this week by day
       (implementation guide §6.2).
+- [x] Listing pane: today by time (running row, publish marks, empty state).
+- [ ] Listing pane: by ticket view (segmented control).
+- [ ] Listing pane: unpublished scope with day headers, footer.
+- [ ] Listing pane: expand to full width.
 - [ ] Minimum size for the main window, so the listing pane (at least 400px)
       always fits.
 - [ ] Menu bar support (macOS).

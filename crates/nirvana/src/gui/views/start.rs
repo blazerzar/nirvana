@@ -8,7 +8,6 @@ use iced::widget::{Column, Space, button, column, container, responsive, row, sp
 use iced::{Border, Color, Element, Length, Theme};
 use nirvana_core::Slot;
 
-use super::tracking::time_of_day;
 use crate::gui::app::Message;
 use crate::gui::components::{
     Button, KeyListener, RETURN_KEY, Size, dashed_border, select, shortcut_hint, tracked_text,
@@ -19,6 +18,7 @@ use crate::gui::design_system::{radius, space as spacing, tokens};
 use crate::gui::shortcuts::{is_enter, recent_shortcut};
 use crate::gui::state::start::{self, Recent, TICKET_INPUT};
 use crate::gui::state::tracking::{self, clock};
+use crate::time::time_of_day;
 
 const INPUT_HEIGHT: f32 = 36.0;
 const RECENT_KEY_WIDTH: f32 = 64.0;

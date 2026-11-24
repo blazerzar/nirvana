@@ -1,16 +1,16 @@
 use iced::widget::text::{LineHeight, Wrapping};
-use iced::widget::{Column, button, column, container, row, scrollable, text};
+use iced::widget::{Column, button, column, container, row, text};
 use iced::{Color, Element, Length, Size};
 
 use super::with_toast;
 use crate::gui::app::Message;
+use crate::gui::design_system::font::MONO_ADVANCE;
 use crate::gui::design_system::{Tokens, tokens};
 use crate::gui::state::info::{self, Info};
 use crate::gui::state::toast::Toast;
 
 const TEXT_SIZE: f32 = 10.0;
 const LINE_HEIGHT: f32 = 1.3;
-const MONO_ADVANCE: f32 = 0.6;
 const PADDING: f32 = 16.0;
 const LABEL_WIDTH: f32 = 120.0;
 const ROW_SPACING: f32 = 6.0;
@@ -45,7 +45,8 @@ pub(in crate::gui) fn info<'a>(info: &'a Info, toast: Option<&'a Toast>) -> Elem
         .push(body)
         .push(show_logs)
         .spacing(SECTION_SPACING);
-    let content = container(scrollable(container(content).padding(PADDING)))
+    let content = container(content)
+        .padding(PADDING)
         .width(Length::Fill)
         .height(Length::Fill)
         .style(|theme| container::background(tokens(theme).bg_default));

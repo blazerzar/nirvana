@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
-use iced::{Element, Subscription, Task, window};
+use iced::{Element, Event, Subscription, Task, event, window};
 use nirvana_core::{DesktopSettings, Nirvana, NirvanaError};
 use tracing::error;
 
+use super::components::LogicalScroll;
 use super::failure::{Failure, chain};
 use super::shortcuts::Shortcut;
 use super::state::profile::{self, ProfileState};
 use super::state::toast::{self, Kind};
-use super::state::{appearance, info, overview, settings, start, tracking};
+use super::state::{appearance, info, listing, overview, settings, start, tracking};
 use super::windows::{Window, Windows};
 use super::{shortcuts, views};
 
@@ -17,6 +18,7 @@ pub(super) struct Gui {
     windows: Windows,
     appearance: appearance::State,
     info: info::State,
+    listing: listing::State,
     overview: overview::State,
     profile: Option<ProfileState>,
     settings: settings::State,
@@ -25,6 +27,7 @@ pub(super) struct Gui {
     tracking: tracking::State,
     screen: Screen,
     command_held: bool,
+    scale_factor: f32,
 }
 
 /// The screen shown between the header and the bottom bar of the main
@@ -48,8 +51,11 @@ pub(super) struct Loaded {
 pub(super) enum Message {
     Loaded(Result<Loaded, Arc<NirvanaError>>),
     Closed(window::Id),
+    Opened(window::Id),
+    Rescaled(window::Id, f32),
     Appearance(appearance::Message),
     Info(info::Message),
+    Listing(listing::Message),
     Overview(overview::Message),
     Profile(profile::Message),
     Settings(settings::Message),
@@ -71,6 +77,7 @@ impl Gui {
             windows: Windows::default(),
             appearance: appearance::State::default(),
             info: info::State::default(),
+            listing: listing::State::default(),
             overview: overview::State::default(),
             profile: None,
             settings: settings::State::default(),
@@ -79,6 +86,7 @@ impl Gui {
             tracking: tracking::State::default(),
             screen: Screen::default(),
             command_held: false,
+            scale_factor: 1.0,
         };
         let load = Task::perform(async { load().await.map_err(Arc::new) }, Message::Loaded);
         let boot = appearance::system_mode()
@@ -113,6 +121,14 @@ impl Gui {
                 self.toast.close(id);
                 if let Some(Window::Main) = self.windows.remove(id) {
                     return iced::exit();
+                }
+            }
+            Message::Opened(id) => {
+                return window::scale_factor(id).map(move |factor| Message::Rescaled(id, factor));
+            }
+            Message::Rescaled(id, factor) => {
+                if self.windows.main() == Some(id) {
+                    self.scale_factor = factor;
                 }
             }
             Message::Appearance(message) => self.appearance.update(message),
@@ -161,6 +177,15 @@ impl Gui {
                 }
             }
             Message::ToggleScreen(_) => {}
+            Message::Listing(listing::Message::Failed(failure)) => {
+                return self.show_error_in_main(failure);
+            }
+            Message::Listing(message) => {
+                return self
+                    .listing
+                    .update(message, self.nirvana.as_ref())
+                    .map(Message::Listing);
+            }
             Message::Overview(overview::Message::Failed(failure)) => {
                 return self.show_error_in_main(failure);
             }
@@ -236,19 +261,21 @@ impl Gui {
                 return self.show_error_in_main(failure);
             }
             Message::Tracking(message) => {
-                let reload = matches!(message, tracking::Message::Loaded(_))
-                    && self.screen == Screen::Overview;
+                let loaded = matches!(message, tracking::Message::Loaded(_));
                 let update = self
                     .tracking
                     .update(message, self.nirvana.as_ref())
                     .map(Message::Tracking);
-                if reload {
-                    return Task::batch([
-                        update,
-                        self.update(Message::Overview(overview::Message::Load)),
-                    ]);
+                if !loaded {
+                    return update;
                 }
-                return update;
+                let listing = self.update(Message::Listing(listing::Message::Load));
+                let overview = if self.screen == Screen::Overview {
+                    self.update(Message::Overview(overview::Message::Load))
+                } else {
+                    Task::none()
+                };
+                return Task::batch([update, listing, overview]);
             }
             Message::Failed(window, failure) => return self.show_error(window, failure),
         }
@@ -313,6 +340,8 @@ impl Gui {
             appearance::subscription().map(Message::Appearance),
             shortcuts::listen(),
             window::close_events().map(Message::Closed),
+            window::open_events().map(Message::Opened),
+            event::listen_with(rescaled),
             self.tracking.subscription().map(Message::Tracking),
         ])
     }
@@ -341,18 +370,26 @@ impl Gui {
                         self.profile.as_ref(),
                         &self.tracking,
                         &self.start,
+                        &self.listing,
                         self.appearance.tokens(),
                         self.command_held,
                         self.settings.is_web_available(),
                     ),
                 };
-                views::main(header, screen, toast)
+                LogicalScroll::new(views::main(header, screen, toast), self.scale_factor).into()
             }
         }
     }
 
     pub(super) fn theme(&self, _window: window::Id) -> Option<iced::Theme> {
         self.appearance.theme()
+    }
+}
+
+fn rescaled(event: Event, _: event::Status, id: window::Id) -> Option<Message> {
+    match event {
+        Event::Window(window::Event::Rescaled(factor)) => Some(Message::Rescaled(id, factor)),
+        _ => None,
     }
 }
 

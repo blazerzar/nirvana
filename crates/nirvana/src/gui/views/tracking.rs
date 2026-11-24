@@ -1,4 +1,3 @@
-use chrono::{DateTime, Local};
 use iced::alignment::Vertical;
 use iced::widget::{Row, Space, column, container, rich_text, row, space, span, text};
 use iced::{Border, Element, Length, Theme, padding};
@@ -12,7 +11,7 @@ use crate::gui::design_system::typography::{
 };
 use crate::gui::design_system::{Tokens, radius, space as spacing, tokens};
 use crate::gui::state::tracking::{self, clock};
-use crate::time::format_duration;
+use crate::time::{format_duration, time_of_day};
 
 const PULSE_DOT_SIZE: f32 = 7.0;
 const HINT_MAX_WIDTH: f32 = 450.0;
@@ -153,13 +152,6 @@ fn recent_chips(state: &tracking::State, command_held: bool) -> Option<Element<'
     .wrap()
     .vertical_spacing(spacing::S075);
     Some(chips.into())
-}
-
-/// Formats `timestamp` as local `HH:MM`.
-pub(super) fn time_of_day(timestamp: i64) -> String {
-    DateTime::from_timestamp(timestamp, 0)
-        .map(|utc| utc.with_timezone(&Local).format("%H:%M").to_string())
-        .unwrap_or_default()
 }
 
 fn primary(theme: &Theme) -> text::Style {

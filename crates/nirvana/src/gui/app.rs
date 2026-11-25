@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use iced::advanced::widget::operation::focusable;
+use iced::advanced::widget::{self};
 use iced::{Element, Event, Subscription, Task, event, window};
 use nirvana_core::{DesktopSettings, Nirvana, NirvanaError};
 use tracing::error;
@@ -26,6 +28,7 @@ pub(super) struct Gui {
     toast: toast::State,
     tracking: tracking::State,
     screen: Screen,
+    modal: Option<Modal>,
     command_held: bool,
     scale_factor: f32,
 }
@@ -38,6 +41,12 @@ pub(super) enum Screen {
     Main,
     Settings,
     Overview,
+}
+
+/// The modal shown over the main window.
+#[derive(Clone, Copy)]
+pub(super) enum Modal {
+    Publish,
 }
 
 /// `Nirvana` with the config values the GUI needs before its first frame.
@@ -61,6 +70,8 @@ pub(super) enum Message {
     Settings(settings::Message),
     /// Shows the screen, or the main screen when it is already shown.
     ToggleScreen(Screen),
+    OpenModal(Modal),
+    CloseModal,
     Shortcut(window::Id, Shortcut),
     /// ⌘ or Ctrl was pressed or released.
     CommandHeld(bool),
@@ -85,6 +96,7 @@ impl Gui {
             toast: toast::State::default(),
             tracking: tracking::State::default(),
             screen: Screen::default(),
+            modal: None,
             command_held: false,
             scale_factor: 1.0,
         };
@@ -177,6 +189,11 @@ impl Gui {
                 }
             }
             Message::ToggleScreen(_) => {}
+            Message::OpenModal(modal) => {
+                self.modal = Some(modal);
+                return widget::operate(focusable::unfocus());
+            }
+            Message::CloseModal => self.modal = None,
             Message::Listing(listing::Message::Failed(failure)) => {
                 return self.show_error_in_main(failure);
             }
@@ -199,6 +216,12 @@ impl Gui {
                 if self.windows.main() != Some(window) {
                     return Task::none();
                 }
+                if self.modal.is_some() {
+                    if matches!(shortcut, Shortcut::Escape) {
+                        return self.update(Message::CloseModal);
+                    }
+                    return Task::none();
+                }
                 let main_shown = self.screen == Screen::Main && !self.start.is_open();
                 match shortcut {
                     Shortcut::Escape if self.screen != Screen::Main => self.show(Screen::Main),
@@ -218,6 +241,9 @@ impl Gui {
                     Shortcut::Tracking(message) if main_shown => {
                         return self.update(Message::Tracking(message));
                     }
+                    Shortcut::Publish if main_shown && self.can_publish() => {
+                        return self.update(Message::OpenModal(Modal::Publish));
+                    }
                     Shortcut::Recent(index) if main_shown && self.is_set_up() => {
                         if let Some(&recent) = self.tracking.recent().get(index) {
                             let start = tracking::Message::Start(recent.clone());
@@ -227,6 +253,7 @@ impl Gui {
                     Shortcut::Return
                     | Shortcut::Start(_)
                     | Shortcut::Tracking(_)
+                    | Shortcut::Publish
                     | Shortcut::Recent(_) => {}
                 }
             }
@@ -304,6 +331,15 @@ impl Gui {
             .is_some_and(|profile| profile.setup_step().is_none())
     }
 
+    /// Returns whether a profile is set up and has unpublished stopped slots.
+    fn can_publish(&self) -> bool {
+        self.is_set_up()
+            && self
+                .listing
+                .unpublished()
+                .is_some_and(|unpublished| unpublished.slots > 0)
+    }
+
     /// Returns whether the setup steps are shown.
     fn is_in_setup(&self) -> bool {
         self.profile
@@ -376,7 +412,11 @@ impl Gui {
                         self.settings.is_web_available(),
                     ),
                 };
-                LogicalScroll::new(views::main(header, screen, toast), self.scale_factor).into()
+                let modal = self.modal.map(|modal| match modal {
+                    Modal::Publish => views::publish_modal(self.listing.unpublished()),
+                });
+                LogicalScroll::new(views::main(header, screen, modal, toast), self.scale_factor)
+                    .into()
             }
         }
     }

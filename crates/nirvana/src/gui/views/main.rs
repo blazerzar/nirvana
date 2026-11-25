@@ -1,4 +1,4 @@
-use iced::widget::{Column, container, responsive, row};
+use iced::widget::{Column, container, responsive, row, stack};
 use iced::{Element, Length, Size};
 
 use super::bottom_bar::bottom_bar;
@@ -16,10 +16,12 @@ use crate::gui::state::{listing as listing_state, start as start_form, tracking}
 pub(in crate::gui) const MAIN_WINDOW_SIZE: Size = Size::new(960.0, 540.0);
 const TOAST_BOTTOM: f32 = 76.0;
 
-/// The main window: the header, then the shown screen and its bottom bar.
+/// The main window: the header, then the shown screen and its bottom bar,
+/// with the modal over them.
 pub(in crate::gui) fn main<'a>(
     header: Element<'a, Message>,
     (body, bar): (Element<'a, Message>, Element<'a, Message>),
+    modal: Option<Element<'a, Message>>,
     toast: Option<&'a Toast>,
 ) -> Element<'a, Message> {
     let layout = Column::new().push(header).push(body).push(bar);
@@ -27,7 +29,7 @@ pub(in crate::gui) fn main<'a>(
         .width(Length::Fill)
         .height(Length::Fill)
         .style(|theme| container::background(tokens(theme).bg_default));
-    with_toast(content.into(), toast, TOAST_BOTTOM)
+    with_toast(stack![content].push(modal).into(), toast, TOAST_BOTTOM)
 }
 
 /// The setup steps, or the tracking pane or start form next to the listing,
@@ -57,6 +59,11 @@ pub(in crate::gui) fn main_screen<'a>(
     });
     (
         body.into(),
-        bottom_bar(tracking_state, start_state.is_open(), setup_step.is_some()),
+        bottom_bar(
+            tracking_state,
+            listing_state.unpublished(),
+            start_state.is_open(),
+            setup_step.is_some(),
+        ),
     )
 }

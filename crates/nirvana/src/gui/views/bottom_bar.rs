@@ -1,21 +1,25 @@
 use iced::alignment::Vertical;
 use iced::widget::{column, container, row, rule, text};
 use iced::{Element, Length, padding};
+use nirvana_core::UnpublishedSummary;
 
 use super::border;
-use crate::gui::app::Message;
+use crate::gui::app::{Message, Modal};
 use crate::gui::components::Button;
 use crate::gui::design_system::typography::BODY;
 use crate::gui::design_system::{space, tokens};
 use crate::gui::state::{start, tracking};
+use crate::time::format_duration;
 
-/// The tracking buttons, with start, resume and switch disabled while the
-/// start form is open, or only a disabled start and stop during setup.
-pub(super) fn bottom_bar(
-    tracking: &tracking::State,
+/// The tracking buttons and the publish button, with start, resume, switch
+/// and publish disabled while the start form is open, or only a disabled
+/// start and stop during setup.
+pub(super) fn bottom_bar<'a>(
+    tracking: &'a tracking::State,
+    unpublished: Option<&UnpublishedSummary>,
     starting: bool,
     setup: bool,
-) -> Element<'_, Message> {
+) -> Element<'a, Message> {
     let mut start = Button::new("start").key("s");
     let mut stop = Button::new("stop").key("x");
     let content = if setup {
@@ -52,7 +56,21 @@ pub(super) fn bottom_bar(
                 switch = switch.on_press(Message::Tracking(tracking::Message::Switch));
             }
         }
-        row![start, stop, resume, switch]
+        let mut publish = Button::new("publish").key("p").primary();
+        if let Some(unpublished) = unpublished.filter(|unpublished| unpublished.slots > 0) {
+            publish = publish.hint(format_duration(unpublished.seconds));
+            if !starting {
+                publish = publish.on_press(Message::OpenModal(Modal::Publish));
+            }
+        }
+        row![
+            start,
+            stop,
+            resume,
+            switch,
+            iced::widget::space::horizontal(),
+            publish
+        ]
     };
 
     let bar = container(content.spacing(space::S100).align_y(Vertical::Center))

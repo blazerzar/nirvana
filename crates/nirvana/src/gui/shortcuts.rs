@@ -13,6 +13,7 @@ pub(super) enum Shortcut {
     Return,
     OpenWeb,
     ToggleScreen(Screen),
+    Publish,
     Start(start::Message),
     Tracking(tracking::Message),
     /// Starts the shown recent ticket at the index.
@@ -62,6 +63,7 @@ fn shortcut(event: keyboard::Event, window: window::Id) -> Option<Message> {
         _ if is_comma(latin, physical_key) => Shortcut::ToggleScreen(Screen::Settings),
         (_, Some('v')) => Shortcut::ToggleScreen(Screen::Overview),
         (_, Some('o')) => Shortcut::OpenWeb,
+        (_, Some('p')) => Shortcut::Publish,
         (_, Some('s')) => Shortcut::Start(start::Message::Open),
         (_, Some('x')) => Shortcut::Tracking(tracking::Message::Stop),
         (_, Some('r')) => Shortcut::Tracking(tracking::Message::Resume),
@@ -161,6 +163,15 @@ mod tests {
             )),
             None
         );
+    }
+
+    #[test]
+    fn p_opens_publish() {
+        let event = key_press("p", keyboard::Modifiers::empty());
+        assert!(matches!(
+            shortcut(event, window::Id::unique()),
+            Some(Message::Shortcut(_, Shortcut::Publish))
+        ));
     }
 
     fn enter_press(modifiers: keyboard::Modifiers, repeat: bool) -> keyboard::Event {

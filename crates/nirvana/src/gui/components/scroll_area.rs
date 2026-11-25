@@ -13,6 +13,7 @@ const ACTIVE_THUMB_INSET: f32 = 1.0;
 pub(in crate::gui) fn scroll_area<'a, Message: 'a>(
     id: Id,
     content: impl Into<Element<'a, Message>>,
+    height: Length,
 ) -> Element<'a, Message> {
     scrollable::Scrollable::new(content)
         .id(id)
@@ -21,7 +22,7 @@ pub(in crate::gui) fn scroll_area<'a, Message: 'a>(
                 .width(GUTTER_WIDTH)
                 .scroller_width(GUTTER_WIDTH),
         ))
-        .height(Length::Fill)
+        .height(height)
         .style(style)
         .into()
 }

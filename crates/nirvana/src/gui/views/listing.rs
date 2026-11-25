@@ -154,6 +154,7 @@ fn today_list<'a>(
         listing::LIST,
         rows(state.view(), &slots, running, tracking_state)
             .padding(Padding::from([spacing::S0, spacing::S150]).bottom(spacing::S100)),
+        Length::Fill,
     )
 }
 
@@ -189,7 +190,7 @@ fn unpublished_list<'a>(
         ]
         .into()
     });
-    scroll_area(listing::LIST, Column::with_children(sections))
+    scroll_area(listing::LIST, Column::with_children(sections), Length::Fill)
 }
 
 /// The `running` slot and the stopped `slots`, newest first, by time, or

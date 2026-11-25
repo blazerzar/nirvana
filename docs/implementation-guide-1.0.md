@@ -257,8 +257,9 @@ decisions here (rounding, single active connection, …).
   newest first. Unpublished scope shows day headers, newest first, under a
   border below the pane header. The design's sticky headers are not
   possible in iced 0.14. Footer: "unpublished · days · total" and "edit logs
-  and see your week in nirvana web ↗". A `«`/`»` control expands the list to
-  full width.
+  and see your week in nirvana web ↗". A `«`/`»` control before the pane label
+  expands the list to full width. The start form still shows next to the
+  list while it is open.
 - **Bottom bar**: `[s] start`, `[x] stop`, `[r] resume <key>`,
   `[w] switch ⇄ <prevKey>`, spacer, `[p] publish <unpub total>`. Disabled
   states follow availability.

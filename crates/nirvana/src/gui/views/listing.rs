@@ -1,14 +1,14 @@
 use chrono::{Days, NaiveDate};
 use iced::alignment::{Horizontal, Vertical};
-use iced::widget::{Column, column, container, row, rule, space, text};
+use iced::widget::{Column, Container, column, container, row, rule, space, text};
 use iced::{Element, Length, Padding, Theme};
 use nirvana_core::{PublishState, Slot, UnpublishedSummary};
 
 use super::{MAIN_WINDOW_SIZE, border};
 use crate::gui::app::Message;
 use crate::gui::components::{
-    GroupSlot, Mark, ellipsized_text, link, pane_label, scroll_area, segmented, slot_row,
-    ticket_group,
+    GroupSlot, Mark, ellipsized_text, ghost_button, link, pane_label, scroll_area, segmented,
+    slot_row, ticket_group,
 };
 use crate::gui::design_system::typography::{BODY, BODY_LG, BODY_STRONG, CAPTION, LABEL_STRONG};
 use crate::gui::design_system::{space as spacing, tokens};
@@ -20,18 +20,20 @@ const MIN_WIDTH: f32 = 400.0;
 const WINDOW_SHARE: f32 = MIN_WIDTH / MAIN_WINDOW_SIZE.width;
 const TODAY: &str = "TODAY";
 const UNPUBLISHED: &str = "unpublished";
+const EXPAND: &str = "«";
+const COLLAPSE: &str = "»";
 const NAMED_DAYS_MAX: usize = 5;
 const NAMED_DAYS_BACK: Days = Days::new(6);
 
-/// The scope control, the total of the shown scope, either the running slot
-/// and today's stopped slots, or the unpublished slots by day, newest first,
-/// and the unpublished days and total with a link to nirvana web.
+/// The expand control, the scope control, the total of the shown scope,
+/// either the running slot and today's stopped slots, or the unpublished
+/// slots by day, newest first, and the unpublished days and total with a link
+/// to nirvana web.
 pub(super) fn listing<'a>(
     state: &'a listing::State,
     tracking_state: &'a tracking::State,
     web_available: bool,
-    available_width: f32,
-) -> Element<'a, Message> {
+) -> Column<'a, Message> {
     let running_day = tracking_state
         .running()
         .and_then(|running| local_date(running.model.started_at).ok());
@@ -81,18 +83,24 @@ pub(super) fn listing<'a>(
         |view| Message::Listing(listing::Message::SelectView(view)),
     );
     let controls = row![scope, space::horizontal(), view].spacing(spacing::S100);
-    let header = container(column![pane_label(&label, total), controls].spacing(spacing::S100))
+    let expand = ghost_button(
+        if state.is_expanded() {
+            COLLAPSE
+        } else {
+            EXPAND
+        },
+        Message::Listing(listing::Message::ToggleExpanded),
+    );
+    let label = pane_label(Some(expand), &label, total);
+    let header = container(column![label, controls].spacing(spacing::S100))
         .padding(Padding::from(spacing::S200).bottom(spacing::S100));
     let header_border = (state.scope() == Scope::Unpublished && !days.is_empty())
         .then(|| border(rule::horizontal(1)));
-    side_pane(
-        Column::new()
-            .push(header)
-            .push(header_border)
-            .push(container(list).height(Length::Fill))
-            .push(footer(state.unpublished(), state.today(), web_available)),
-        available_width,
-    )
+    Column::new()
+        .push(header)
+        .push(header_border)
+        .push(container(list).height(Length::Fill))
+        .push(footer(state.unpublished(), state.today(), web_available))
 }
 
 /// The days and total of the unpublished stopped slots, or `all published`,
@@ -331,12 +339,22 @@ pub(super) fn side_pane<'a>(
     available_width: f32,
 ) -> Element<'a, Message> {
     let width = (available_width * WINDOW_SHARE).max(MIN_WIDTH);
-    let pane = container(content)
+    row![
+        border(rule::vertical(1)),
+        pane(content, Length::Fixed(width))
+    ]
+    .into()
+}
+
+pub(super) fn full_pane<'a>(content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
+    pane(content, Length::Fill).into()
+}
+
+fn pane<'a>(content: impl Into<Element<'a, Message>>, width: Length) -> Container<'a, Message> {
+    container(content)
         .width(width)
         .height(Length::Fill)
-        .style(|theme| container::background(tokens(theme).bg_subtle));
-
-    row![border(rule::vertical(1)), pane].into()
+        .style(|theme| container::background(tokens(theme).bg_subtle))
 }
 
 /// Formats `days` as e.g. `UNPUBLISHED · 3 DAYS`.

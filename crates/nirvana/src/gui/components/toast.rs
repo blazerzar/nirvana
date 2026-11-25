@@ -5,6 +5,7 @@ use iced::widget::canvas::{self, Canvas, Path};
 use iced::widget::{Space, button, column, container, row, stack, svg, text};
 use iced::{Color, Element, Length, Padding, Point, Rectangle, Renderer, Size, Theme, mouse};
 
+use super::ghost_style;
 use crate::gui::design_system::typography::{BODY, CAPTION};
 use crate::gui::design_system::{font_size, line_height, radius, space, tokens};
 use crate::gui::state::toast::{Kind, Toast};
@@ -141,19 +142,6 @@ fn close_button<'a, Message: Clone + 'a>(on_close: Message) -> Element<'a, Messa
     button(container(glyph).center(CLOSE_SIZE))
         .padding(0)
         .on_press(on_close)
-        .style(|theme, status| {
-            let tokens = tokens(theme);
-            let (background, text_color) = match status {
-                button::Status::Hovered => (Some(tokens.fill_hover), tokens.text_primary),
-                button::Status::Pressed => (Some(tokens.fill_pressed), tokens.text_primary),
-                button::Status::Active | button::Status::Disabled => (None, tokens.text_tertiary),
-            };
-            button::Style {
-                background: background.map(Into::into),
-                text_color,
-                border: Border::default().rounded(radius::SM),
-                ..button::Style::default()
-            }
-        })
+        .style(ghost_style)
         .into()
 }

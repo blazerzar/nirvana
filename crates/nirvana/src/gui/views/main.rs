@@ -2,7 +2,7 @@ use iced::widget::{Column, container, responsive, row, stack};
 use iced::{Element, Length, Size};
 
 use super::bottom_bar::bottom_bar;
-use super::listing::listing;
+use super::listing::{full_pane, listing, side_pane};
 use super::setup::setup;
 use super::start::start;
 use super::tracking::tracking;
@@ -32,8 +32,8 @@ pub(in crate::gui) fn main<'a>(
     with_toast(stack![content].push(modal).into(), toast, TOAST_BOTTOM)
 }
 
-/// The setup steps, or the tracking pane or start form next to the listing,
-/// with the bottom bar.
+/// The setup steps, the start form next to the listing, the expanded
+/// listing, or the tracking pane next to the listing, with the bottom bar.
 pub(in crate::gui) fn main_screen<'a>(
     profile: Option<&'a ProfileState>,
     tracking_state: &'a tracking::State,
@@ -48,12 +48,21 @@ pub(in crate::gui) fn main_screen<'a>(
         Some(step) => setup(size.width, step, web_available),
         None if start_state.is_open() => row![
             start(start_state, tracking_state),
-            listing(listing_state, tracking_state, web_available, size.width)
+            side_pane(
+                listing(listing_state, tracking_state, web_available),
+                size.width
+            )
         ]
         .into(),
+        None if listing_state.is_expanded() => {
+            full_pane(listing(listing_state, tracking_state, web_available))
+        }
         None => row![
             tracking(tracking_state, theme_tokens, command_held),
-            listing(listing_state, tracking_state, web_available, size.width)
+            side_pane(
+                listing(listing_state, tracking_state, web_available),
+                size.width
+            )
         ]
         .into(),
     });

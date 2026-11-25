@@ -14,14 +14,15 @@ use crate::time::{day_start, local_date};
 const LOAD_FAILED: &str = "couldn't load slots";
 pub(in crate::gui) const LIST: Id = Id::new("listing");
 
-/// The shown scope and view, the stopped slots of today, the summary of the
-/// unpublished stopped slots, and those slots by day while their scope is
-/// shown, with their publish states. The unpublished scope is shown once its
-/// slots are loaded.
+/// The shown scope and view, whether the listing fills the window, the
+/// stopped slots of today, the summary of the unpublished stopped slots, and
+/// those slots by day while their scope is shown, with their publish states.
+/// The unpublished scope is shown once its slots are loaded.
 #[derive(Default)]
 pub(in crate::gui) struct State {
     scope: Scope,
     view: View,
+    expanded: bool,
     opening_unpublished: bool,
     today: Option<Today>,
     unpublished: Option<Vec<Day<(Slot, PublishState)>>>,
@@ -72,6 +73,7 @@ pub(in crate::gui) enum Message {
     Failed(Failure),
     SelectScope(Scope),
     SelectView(View),
+    ToggleExpanded,
 }
 
 impl State {
@@ -125,6 +127,7 @@ impl State {
                 return operation::snap_to(LIST, RelativeOffset::START);
             }
             Message::SelectView(_) => {}
+            Message::ToggleExpanded => self.expanded = !self.expanded,
         }
         Task::none()
     }
@@ -135,6 +138,10 @@ impl State {
 
     pub(in crate::gui) fn view(&self) -> View {
         self.view
+    }
+
+    pub(in crate::gui) fn is_expanded(&self) -> bool {
+        self.expanded
     }
 
     pub(in crate::gui) fn today(&self) -> Option<NaiveDate> {
@@ -432,6 +439,19 @@ mod tests {
 
         assert_eq!(state.view(), View::ByTicket);
         assert_eq!(state.scope(), Scope::Unpublished);
+    }
+
+    #[test]
+    fn toggle_expanded_flips_and_keeps_the_scope_and_view() {
+        let mut state = State::default();
+
+        let _ = state.update(Message::ToggleExpanded, None);
+        assert!(state.is_expanded());
+        assert_eq!(state.scope(), Scope::Today);
+        assert_eq!(state.view(), View::ByTime);
+
+        let _ = state.update(Message::ToggleExpanded, None);
+        assert!(!state.is_expanded());
     }
 
     #[test]

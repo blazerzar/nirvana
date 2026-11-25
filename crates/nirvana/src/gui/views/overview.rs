@@ -1,5 +1,5 @@
 use iced::border::Radius;
-use iced::widget::{Container, column, container, row, space, stack, text};
+use iced::widget::{Container, column, container, responsive, row, space, stack, text};
 use iced::{Border, Color, Element, Length, Padding, Pixels, Theme};
 
 use super::{done_bar, screen_heading};
@@ -235,8 +235,10 @@ type Part = (u16, fn(&Tokens) -> Color);
 /// `start_radius` and `end_radius` corners at its ends. The whole bar is
 /// drawn in the color of the shorter segment and the longer segment is laid
 /// over its end, so no background shows between the segments and the end of
-/// the shorter segment keeps its full corners. The renderer limits a corner
-/// to half of the shorter side of its quad.
+/// the shorter segment keeps its full corners. The longer segment's inner
+/// corners take the part of the radius the shorter segment is too short to
+/// cover, so it stays inside the bar's rounded outline. The renderer limits a
+/// corner to half of the shorter side of its quad.
 fn split_bar<'a>(
     axis: Axis,
     first: Part,
@@ -244,7 +246,7 @@ fn split_bar<'a>(
     start_radius: f32,
     end_radius: f32,
 ) -> Container<'a, Message> {
-    let corners = |start: f32, end: f32| match axis {
+    let corners = move |start: f32, end: f32| match axis {
         Axis::Horizontal => Radius::default().left(start).right(end),
         Axis::Vertical => Radius::default().top(start).bottom(end),
     };
@@ -270,27 +272,40 @@ fn split_bar<'a>(
     } else {
         (second, first)
     };
-    let (start, end) = match (shorter.0, first_is_longer) {
-        (0, _) => (start_radius, end_radius),
-        (_, true) => (start_radius, 0.0),
-        (_, false) => (0.0, end_radius),
-    };
-    let longer = Some(along(fill(longer.1, corners(start, end)), longer.0));
-    let gap = (shorter.0 > 0).then(|| along(container(space()), shorter.0));
-    let (head, tail) = if first_is_longer {
-        (longer, gap)
-    } else {
-        (gap, longer)
-    };
-    let over: Element<'a, Message> = match axis {
-        Axis::Horizontal => row![].push(head).push(tail).into(),
-        Axis::Vertical => column![].push(head).push(tail).into(),
-    };
-    let under = fill(shorter.1, corners(start_radius, end_radius));
+    container(responsive(move |size| {
+        let length = match axis {
+            Axis::Horizontal => size.width,
+            Axis::Vertical => size.height,
+        };
+        let shorter_length = length * f32::from(shorter.0) / f32::from(first.0 + second.0);
+        let shared_radius = if first_is_longer {
+            end_radius
+        } else {
+            start_radius
+        };
+        let inner_radius = (shared_radius - shorter_length).max(0.0);
+        let (start, end) = match (shorter.0, first_is_longer) {
+            (0, _) => (start_radius, end_radius),
+            (_, true) => (start_radius, inner_radius),
+            (_, false) => (inner_radius, end_radius),
+        };
+        let longer = Some(along(fill(longer.1, corners(start, end)), longer.0));
+        let gap = (shorter.0 > 0).then(|| along(container(space()), shorter.0));
+        let (head, tail) = if first_is_longer {
+            (longer, gap)
+        } else {
+            (gap, longer)
+        };
+        let over: Element<'a, Message> = match axis {
+            Axis::Horizontal => row![].push(head).push(tail).into(),
+            Axis::Vertical => column![].push(head).push(tail).into(),
+        };
+        let under = fill(shorter.1, corners(start_radius, end_radius));
 
-    container(stack![under, over])
-        .width(Length::Fill)
-        .height(Length::Fill)
+        stack![under, over].into()
+    }))
+    .width(Length::Fill)
+    .height(Length::Fill)
 }
 
 fn day_label<'a>(day: Day) -> Element<'a, Message> {

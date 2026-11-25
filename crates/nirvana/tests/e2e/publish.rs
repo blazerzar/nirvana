@@ -254,7 +254,7 @@ async fn retries_failed_slots() {
     assert_eq!(nirvana.list_rows(d), [row(&j1, at(d, "09:00"), "×")]);
     let slot = nirvana.run(&["show", id, "--show-errors"]);
     assert!(line_with(&slot, "failed").starts_with("jira"), "{slot}");
-    assert!(slot.contains("jira: network error"), "{slot}");
+    assert!(slot.contains("jira: couldn't reach 127.0.0.1"), "{slot}");
 
     let published = nirvana.run(&["publish", "--all"]);
     assert!(published.contains("Nothing to publish"), "{published}");

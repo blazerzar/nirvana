@@ -17,7 +17,7 @@ pub(in crate::gui) const MAIN_WINDOW_SIZE: Size = Size::new(960.0, 540.0);
 const TOAST_BOTTOM: f32 = 76.0;
 
 /// The main window: the header, then the shown screen and its bottom bar,
-/// with the modal over them.
+/// with the toast over them and the modal over the toast.
 pub(in crate::gui) fn main<'a>(
     header: Element<'a, Message>,
     (body, bar): (Element<'a, Message>, Element<'a, Message>),
@@ -29,7 +29,9 @@ pub(in crate::gui) fn main<'a>(
         .width(Length::Fill)
         .height(Length::Fill)
         .style(|theme| container::background(tokens(theme).bg_default));
-    with_toast(stack![content].push(modal).into(), toast, TOAST_BOTTOM)
+    stack![with_toast(content.into(), toast, TOAST_BOTTOM)]
+        .push(modal)
+        .into()
 }
 
 /// The setup steps, the start form next to the listing, the expanded

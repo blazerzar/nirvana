@@ -4,6 +4,8 @@
 //! Data Center with a personal access token (bearer auth). Time is published
 //! as worklogs.
 
+use std::collections::BTreeMap;
+
 use reqwest::{Method, RequestBuilder, Response, StatusCode, Url};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
@@ -127,10 +129,8 @@ async fn check_status(
         }
         _ if status.is_client_error() || status.is_server_error() => {
             let body = response.text().await?;
-            Err(IntegrationError::Api(format!(
-                "{status}: {}",
-                truncate(body.trim())
-            )))
+            let reason = error_messages(&body).unwrap_or_else(|| truncate(body.trim()));
+            Err(IntegrationError::Api(format!("{status}: {reason}")))
         }
         _ => Ok(response),
     }
@@ -139,6 +139,28 @@ async fn check_status(
 /// Returns the REST API v2 endpoint of the Jira at `host_url`.
 pub(crate) fn api_url(host_url: &str) -> Option<Url> {
     Url::parse(&format!("{host_url}/rest/api/2")).ok()
+}
+
+/// The error body Jira sends with a rejected request.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ErrorBody {
+    #[serde(default)]
+    error_messages: Vec<String>,
+    #[serde(default)]
+    errors: BTreeMap<String, String>,
+}
+
+/// Returns the messages of a Jira error body, joined by `; `, or `None` when
+/// `body` is not one or has no messages.
+fn error_messages(body: &str) -> Option<String> {
+    let body: ErrorBody = serde_json::from_str(body).ok()?;
+    let messages: Vec<String> = body
+        .error_messages
+        .into_iter()
+        .chain(body.errors.into_values())
+        .collect();
+    (!messages.is_empty()).then(|| truncate(&messages.join("; ")))
 }
 
 /// Cuts `body` to [`MAX_ERROR_BODY_CHARS`], marking the cut with `…`.
@@ -222,7 +244,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn publish_slot_keeps_response_body_of_rejected_worklog() {
+    async fn publish_slot_keeps_error_of_rejected_worklog() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .respond_with(
@@ -237,10 +259,22 @@ mod tests {
             .await
             .unwrap_err();
 
+        assert_eq!(err.to_string(), "API error: 400 Bad Request: invalid");
+    }
+
+    #[test]
+    fn error_messages_joins_messages_and_field_errors() {
+        let body = r#"{"errorMessages":["You cannot log work on a closed issue."],"errors":{"started":"Invalid date"}}"#;
         assert_eq!(
-            err.to_string(),
-            r#"API error: 400 Bad Request: {"errors":{"timeLogged":"invalid"}}"#
+            error_messages(body).as_deref(),
+            Some("You cannot log work on a closed issue.; Invalid date")
         );
+    }
+
+    #[test]
+    fn error_messages_skips_bodies_without_messages() {
+        assert_eq!(error_messages(r#"{"errorMessages":[],"errors":{}}"#), None);
+        assert_eq!(error_messages("<html>bad gateway</html>"), None);
     }
 
     #[tokio::test]

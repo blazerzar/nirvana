@@ -10,6 +10,7 @@
 //! one ticket and local day are sent as one worklog or comment.
 
 use std::collections::{HashMap, HashSet};
+use std::io::ErrorKind;
 
 use chrono::{DateTime, Local, NaiveDate, Utc};
 use nirvana_entity::{publish_entry, slot, ticket};
@@ -19,11 +20,11 @@ use sea_orm::{
     SqliteTransactionMode, TransactionOptions, TransactionTrait, TryInsertResult,
 };
 use tokio::task::JoinSet;
-use tracing::debug;
+use tracing::{debug, error, warn};
 
-use crate::domain::{PublishFailure, PublishResult, Slot};
+use crate::domain::{Connection, PublishFailure, PublishResult, Slot};
 use crate::errors::{DomainError, NirvanaError};
-use crate::integration::Integration;
+use crate::integration::{Integration, IntegrationError};
 use crate::service::Nirvana;
 
 /// Seconds after which a pending entry counts as stuck and is claimed again
@@ -55,21 +56,7 @@ impl Nirvana {
         retry: bool,
     ) -> Result<PublishResult, NirvanaError> {
         let profile = self.find_active_profile().await?;
-        let connections = match target {
-            Some(name) => {
-                let connection = self.get_connection(name).await?;
-                if !connection.settings.publish() {
-                    return Err(DomainError::PublishDisabled(name.to_owned()).into());
-                }
-                vec![connection]
-            }
-            None => self
-                .find_connections(profile.id)
-                .await?
-                .into_iter()
-                .filter(|connection| connection.settings.publish())
-                .collect(),
-        };
+        let connections = self.publish_connections(profile.id, target).await?;
 
         let connection_ids = connections.iter().map(|connection| connection.model.id);
         let mut claimed = claim(&self.db, profile.id, from, to, connection_ids, retry).await?;
@@ -104,11 +91,64 @@ impl Nirvana {
             result.published.extend(published.published);
             result.failed.extend(published.failed);
         }
+        if !result.failed.is_empty() {
+            warn!(failed = result.failed.len(), "slots not published");
+        }
         result.published.sort_by_key(|slot| slot.model.started_at);
         result
             .failed
             .sort_by_key(|failure| failure.slot.model.started_at);
         Ok(result)
+    }
+
+    /// Returns the slots that [`publish_slots`](Self::publish_slots) with the
+    /// same arguments would send, ordered by start. Slots claimed by a
+    /// publish that is still running are left out.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no profile is active, the config is unavailable,
+    /// the target does not exist or has `publish` disabled, or a database
+    /// query fails.
+    pub async fn list_publishable_slots(
+        &self,
+        from: Option<i64>,
+        to: Option<i64>,
+        target: Option<&str>,
+        retry: bool,
+    ) -> Result<Vec<Slot>, NirvanaError> {
+        let profile = self.find_active_profile().await?;
+        let connections = self.publish_connections(profile.id, target).await?;
+        let connection_ids = connections.iter().map(|connection| connection.model.id);
+        let groups =
+            find_publishable(&self.db, profile.id, from, to, connection_ids, retry).await?;
+        let mut slots: Vec<Slot> = groups.into_values().flatten().collect();
+        slots.sort_by_key(|slot| slot.model.started_at);
+        Ok(slots)
+    }
+
+    /// Returns the connection named `target`, or every connection of the
+    /// profile with `publish` enabled.
+    async fn publish_connections(
+        &self,
+        profile_id: i64,
+        target: Option<&str>,
+    ) -> Result<Vec<Connection>, NirvanaError> {
+        match target {
+            Some(name) => {
+                let connection = self.get_connection(name).await?;
+                if !connection.settings.publish() {
+                    return Err(DomainError::PublishDisabled(name.to_owned()).into());
+                }
+                Ok(vec![connection])
+            }
+            None => Ok(self
+                .find_connections(profile_id)
+                .await?
+                .into_iter()
+                .filter(|connection| connection.settings.publish())
+                .collect()),
+        }
     }
 }
 
@@ -130,7 +170,7 @@ async fn publish_to_connection(
             Ok(integration) => integration
                 .publish_slot(&first.ticket.ticket_key, first.model.started_at, seconds)
                 .await
-                .map_err(|e| error_chain(&e)),
+                .map_err(|e| publish_error(&e)),
             Err(error) => Err(error.clone()),
         };
         for slot in group {
@@ -140,13 +180,16 @@ async fn publish_to_connection(
                     result.published.push(slot);
                     continue;
                 }
-                (Ok(()), Err(e)) => format!(
-                    "published, but storing the result failed: {}",
-                    error_chain(&e)
-                ),
+                (Ok(()), Err(e)) => {
+                    let e = error_chain(&e);
+                    error!(slot_id = slot.model.id, error = %e, "storing a published slot failed");
+                    format!("published, but storing the result failed: {e}")
+                }
                 (Err(error), Ok(())) => error.clone(),
                 (Err(error), Err(e)) => {
-                    format!("{error}, and storing the error failed: {}", error_chain(&e))
+                    let e = error_chain(&e);
+                    error!(slot_id = slot.model.id, error = %e, "storing a publish error failed");
+                    format!("{error}, and storing the error failed: {e}")
                 }
             };
             debug!(slot_id = slot.model.id, %error, "slot not published");
@@ -323,6 +366,52 @@ async fn store_result(
 
 pub(super) fn stuck_before() -> i64 {
     Utc::now().timestamp() - STUCK_AFTER
+}
+
+/// Returns the error stored for slots that could not be sent: what went
+/// wrong with the request or the token, and the whole chain for other
+/// errors, which are readable already.
+fn publish_error(error: &IntegrationError) -> String {
+    match error {
+        IntegrationError::Network(e) => network_error(e).unwrap_or_else(|| error_chain(error)),
+        IntegrationError::Auth(reason) => format!("the token was rejected ({reason})"),
+        _ => error_chain(error),
+    }
+}
+
+/// Describes a failed request by its host: not reached, not answered in time,
+/// the connection lost while sending, or a response that cannot be read.
+fn network_error(error: &reqwest::Error) -> Option<String> {
+    let host = error.url()?.host_str()?;
+    let unreachable = error.is_connect()
+        || io_kind(error).is_some_and(|kind| {
+            matches!(
+                kind,
+                ErrorKind::HostUnreachable
+                    | ErrorKind::NetworkUnreachable
+                    | ErrorKind::NetworkDown
+                    | ErrorKind::ConnectionRefused
+                    | ErrorKind::AddrNotAvailable
+            )
+        });
+    if error.is_timeout() {
+        Some(format!("{host} timed out"))
+    } else if unreachable {
+        Some(format!("couldn't reach {host}"))
+    } else if error.is_request() {
+        Some(format!("lost the connection to {host}"))
+    } else if error.is_decode() || error.is_body() {
+        Some(format!("couldn't read the response of {host}"))
+    } else {
+        None
+    }
+}
+
+/// Returns the kind of the first I/O error in the chain of `error`.
+fn io_kind(error: &(dyn std::error::Error + 'static)) -> Option<ErrorKind> {
+    std::iter::successors(Some(error), |e| e.source())
+        .find_map(|e| e.downcast_ref::<std::io::Error>())
+        .map(std::io::Error::kind)
 }
 
 /// Formats the error with its sources, separated by colons.
@@ -590,6 +679,41 @@ mod tests {
             .await
             .unwrap();
         assert!(again.published.is_empty() && again.failed.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_publishable_slots_lists_what_publish_would_send() {
+        let mut service = TestService::new(&[Jira, Linear]).await;
+        service.use_connection(Some(Jira));
+        let jira = service.seed_ticket("KAR-1", "Title", 0, 0).await;
+        let new = service.seed_slot(&jira, 1000, Some(2000)).await;
+        let failed = service.seed_slot(&jira, 3000, Some(4000)).await;
+        service
+            .seed_publish_entry(&failed, Jira, None, Some("timed out"), 0)
+            .await;
+        let pending = service.seed_slot(&jira, 5000, Some(6000)).await;
+        service
+            .seed_publish_entry(&pending, Jira, None, None, Utc::now().timestamp())
+            .await;
+        service.seed_slot(&jira, 7000, None).await;
+        service.use_connection(Some(Linear));
+        let linear = service.seed_ticket("NIR-1", "Title", 0, 0).await;
+        service.seed_slot(&linear, 1500, Some(2500)).await;
+        service.use_connection(None);
+        let local = service.seed_ticket("LOCAL-1", "Title", 0, 0).await;
+        service.seed_slot(&local, 2500, Some(2900)).await;
+
+        let retry = service
+            .list_publishable_slots(None, None, None, true)
+            .await
+            .unwrap();
+        let unpublished = service
+            .list_publishable_slots(None, None, None, false)
+            .await
+            .unwrap();
+
+        assert_eq!(ids(&retry), [new.id, failed.id]);
+        assert_eq!(ids(&unpublished), [new.id]);
     }
 
     #[tokio::test]
@@ -916,6 +1040,35 @@ mod tests {
         assert_eq!(ids(&result.published), [failed.id]);
         let entry = entry(&service, &published).await.unwrap();
         assert_eq!((entry.published_at, entry.error), (Some(1000), None));
+    }
+
+    #[tokio::test]
+    async fn publish_error_names_an_unreachable_host() {
+        let error = crate::integration::http_client()
+            .unwrap()
+            .get("http://127.0.0.1:9")
+            .send()
+            .await
+            .unwrap_err();
+        assert_eq!(
+            publish_error(&IntegrationError::Network(error)),
+            "couldn't reach 127.0.0.1"
+        );
+    }
+
+    #[test]
+    fn publish_error_names_a_rejected_token() {
+        let error = IntegrationError::Auth("401 Unauthorized".to_string());
+        assert_eq!(
+            publish_error(&error),
+            "the token was rejected (401 Unauthorized)"
+        );
+    }
+
+    #[test]
+    fn publish_error_keeps_the_chain_of_other_errors() {
+        let error = IntegrationError::TicketNotFound("KAR-1".to_string());
+        assert_eq!(publish_error(&error), "ticket not found: KAR-1");
     }
 
     #[test]

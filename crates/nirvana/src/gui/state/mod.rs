@@ -3,6 +3,7 @@ pub(super) mod info;
 pub(super) mod listing;
 pub(super) mod overview;
 pub(super) mod profile;
+pub(super) mod publish;
 pub(super) mod settings;
 pub(super) mod start;
 pub(super) mod toast;

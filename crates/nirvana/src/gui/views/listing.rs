@@ -126,7 +126,7 @@ fn footer<'a>(
         .align_y(Vertical::Center)
     });
     let web = row![
-        BODY.text("edit logs and see your week in").style(tertiary),
+        BODY.text("edit slots and see your week in").style(tertiary),
         link(
             BODY.text(if web_available {
                 "nirvana web ↗"
@@ -155,7 +155,7 @@ fn today_list<'a>(
     if running.is_none() && slots.is_empty() {
         return empty(
             "nothing tracked yet today",
-            "logs appear here as you start and stop tickets.",
+            "slots appear here as you start and stop tickets.",
         );
     }
     scroll_area(
@@ -370,20 +370,27 @@ fn unpublished_label(days: usize) -> String {
 /// `today`, e.g. `unpublished · Wed, Thu`, and as a count otherwise, e.g.
 /// `unpublished · 10 days`.
 fn footer_days(days: &[NaiveDate], today: Option<NaiveDate>) -> String {
+    match days {
+        [] => UNPUBLISHED.to_owned(),
+        days => format!("{UNPUBLISHED} · {}", days_label(days, today)),
+    }
+}
+
+/// Names up to five `days` of the last week, or counts them.
+pub(super) fn days_label(days: &[NaiveDate], today: Option<NaiveDate>) -> String {
     let in_last_week = |day: &NaiveDate| {
         today.is_some_and(|today| (today - NAMED_DAYS_BACK..=today).contains(day))
     };
     match days.len() {
-        0 => UNPUBLISHED.to_owned(),
         count if count <= NAMED_DAYS_MAX && days.iter().all(in_last_week) => {
             let names: Vec<_> = days
                 .iter()
                 .map(|day| day.format("%a").to_string())
                 .collect();
-            format!("{UNPUBLISHED} · {}", names.join(", "))
+            names.join(", ")
         }
-        1 => format!("{UNPUBLISHED} · 1 day"),
-        count => format!("{UNPUBLISHED} · {count} days"),
+        1 => "1 day".to_owned(),
+        count => format!("{count} days"),
     }
 }
 

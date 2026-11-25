@@ -15,7 +15,7 @@ use crate::time::{format_duration, time_of_day};
 
 const PULSE_DOT_SIZE: f32 = 7.0;
 const HINT_MAX_WIDTH: f32 = 450.0;
-const LOGS_HINT: &str = "logs stay on this machine until you publish.";
+const SLOTS_HINT: &str = "slots stay on this machine until you publish.";
 
 pub(super) fn tracking<'a>(
     state: &'a tracking::State,
@@ -105,12 +105,12 @@ fn not_tracking<'a>(
     });
     let hint = if last.is_some() {
         format!(
-            "resume it, or pick a recent ticket. hold {MODIFIER_NAME} for shortcuts. {LOGS_HINT}"
+            "resume it, or pick a recent ticket. hold {MODIFIER_NAME} for shortcuts. {SLOTS_HINT}"
         )
     } else {
         format!(
             "nothing tracked today yet. pick a recent ticket, or hold {MODIFIER_NAME} for \
-             shortcuts. {LOGS_HINT}"
+             shortcuts. {SLOTS_HINT}"
         )
     };
     column![

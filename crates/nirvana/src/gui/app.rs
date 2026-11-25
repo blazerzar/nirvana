@@ -11,7 +11,7 @@ use super::failure::{Failure, chain};
 use super::shortcuts::Shortcut;
 use super::state::profile::{self, ProfileState};
 use super::state::toast::{self, Kind};
-use super::state::{appearance, info, listing, overview, settings, start, tracking};
+use super::state::{appearance, info, listing, overview, publish, settings, start, tracking};
 use super::windows::{Window, Windows};
 use super::{shortcuts, views};
 
@@ -23,6 +23,7 @@ pub(super) struct Gui {
     listing: listing::State,
     overview: overview::State,
     profile: Option<ProfileState>,
+    publish: publish::State,
     settings: settings::State,
     start: start::State,
     toast: toast::State,
@@ -67,6 +68,7 @@ pub(super) enum Message {
     Listing(listing::Message),
     Overview(overview::Message),
     Profile(profile::Message),
+    Publish(publish::Message),
     Settings(settings::Message),
     /// Shows the screen, or the main screen when it is already shown.
     ToggleScreen(Screen),
@@ -91,6 +93,7 @@ impl Gui {
             listing: listing::State::default(),
             overview: overview::State::default(),
             profile: None,
+            publish: publish::State::default(),
             settings: settings::State::default(),
             start: start::State::default(),
             toast: toast::State::default(),
@@ -191,9 +194,48 @@ impl Gui {
             Message::ToggleScreen(_) => {}
             Message::OpenModal(modal) => {
                 self.modal = Some(modal);
-                return widget::operate(focusable::unfocus());
+                let load = match modal {
+                    Modal::Publish => self.update(Message::Publish(publish::Message::Load)),
+                };
+                return Task::batch([widget::operate(focusable::unfocus()), load]);
             }
-            Message::CloseModal => self.modal = None,
+            Message::CloseModal => {
+                if let Some(Modal::Publish) = self.modal {
+                    return self.update(Message::Publish(publish::Message::Close));
+                }
+            }
+            Message::Publish(publish::Message::Closed(summary)) => {
+                self.modal = None;
+                if let Some(summary) = summary
+                    && let Some(window) = self.windows.main()
+                {
+                    let (kind, text, detail) = summary.toast();
+                    return self
+                        .toast
+                        .update(toast::Message::Show {
+                            window,
+                            kind,
+                            text,
+                            detail,
+                        })
+                        .map(Message::Toast);
+                }
+            }
+            Message::Publish(publish::Message::Failed(failure)) => {
+                return self.show_error_in_main(failure);
+            }
+            Message::Publish(message) => {
+                let published = matches!(message, publish::Message::Published(Ok(_)));
+                let update = self
+                    .publish
+                    .update(message, self.nirvana.as_ref())
+                    .map(Message::Publish);
+                if !published {
+                    return update;
+                }
+                let reload = self.update(Message::Tracking(tracking::Message::Load));
+                return Task::batch([update, reload]);
+            }
             Message::Listing(listing::Message::Failed(failure)) => {
                 return self.show_error_in_main(failure);
             }
@@ -216,11 +258,14 @@ impl Gui {
                 if self.windows.main() != Some(window) {
                     return Task::none();
                 }
-                if self.modal.is_some() {
-                    if matches!(shortcut, Shortcut::Escape) {
-                        return self.update(Message::CloseModal);
-                    }
-                    return Task::none();
+                if let Some(modal) = self.modal {
+                    return match (modal, shortcut) {
+                        (_, Shortcut::Escape) => self.update(Message::CloseModal),
+                        (Modal::Publish, Shortcut::Return) => {
+                            self.update(Message::Publish(publish::Message::Publish))
+                        }
+                        _ => Task::none(),
+                    };
                 }
                 let main_shown = self.screen == Screen::Main && !self.start.is_open();
                 match shortcut {
@@ -413,7 +458,11 @@ impl Gui {
                     ),
                 };
                 let modal = self.modal.map(|modal| match modal {
-                    Modal::Publish => views::publish_modal(self.listing.unpublished()),
+                    Modal::Publish => views::publish_modal(
+                        &self.publish,
+                        self.tracking.running(),
+                        self.listing.today(),
+                    ),
                 });
                 LogicalScroll::new(views::main(header, screen, modal, toast), self.scale_factor)
                     .into()

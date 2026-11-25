@@ -2,7 +2,7 @@ use anyhow::bail;
 use chrono::Local;
 use console::{Term, style};
 use nirvana_core::Nirvana;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::cli::PublishArgs;
 use crate::cli::time::{format_timestamp, parse_time};
@@ -49,7 +49,6 @@ pub(crate) async fn run(args: PublishArgs) -> anyhow::Result<()> {
     }
     for failure in &result.failed {
         let key = &failure.slot.ticket.ticket_key;
-        warn!(%key, slot_id = failure.slot.model.id, error = %failure.error, "slot publish failed");
         term.write_line(&format!(
             "{} {} {} {}",
             style("✗").red(),

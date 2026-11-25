@@ -21,7 +21,7 @@ pub(super) fn setup<'a>(
         step(
             1,
             "create a profile",
-            "a name and a database for its logs. most people start with work.",
+            "a name and a database for its slots. most people start with work.",
             active_step == 1,
         ),
         step(

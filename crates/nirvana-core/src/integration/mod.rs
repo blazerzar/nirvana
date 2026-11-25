@@ -16,6 +16,7 @@ use jira::{JiraAuth, JiraIntegration};
 use linear::LinearIntegration;
 use secrecy::SecretString;
 use thiserror::Error;
+use tracing::debug;
 
 use crate::domain::{Connection, Kind};
 use crate::errors::{DomainError, NirvanaError};
@@ -114,10 +115,11 @@ impl Integration {
         started_at: i64,
         seconds: i64,
     ) -> Result<(), IntegrationError> {
-        match self {
+        let published = match self {
             Self::Jira(j) => j.publish_slot(ticket_key, started_at, seconds).await,
             Self::Linear(l) => l.publish_slot(ticket_key, started_at, seconds).await,
-        }
+        };
+        published.inspect_err(|e| debug!(ticket_key, error = ?e, "publishing failed"))
     }
 }
 

@@ -4,10 +4,11 @@ use iced::advanced::widget::operation::focusable;
 use iced::advanced::widget::{self};
 use iced::{Element, Event, Subscription, Task, event, window};
 use nirvana_core::{DesktopSettings, Nirvana, NirvanaError};
-use tracing::error;
+use tracing::{error, info};
 
 use super::components::LogicalScroll;
 use super::failure::{Failure, chain};
+use super::idle::{self, Period};
 use super::shortcuts::Shortcut;
 use super::state::profile::{self, ProfileState};
 use super::state::toast::{self, Kind};
@@ -48,6 +49,7 @@ pub(super) enum Screen {
 #[derive(Clone, Copy)]
 pub(super) enum Modal {
     Publish,
+    Idle,
 }
 
 /// `Nirvana` with the config values the GUI needs before its first frame.
@@ -70,6 +72,8 @@ pub(super) enum Message {
     Profile(profile::Message),
     Publish(publish::Message),
     Settings(settings::Message),
+    /// The user is back after being idle while tracking.
+    Idle(Period),
     /// Shows the screen, or the main screen when it is already shown.
     ToggleScreen(Screen),
     OpenModal(Modal),
@@ -196,13 +200,30 @@ impl Gui {
                 self.modal = Some(modal);
                 let load = match modal {
                     Modal::Publish => self.update(Message::Publish(publish::Message::Load)),
+                    Modal::Idle => Task::none(),
                 };
                 return Task::batch([widget::operate(focusable::unfocus()), load]);
             }
-            Message::CloseModal => {
-                if let Some(Modal::Publish) = self.modal {
+            Message::CloseModal => match self.modal {
+                Some(Modal::Publish) => {
                     return self.update(Message::Publish(publish::Message::Close));
                 }
+                Some(Modal::Idle) => self.modal = None,
+                None => {}
+            },
+            Message::Idle(Period { from, to }) => {
+                if self.modal.is_some() {
+                    return Task::none();
+                }
+                info!(
+                    from,
+                    to, "showing the idle dialog for the detected idle period"
+                );
+                let open = self.update(Message::OpenModal(Modal::Idle));
+                let focus = self.open_main().then(|window| {
+                    Task::batch([window::minimize(window, false), window::gain_focus(window)])
+                });
+                return Task::batch([open, focus]);
             }
             Message::Publish(publish::Message::Closed(summary)) => {
                 self.modal = None;
@@ -424,7 +445,18 @@ impl Gui {
             window::open_events().map(Message::Opened),
             event::listen_with(rescaled),
             self.tracking.subscription().map(Message::Tracking),
+            self.idle_subscription(),
         ])
+    }
+
+    /// Detects idle time while tracking, when it is enabled.
+    fn idle_subscription(&self) -> Subscription<Message> {
+        match self.settings.idle() {
+            Some(config) if config.enabled && self.tracking.is_tracking() => {
+                idle::subscription(config).map(Message::Idle)
+            }
+            _ => Subscription::none(),
+        }
     }
 
     pub(super) fn view(&self, window: window::Id) -> Element<'_, Message> {
@@ -463,6 +495,7 @@ impl Gui {
                         self.tracking.running(),
                         self.listing.today(),
                     ),
+                    Modal::Idle => views::idle_modal(),
                 });
                 LogicalScroll::new(views::main(header, screen, modal, toast), self.scale_factor)
                     .into()

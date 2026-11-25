@@ -2,6 +2,7 @@ mod app;
 mod components;
 mod design_system;
 mod failure;
+mod idle;
 mod shortcuts;
 mod state;
 mod views;

@@ -26,6 +26,14 @@ version = "0.14.0"
 default-features = false
 features = ["advanced", "canvas", "svg", "wgpu", "tokio", "web-colors", "x11", "wayland"]
 
+[target.'cfg(target_os = "windows")'.dependencies.windows]
+version = "0.62"
+features = [
+  "Win32_System_StationsAndDesktops",
+  "Win32_System_SystemInformation",
+  "Win32_UI_Input_KeyboardAndMouse",
+]
+
 [dev-dependencies]
 assert_cmd = "2.2.2"
 nirvana-core = { path = "../nirvana-core", features = ["test-support"] }

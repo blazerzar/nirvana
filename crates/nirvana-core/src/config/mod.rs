@@ -322,7 +322,7 @@ impl LogLevel {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub struct IdleConfig {
     #[serde(default = "default_idle_enabled")]
     pub enabled: bool,
@@ -332,7 +332,7 @@ pub struct IdleConfig {
     pub threshold_secs: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IdleMethod {
     Lock,

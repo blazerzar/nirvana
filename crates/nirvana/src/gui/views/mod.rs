@@ -1,5 +1,6 @@
 mod bottom_bar;
 mod header;
+mod idle;
 mod info;
 mod listing;
 mod main;
@@ -16,6 +17,7 @@ use iced::widget::rule::{self, Rule};
 use iced::widget::text::IntoFragment;
 use iced::widget::{Row, column, container, row, stack, text};
 use iced::{Element, Length, Padding};
+pub(super) use idle::idle_modal;
 pub(super) use info::{info, info_size};
 pub(super) use main::{MAIN_WINDOW_SIZE, main, main_screen};
 pub(super) use overview::{overview_bar, overview_view};

@@ -126,3 +126,29 @@ impl From<sea_orm::DbErr> for NirvanaError {
         Self::Db(e.into())
     }
 }
+
+/// Formats the error with its sources, separated by colons.
+pub(crate) fn error_chain(error: &dyn std::error::Error) -> String {
+    std::iter::successors(Some(error), |e| e.source())
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(": ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_chain_joins_sources() {
+        let error = NirvanaError::from(DomainError::PublishDisabled("jira".to_string()));
+        assert_eq!(
+            error_chain(&error),
+            "publishing is disabled for connection 'jira'"
+        );
+
+        let io = std::io::Error::other("disk full");
+        let error = NirvanaError::from(io);
+        assert_eq!(error_chain(&error), "I/O error: disk full");
+    }
+}

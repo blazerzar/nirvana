@@ -43,17 +43,7 @@ pub(in crate::gui) fn toast<'a, Message: Clone + 'a>(
     on_close: Message,
 ) -> Element<'a, Message> {
     let kind = toast.kind;
-    let handle = match kind {
-        Kind::Success => &SUCCESS,
-        Kind::Warning => &WARNING,
-        Kind::Error => &ERROR,
-    };
-    let icon = svg(LazyLock::force(handle).clone())
-        .width(ICON_SIZE)
-        .height(ICON_SIZE)
-        .style(move |theme, _| svg::Style {
-            color: Some(status_color(kind)(tokens(theme))),
-        });
+    let icon = status_icon(kind);
     let message = BODY.text(&toast.text).style(|theme| text::Style {
         color: Some(tokens(theme).text_primary),
     });
@@ -100,6 +90,21 @@ pub(in crate::gui) fn toast<'a, Message: Clone + 'a>(
                 .right(BORDER_WIDTH + space::S100),
         );
     stack![body, marker, close].into()
+}
+
+/// The icon of `kind`, in its status color.
+pub(in crate::gui) fn status_icon<'a>(kind: Kind) -> svg::Svg<'a> {
+    let handle = match kind {
+        Kind::Success => &SUCCESS,
+        Kind::Warning => &WARNING,
+        Kind::Error => &ERROR,
+    };
+    svg(LazyLock::force(handle).clone())
+        .width(ICON_SIZE)
+        .height(ICON_SIZE)
+        .style(move |theme, _| svg::Style {
+            color: Some(status_color(kind)(tokens(theme))),
+        })
 }
 
 fn close_button<'a, Message: Clone + 'a>(on_close: Message) -> Element<'a, Message> {

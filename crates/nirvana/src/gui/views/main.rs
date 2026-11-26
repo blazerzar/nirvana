@@ -14,7 +14,7 @@ use crate::gui::state::toast::Toast;
 use crate::gui::state::{listing as listing_state, start as start_form, tracking};
 
 pub(in crate::gui) const MAIN_WINDOW_SIZE: Size = Size::new(960.0, 540.0);
-const TOAST_BOTTOM: f32 = 76.0;
+pub(super) const TOAST_BOTTOM: f32 = 76.0;
 
 /// The main window: the header, then the shown screen and its bottom bar,
 /// with the toast over them and the modal over the toast.

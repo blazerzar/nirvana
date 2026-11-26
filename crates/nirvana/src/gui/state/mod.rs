@@ -1,4 +1,5 @@
 pub(super) mod appearance;
+pub(super) mod idle_dialog;
 pub(super) mod info;
 pub(super) mod listing;
 pub(super) mod overview;

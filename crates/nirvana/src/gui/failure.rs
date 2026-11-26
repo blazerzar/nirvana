@@ -25,7 +25,11 @@ impl Failure {
     }
 
     pub(super) fn from_error(text: &'static str, error: &(dyn Error + 'static)) -> Self {
-        Self::new(text, domain_reason(error).or_else(|| io_reason(error)))
+        let detail = domain_reason(error)
+            .or_else(|| io_reason(error))
+            .map(str::to_owned)
+            .or_else(|| integration_reason(error));
+        Self { text, detail }
     }
 
     pub(super) fn startup(error: &NirvanaError) -> Self {
@@ -64,6 +68,21 @@ fn domain_reason(error: &(dyn Error + 'static)) -> Option<&'static str> {
             Some("the ticket is in more than one connection, pick one")
         }
         NirvanaError::Domain(DomainError::TicketNotFound(_)) => Some("ticket not found"),
+        NirvanaError::Domain(DomainError::InvalidTimeRange) => {
+            Some("the stop time must be after the start time")
+        }
+        NirvanaError::Domain(DomainError::StartBeforeRunningSlot) => {
+            Some("the start time must be after the start of the running slot")
+        }
+        NirvanaError::Domain(DomainError::SlotOverlap) => Some("the time overlaps another slot"),
+        _ => None,
+    }
+}
+
+/// Returns what went wrong with a connection's request or token.
+fn integration_reason(error: &(dyn Error + 'static)) -> Option<String> {
+    match error.downcast_ref::<NirvanaError>()? {
+        NirvanaError::Integration(error) => Some(error.reason()),
         _ => None,
     }
 }

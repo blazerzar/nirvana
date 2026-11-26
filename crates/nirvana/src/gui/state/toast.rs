@@ -6,7 +6,6 @@ use iced::{Task, window};
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::gui) enum Kind {
     Success,
-    #[allow(dead_code)]
     Warning,
     Error,
 }

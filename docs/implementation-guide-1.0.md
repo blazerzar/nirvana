@@ -279,6 +279,27 @@ decisions here (rounding, single active connection, …).
   16px margin, above the toast, blocks the mouse to the window and all
   shortcuts but Esc and Return, and only its body scrolls. The targets are
   not shown yet.
+- **Idle modal** (720px), shown when the user is back after the idle
+  threshold while a slot runs. Warning icon, "you were away for Xm" and "no
+  input from A to B while K was running". Two radio groups: what were you
+  doing (working on K / something else / on a break) and what are you doing
+  now (continue K / something else / nothing · stop tracking). Something
+  else picks one of 4 recent tickets (the key on a chip, accent fill when
+  picked) or takes a typed key, with the title or "not a recent ticket ·
+  checked when saved" below. Footer: "asks after
+  X without input · change it in settings", `[esc] keep as is` and `[↵]
+  save`, disabled until something else has a ticket. Saving stops the slot
+  at A unless working, adds a slot on the other ticket from A to B, and
+  starts the chosen ticket at B (or stops at B when working and stopping).
+  The away time starts at the earliest when the slot started. When it starts
+  with the slot, nothing is left before it: something else moves the slot to
+  the other ticket and stops it at B, a break deletes it. Typed keys are
+  loaded before any slot changes. Saving fails when a typed ticket is not
+  found or another slot runs by then, and the modal stays open with an
+  error toast above it. A success toast tells what was saved
+  ("logged 16m to X · now tracking K", or "continuing tracking K" when
+  nothing changes). Esc changes nothing and shows no toast, only an info
+  log. The preview strip is not shown yet.
 - **Toast** (`v6-toasts.jsx`) after stop, switch and publish, and for errors.
   Success, warning and error share one surface (raised bg, default border,
   3px status marker on the left, 16px status icon, message, optional detail

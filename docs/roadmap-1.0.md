@@ -340,7 +340,7 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [ ] Global shortcuts, launch at login, close to menu bar.
 - [x] Idle detection while tracking on macOS and Windows (take from main),
       shown as an empty idle modal.
-- [ ] Idle modal content (v6 design).
+- [x] Idle modal content (v6 design).
 - [ ] Idle modal preview strip.
 - [ ] Idle detection on Linux.
 - [ ] Not tracking reminder.

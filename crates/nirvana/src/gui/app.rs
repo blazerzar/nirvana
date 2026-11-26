@@ -11,8 +11,11 @@ use super::failure::{Failure, chain};
 use super::idle::{self, Period};
 use super::shortcuts::Shortcut;
 use super::state::profile::{self, ProfileState};
+use super::state::settings::IdleAfter;
 use super::state::toast::{self, Kind};
-use super::state::{appearance, info, listing, overview, publish, settings, start, tracking};
+use super::state::{
+    appearance, idle_dialog, info, listing, overview, publish, settings, start, tracking,
+};
 use super::windows::{Window, Windows};
 use super::{shortcuts, views};
 
@@ -20,6 +23,7 @@ pub(super) struct Gui {
     nirvana: Option<Result<Arc<Nirvana>, Failure>>,
     windows: Windows,
     appearance: appearance::State,
+    idle_dialog: Option<idle_dialog::Dialog>,
     info: info::State,
     listing: listing::State,
     overview: overview::State,
@@ -74,6 +78,7 @@ pub(super) enum Message {
     Settings(settings::Message),
     /// The user is back after being idle while tracking.
     Idle(Period),
+    IdleDialog(idle_dialog::Message),
     /// Shows the screen, or the main screen when it is already shown.
     ToggleScreen(Screen),
     OpenModal(Modal),
@@ -93,6 +98,7 @@ impl Gui {
             nirvana: None,
             windows: Windows::default(),
             appearance: appearance::State::default(),
+            idle_dialog: None,
             info: info::State::default(),
             listing: listing::State::default(),
             overview: overview::State::default(),
@@ -208,22 +214,47 @@ impl Gui {
                 Some(Modal::Publish) => {
                     return self.update(Message::Publish(publish::Message::Close));
                 }
-                Some(Modal::Idle) => self.modal = None,
+                Some(Modal::Idle) => {
+                    return self.update(Message::IdleDialog(idle_dialog::Message::Keep));
+                }
                 None => {}
             },
-            Message::Idle(Period { from, to }) => {
+            Message::Idle(period) => {
+                let Some(running) = self.tracking.running() else {
+                    return Task::none();
+                };
                 if self.modal.is_some() {
                     return Task::none();
                 }
+                let Period { from, to } = period;
                 info!(
                     from,
                     to, "showing the idle dialog for the detected idle period"
                 );
+                self.idle_dialog = Some(idle_dialog::Dialog::new(period, running));
                 let open = self.update(Message::OpenModal(Modal::Idle));
                 let focus = self.open_main().then(|window| {
                     Task::batch([window::minimize(window, false), window::gain_focus(window)])
                 });
                 return Task::batch([open, focus]);
+            }
+            Message::IdleDialog(idle_dialog::Message::Saved(Ok(text))) => {
+                self.idle_dialog = None;
+                self.modal = None;
+                return self.update(Message::Tracking(tracking::Message::Changed(Ok(text))));
+            }
+            Message::IdleDialog(idle_dialog::Message::Saved(Err(failure))) => {
+                if let Some(dialog) = self.idle_dialog.as_mut() {
+                    dialog.failed();
+                }
+                return self.update(Message::Tracking(tracking::Message::Changed(Err(failure))));
+            }
+            Message::IdleDialog(message) => {
+                if let Some(dialog) = self.idle_dialog.as_mut() {
+                    return dialog
+                        .update(message, self.nirvana.as_ref())
+                        .map(Message::IdleDialog);
+                }
             }
             Message::Publish(publish::Message::Closed(summary)) => {
                 self.modal = None;
@@ -284,6 +315,9 @@ impl Gui {
                         (_, Shortcut::Escape) => self.update(Message::CloseModal),
                         (Modal::Publish, Shortcut::Return) => {
                             self.update(Message::Publish(publish::Message::Publish))
+                        }
+                        (Modal::Idle, Shortcut::Return) => {
+                            self.update(Message::IdleDialog(idle_dialog::Message::Save))
                         }
                         _ => Task::none(),
                     };
@@ -489,14 +523,23 @@ impl Gui {
                         self.settings.is_web_available(),
                     ),
                 };
-                let modal = self.modal.map(|modal| match modal {
-                    Modal::Publish => views::publish_modal(
+                let modal = self.modal.and_then(|modal| match modal {
+                    Modal::Publish => Some(views::publish_modal(
                         &self.publish,
                         self.tracking.running(),
                         self.listing.today(),
-                    ),
-                    Modal::Idle => views::idle_modal(),
+                    )),
+                    Modal::Idle => self.idle_dialog.as_ref().map(|dialog| {
+                        views::idle_modal(
+                            dialog,
+                            self.tracking.recent(),
+                            self.settings.idle().map(IdleAfter::of),
+                            toast,
+                            self.appearance.tokens(),
+                        )
+                    }),
                 });
+                let toast = toast.filter(|_| !matches!(self.modal, Some(Modal::Idle)));
                 LogicalScroll::new(views::main(header, screen, modal, toast), self.scale_factor)
                     .into()
             }

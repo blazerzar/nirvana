@@ -8,6 +8,7 @@
 pub(crate) mod jira;
 pub(crate) mod linear;
 
+use std::io::ErrorKind;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,7 +20,7 @@ use thiserror::Error;
 use tracing::debug;
 
 use crate::domain::{Connection, Kind};
-use crate::errors::{DomainError, NirvanaError};
+use crate::errors::{DomainError, NirvanaError, error_chain};
 
 const TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -123,9 +124,82 @@ impl Integration {
     }
 }
 
+impl IntegrationError {
+    /// Returns what went wrong with the request or the token, and the whole
+    /// chain for other errors, which are readable already.
+    pub fn reason(&self) -> String {
+        match self {
+            Self::Network(e) => network_error(e).unwrap_or_else(|| error_chain(self)),
+            Self::Auth(reason) => format!("the token was rejected ({reason})"),
+            _ => error_chain(self),
+        }
+    }
+}
+
+/// Describes a failed request by its host: not reached, not answered in time,
+/// the connection lost while sending, or a response that cannot be read.
+fn network_error(error: &reqwest::Error) -> Option<String> {
+    let host = error.url()?.host_str()?;
+    let unreachable = error.is_connect()
+        || io_kind(error).is_some_and(|kind| {
+            matches!(
+                kind,
+                ErrorKind::HostUnreachable
+                    | ErrorKind::NetworkUnreachable
+                    | ErrorKind::NetworkDown
+                    | ErrorKind::ConnectionRefused
+                    | ErrorKind::AddrNotAvailable
+            )
+        });
+    if error.is_timeout() {
+        Some(format!("{host} timed out"))
+    } else if unreachable {
+        Some(format!("couldn't reach {host}"))
+    } else if error.is_request() {
+        Some(format!("lost the connection to {host}"))
+    } else if error.is_decode() || error.is_body() {
+        Some(format!("couldn't read the response of {host}"))
+    } else {
+        None
+    }
+}
+
+/// Returns the kind of the first I/O error in the chain of `error`.
+fn io_kind(error: &(dyn std::error::Error + 'static)) -> Option<ErrorKind> {
+    std::iter::successors(Some(error), |e| e.source())
+        .find_map(|e| e.downcast_ref::<std::io::Error>())
+        .map(std::io::Error::kind)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn reason_names_an_unreachable_host() {
+        let error = crate::integration::http_client()
+            .unwrap()
+            .get("http://127.0.0.1:9")
+            .send()
+            .await
+            .unwrap_err();
+        assert_eq!(
+            IntegrationError::Network(error).reason(),
+            "couldn't reach 127.0.0.1"
+        );
+    }
+
+    #[test]
+    fn reason_names_a_rejected_token() {
+        let error = IntegrationError::Auth("401 Unauthorized".to_string());
+        assert_eq!(error.reason(), "the token was rejected (401 Unauthorized)");
+    }
+
+    #[test]
+    fn reason_keeps_the_chain_of_other_errors() {
+        let error = IntegrationError::TicketNotFound("KAR-1".to_string());
+        assert_eq!(error.reason(), "ticket not found: KAR-1");
+    }
 
     #[tokio::test(start_paused = true)]
     async fn http_client_times_out() {

@@ -10,7 +10,6 @@
 //! one ticket and local day are sent as one worklog or comment.
 
 use std::collections::{HashMap, HashSet};
-use std::io::ErrorKind;
 
 use chrono::{DateTime, Local, NaiveDate, Utc};
 use nirvana_entity::{publish_entry, slot, ticket};
@@ -23,8 +22,8 @@ use tokio::task::JoinSet;
 use tracing::{debug, error, warn};
 
 use crate::domain::{Connection, PublishFailure, PublishResult, Slot};
-use crate::errors::{DomainError, NirvanaError};
-use crate::integration::{Integration, IntegrationError};
+use crate::errors::{DomainError, NirvanaError, error_chain};
+use crate::integration::Integration;
 use crate::service::Nirvana;
 
 /// Seconds after which a pending entry counts as stuck and is claimed again
@@ -170,7 +169,7 @@ async fn publish_to_connection(
             Ok(integration) => integration
                 .publish_slot(&first.ticket.ticket_key, first.model.started_at, seconds)
                 .await
-                .map_err(|e| publish_error(&e)),
+                .map_err(|e| e.reason()),
             Err(error) => Err(error.clone()),
         };
         for slot in group {
@@ -366,60 +365,6 @@ async fn store_result(
 
 pub(super) fn stuck_before() -> i64 {
     Utc::now().timestamp() - STUCK_AFTER
-}
-
-/// Returns the error stored for slots that could not be sent: what went
-/// wrong with the request or the token, and the whole chain for other
-/// errors, which are readable already.
-fn publish_error(error: &IntegrationError) -> String {
-    match error {
-        IntegrationError::Network(e) => network_error(e).unwrap_or_else(|| error_chain(error)),
-        IntegrationError::Auth(reason) => format!("the token was rejected ({reason})"),
-        _ => error_chain(error),
-    }
-}
-
-/// Describes a failed request by its host: not reached, not answered in time,
-/// the connection lost while sending, or a response that cannot be read.
-fn network_error(error: &reqwest::Error) -> Option<String> {
-    let host = error.url()?.host_str()?;
-    let unreachable = error.is_connect()
-        || io_kind(error).is_some_and(|kind| {
-            matches!(
-                kind,
-                ErrorKind::HostUnreachable
-                    | ErrorKind::NetworkUnreachable
-                    | ErrorKind::NetworkDown
-                    | ErrorKind::ConnectionRefused
-                    | ErrorKind::AddrNotAvailable
-            )
-        });
-    if error.is_timeout() {
-        Some(format!("{host} timed out"))
-    } else if unreachable {
-        Some(format!("couldn't reach {host}"))
-    } else if error.is_request() {
-        Some(format!("lost the connection to {host}"))
-    } else if error.is_decode() || error.is_body() {
-        Some(format!("couldn't read the response of {host}"))
-    } else {
-        None
-    }
-}
-
-/// Returns the kind of the first I/O error in the chain of `error`.
-fn io_kind(error: &(dyn std::error::Error + 'static)) -> Option<ErrorKind> {
-    std::iter::successors(Some(error), |e| e.source())
-        .find_map(|e| e.downcast_ref::<std::io::Error>())
-        .map(std::io::Error::kind)
-}
-
-/// Formats the error with its sources, separated by colons.
-fn error_chain(error: &dyn std::error::Error) -> String {
-    std::iter::successors(Some(error), |e| e.source())
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join(": ")
 }
 
 #[cfg(test)]
@@ -1040,47 +985,5 @@ mod tests {
         assert_eq!(ids(&result.published), [failed.id]);
         let entry = entry(&service, &published).await.unwrap();
         assert_eq!((entry.published_at, entry.error), (Some(1000), None));
-    }
-
-    #[tokio::test]
-    async fn publish_error_names_an_unreachable_host() {
-        let error = crate::integration::http_client()
-            .unwrap()
-            .get("http://127.0.0.1:9")
-            .send()
-            .await
-            .unwrap_err();
-        assert_eq!(
-            publish_error(&IntegrationError::Network(error)),
-            "couldn't reach 127.0.0.1"
-        );
-    }
-
-    #[test]
-    fn publish_error_names_a_rejected_token() {
-        let error = IntegrationError::Auth("401 Unauthorized".to_string());
-        assert_eq!(
-            publish_error(&error),
-            "the token was rejected (401 Unauthorized)"
-        );
-    }
-
-    #[test]
-    fn publish_error_keeps_the_chain_of_other_errors() {
-        let error = IntegrationError::TicketNotFound("KAR-1".to_string());
-        assert_eq!(publish_error(&error), "ticket not found: KAR-1");
-    }
-
-    #[test]
-    fn error_chain_joins_sources() {
-        let error = NirvanaError::from(DomainError::PublishDisabled("jira".to_string()));
-        assert_eq!(
-            error_chain(&error),
-            "publishing is disabled for connection 'jira'"
-        );
-
-        let io = std::io::Error::other("disk full");
-        let error = NirvanaError::from(io);
-        assert_eq!(error_chain(&error), "I/O error: disk full");
     }
 }

@@ -7,7 +7,7 @@ use tracing::{error, info};
 use super::start::Recent;
 use crate::gui::failure::{Failure, chain};
 use crate::gui::idle::Period;
-use crate::time::format_duration;
+use crate::time::{format_duration, time_of_day};
 
 const SAVE_FAILED: &str = "couldn't save the idle time";
 const TRACKING_CHANGED: &str = "tracking changed while you were away";
@@ -101,8 +101,9 @@ enum Step {
     Stop(i64),
     Add(Ticket, i64, i64),
     Start(Ticket, i64),
-    /// Moves the running slot to the ticket and stops it.
-    Move(Ticket, i64),
+    /// Moves the running slot to the ticket and stops it, or keeps it
+    /// running when the stop is `None`.
+    Move(Ticket, Option<i64>),
     /// Deletes the running slot.
     Delete,
 }
@@ -201,6 +202,7 @@ impl Dialog {
         } else {
             (from, AWAY_PORTION)
         };
+        let continued = self.continued_key();
         let mut parts = Vec::new();
         if !kept && before_portion > 0 {
             parts.push(Part::new(
@@ -210,15 +212,21 @@ impl Dialog {
                 before_portion,
             ));
         }
-        match (self.away, self.now) {
-            (Choice::Same, Choice::Same) => parts.push(Part::new(
+        match (self.away, self.now, continued) {
+            (Choice::Same, Choice::Same, _) => parts.push(Part::new(
                 Segment::Running(running),
                 away_from,
                 None,
                 away_portion + NOW_PORTION,
             )),
-            (Choice::Neither, Choice::Neither) => parts.push(Part::new(
+            (Choice::Neither, Choice::Neither, _) => parts.push(Part::new(
                 Segment::Untracked,
+                from,
+                None,
+                AWAY_PORTION + NOW_PORTION,
+            )),
+            (_, _, Some(key)) => parts.push(Part::new(
+                Segment::Running(key),
                 from,
                 None,
                 AWAY_PORTION + NOW_PORTION,
@@ -271,6 +279,14 @@ impl Dialog {
         !self.saving && self.answers().is_some()
     }
 
+    /// Returns the key of the other ticket picked for both while away and now.
+    fn continued_key(&self) -> Option<&str> {
+        let (away, now) = self.answers()?;
+        continues(&away, &now)
+            .then(|| self.away_pick.key())
+            .flatten()
+    }
+
     fn answers(&self) -> Option<(Answer, Answer)> {
         Some((
             answer(self.away, &self.away_pick)?,
@@ -278,14 +294,16 @@ impl Dialog {
         ))
     }
 
-    /// Returns the typed keys of the answers, which may not be stored
-    /// tickets yet.
+    /// Returns the typed keys of the answers once each, which may not be
+    /// stored tickets yet.
     fn typed_keys(&self) -> Vec<String> {
-        [(self.away, &self.away_pick), (self.now, &self.now_pick)]
+        let mut keys: Vec<_> = [(self.away, &self.away_pick), (self.now, &self.now_pick)]
             .into_iter()
             .filter(|(choice, pick)| *choice == Choice::Other && pick.picked.is_none())
             .filter_map(|(_, pick)| pick.key().map(str::to_owned))
-            .collect()
+            .collect();
+        keys.dedup();
+        keys
     }
 
     /// Loads the typed tickets first, so a key that is not found changes no
@@ -415,11 +433,18 @@ fn steps(
     now: &Answer,
 ) -> Vec<Step> {
     let kept = *away == Answer::Same;
+    let continued = continues(away, now);
     let mut steps = Vec::new();
     match away {
         Answer::Same => {}
         Answer::Other(ticket) if starts_with_slot => {
-            steps.push(Step::Move(ticket.clone(), period.to));
+            steps.push(Step::Move(
+                ticket.clone(),
+                (!continued).then_some(period.to),
+            ));
+        }
+        Answer::Other(ticket) if continued => {
+            steps.push(Step::Start(ticket.clone(), period.from));
         }
         Answer::Other(ticket) => steps.extend([
             Step::Stop(period.from),
@@ -430,6 +455,7 @@ fn steps(
     }
     match now {
         Answer::Same if !kept => steps.push(Step::Start(running.clone(), period.to)),
+        Answer::Other(_) if continued => {}
         Answer::Other(ticket) => steps.push(Step::Start(ticket.clone(), period.to)),
         Answer::Neither if kept => steps.push(Step::Stop(period.to)),
         Answer::Same | Answer::Neither => {}
@@ -437,10 +463,18 @@ fn steps(
     steps
 }
 
+/// Returns whether the user was and is on the same other ticket.
+fn continues(away: &Answer, now: &Answer) -> bool {
+    matches!((away, now), (Answer::Other(away), Answer::Other(now)) if away == now)
+}
+
 /// Returns the text of the toast shown once the answers are saved.
 fn summary(running: &str, period: Period, away: &Answer, now: &Answer) -> String {
     if (away, now) == (&Answer::Same, &Answer::Same) {
         return format!("continuing tracking {running}");
+    }
+    if let (Answer::Other(ticket), true) = (away, continues(away, now)) {
+        return format!("tracking {} from {}", ticket.key, time_of_day(period.from));
     }
     let duration = format_duration(period.to - period.from);
     let away = match away {
@@ -485,7 +519,7 @@ async fn apply(nirvana: &Nirvana, slot_id: i64, step: Step) -> Result<(), Nirvan
                     Some(&ticket.key),
                     ticket.connection.as_deref(),
                     None,
-                    Change::Set(to),
+                    to.map_or(Change::Skip, Change::Set),
                 )
                 .await?;
             info!(
@@ -630,9 +664,37 @@ mod tests {
         assert_eq!(
             steps(&running(), PERIOD, true, &other("OPS-241"), &Answer::Same),
             [
-                Step::Move(ticket("OPS-241"), 1060),
+                Step::Move(ticket("OPS-241"), Some(1060)),
                 Step::Start(running(), 1060),
             ]
+        );
+    }
+
+    #[test]
+    fn the_same_ticket_while_away_and_now_starts_it_when_idle() {
+        assert_eq!(
+            steps(
+                &running(),
+                PERIOD,
+                false,
+                &other("OPS-241"),
+                &other("OPS-241")
+            ),
+            [Step::Start(ticket("OPS-241"), 100)]
+        );
+    }
+
+    #[test]
+    fn the_same_ticket_from_the_slot_start_moves_the_running_slot() {
+        assert_eq!(
+            steps(
+                &running(),
+                PERIOD,
+                true,
+                &other("OPS-241"),
+                &other("OPS-241")
+            ),
+            [Step::Move(ticket("OPS-241"), None)]
         );
     }
 
@@ -665,6 +727,10 @@ mod tests {
         assert_eq!(
             summary(RUNNING, PERIOD, &Answer::Neither, &Answer::Neither),
             "left out 16m away · tracking stopped"
+        );
+        assert_eq!(
+            summary(RUNNING, PERIOD, &other("OPS-241"), &other("OPS-241")),
+            format!("tracking OPS-241 from {}", time_of_day(PERIOD.from))
         );
     }
 
@@ -783,6 +849,19 @@ mod tests {
     }
 
     #[test]
+    fn the_same_ticket_while_away_and_now_previews_it_running_from_the_period() {
+        let mut dialog = dialog(40, Choice::Other, Choice::Other);
+        dialog.now_pick.type_key("OPS-241".into());
+        assert_eq!(
+            dialog.preview(),
+            [
+                Part::new(Segment::Tracked(RUNNING), 40, Some(100), 6),
+                Part::new(Segment::Running("OPS-241"), 100, None, 23),
+            ]
+        );
+    }
+
+    #[test]
     fn a_slot_started_with_the_period_previews_nothing_before_it() {
         assert_eq!(
             dialog(100, Choice::Neither, Choice::Same).preview(),
@@ -791,6 +870,14 @@ mod tests {
                 Part::new(Segment::Running(RUNNING), 1060, None, 7),
             ]
         );
+    }
+
+    #[test]
+    fn the_same_typed_key_is_loaded_once() {
+        let mut dialog = dialog(40, Choice::Other, Choice::Other);
+        assert_eq!(dialog.typed_keys(), ["OPS-241", "NIR-9"]);
+        dialog.now_pick.type_key("ops-241".into());
+        assert_eq!(dialog.typed_keys(), ["OPS-241"]);
     }
 
     #[test]

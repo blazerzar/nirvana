@@ -291,7 +291,9 @@ decisions here (rounding, single active connection, …).
   save`, disabled until something else has a ticket. Saving stops the slot
   at A unless working, adds a slot on the other ticket from A to B, and
   starts the chosen ticket at B (or stops at B when working and stopping).
-  The away time starts at the earliest when the slot started. When it starts
+  When something else has the same ticket for both, it is one slot started
+  at A instead ("tracking X from A"). The away time starts at the earliest
+  when the slot started. When it starts
   with the slot, nothing is left before it: something else moves the slot to
   the other ticket and stops it at B, a break deletes it. Typed keys are
   loaded before any slot changes. Saving fails when a typed ticket is not
@@ -304,7 +306,8 @@ decisions here (rounding, single active connection, …).
   and the time from B, 6 to 16 to 7 wide as in the design, whatever the
   times. Parts that stay one slot are
   joined and as wide as the parts they cover: working joins the slot
-  through B, working and continuing shows
+  through B, the same other ticket for both shows it running from A,
+  working and continuing shows
   one running slot, and a break and stopping shows one untracked part from
   A. Kept or logged time is accent subtle,
   the ticket from B is accent, a missing ticket is "pick a ticket" with a

@@ -61,15 +61,15 @@ pub(in crate::gui) struct Row<'a> {
     pub(in crate::gui) status: Option<Status<'a>>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(in crate::gui) enum Status<'a> {
     Sending,
     /// Every slot was sent.
     Sent,
-    /// Some slots were sent, with the error of a slot that failed.
-    Partial(Option<&'a str>),
-    /// No slot was sent and a slot failed, with its error.
-    Failed(&'a str),
+    /// Some slots were sent, with the distinct errors of the slots that failed.
+    Partial(Vec<&'a str>),
+    /// No slot was sent and some failed, with their distinct errors.
+    Failed(Vec<&'a str>),
 }
 
 /// What the publishes made while the modal was open sent.
@@ -229,18 +229,20 @@ impl State {
 
 impl Outcome {
     /// Returns the status of a ticket's slots: sent when all were sent,
-    /// partial when only some were, and failed when none was and one failed.
+    /// partial when only some were, and failed when none was and some failed.
     fn status(&self, slot_ids: &[i64]) -> Option<Status<'_>> {
-        let error = slot_ids
-            .iter()
-            .find_map(|id| self.failed.get(id))
-            .map(String::as_str);
+        let mut errors: Vec<&str> = Vec::new();
+        for error in slot_ids.iter().filter_map(|id| self.failed.get(id)) {
+            if !errors.contains(&error.as_str()) {
+                errors.push(error);
+            }
+        }
         let sent = slot_ids.iter().filter(|id| self.sent.contains(id)).count();
-        match (sent, error) {
-            (0, None) => None,
-            (0, Some(error)) => Some(Status::Failed(error)),
-            (sent, _) if sent == slot_ids.len() => Some(Status::Sent),
-            (_, error) => Some(Status::Partial(error)),
+        match sent {
+            0 if errors.is_empty() => None,
+            0 => Some(Status::Failed(errors)),
+            sent if sent == slot_ids.len() => Some(Status::Sent),
+            _ => Some(Status::Partial(errors)),
         }
     }
 }
@@ -401,7 +403,10 @@ mod tests {
     #[test]
     fn status_is_failed_when_no_slot_was_sent() {
         let outcome = outcome(&[], &[2]);
-        assert_eq!(outcome.status(&[2, 3]), Some(Status::Failed("timed out")));
+        assert_eq!(
+            outcome.status(&[2, 3]),
+            Some(Status::Failed(vec!["timed out"]))
+        );
     }
 
     #[test]
@@ -409,7 +414,17 @@ mod tests {
         let outcome = outcome(&[1], &[2]);
         assert_eq!(
             outcome.status(&[1, 2]),
-            Some(Status::Partial(Some("timed out")))
+            Some(Status::Partial(vec!["timed out"]))
+        );
+    }
+
+    #[test]
+    fn status_has_every_distinct_error_once() {
+        let mut outcome = outcome(&[], &[1, 2, 3]);
+        outcome.failed.insert(3, "under 60 s".to_owned());
+        assert_eq!(
+            outcome.status(&[1, 2, 3]),
+            Some(Status::Failed(vec!["timed out", "under 60 s"]))
         );
     }
 
@@ -417,7 +432,7 @@ mod tests {
     fn status_is_sent_only_when_every_slot_was_sent() {
         let outcome = outcome(&[1, 2], &[]);
         assert_eq!(outcome.status(&[1, 2]), Some(Status::Sent));
-        assert_eq!(outcome.status(&[1, 3]), Some(Status::Partial(None)));
+        assert_eq!(outcome.status(&[1, 3]), Some(Status::Partial(vec![])));
         assert_eq!(outcome.status(&[3]), None);
     }
 

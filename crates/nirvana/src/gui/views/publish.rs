@@ -169,21 +169,19 @@ fn ticket_row<'a>(row: &TicketRow<'a>, phase: Phase) -> Element<'a, Message> {
                 }
             }))
             .into(),
-        (phase != Phase::Review).then(|| status(row.status)),
+        (phase != Phase::Review).then(|| status(row.status.as_ref())),
     );
-    let error = match (phase, row.status) {
-        (Phase::Done, Some(Status::Failed(error) | Status::Partial(Some(error)))) => {
-            Some(error_line(error))
-        }
-        _ => None,
+    let errors: &[&str] = match (phase, &row.status) {
+        (Phase::Done, Some(Status::Failed(errors) | Status::Partial(errors))) => errors,
+        _ => &[],
     };
     Column::new()
         .push(container(line).padding([spacing::S050, spacing::S0]))
-        .push(error)
+        .extend(errors.iter().map(|error| error_line(error)))
         .into()
 }
 
-fn status<'a>(status: Option<Status<'a>>) -> Element<'a, Message> {
+fn status<'a>(status: Option<&Status<'a>>) -> Element<'a, Message> {
     let (label, color): (&str, fn(&Tokens) -> Color) = match status {
         None => ("", |tokens| tokens.text_tertiary),
         Some(Status::Sending) => ("sending", |tokens| tokens.text_secondary),

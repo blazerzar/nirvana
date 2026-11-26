@@ -3,11 +3,14 @@ use std::cell::Cell;
 use iced::widget::canvas::{self, Canvas, LineDash, Path, Stroke};
 use iced::{Color, Element, Length, Point, Rectangle, Renderer, Size, Theme, mouse};
 
-use crate::gui::design_system::tokens;
+use crate::gui::design_system::{Tokens, tokens};
 
-/// A dashed `border_default` border filling its space, to stack over content.
-pub(in crate::gui) fn dashed_border<'a, Message: 'a>(radius: f32) -> Element<'a, Message> {
-    Canvas::new(DashedBorder { radius })
+/// A dashed border filling its space, to stack over content.
+pub(in crate::gui) fn dashed_border<'a, Message: 'a>(
+    radius: f32,
+    color: fn(&Tokens) -> Color,
+) -> Element<'a, Message> {
+    Canvas::new(DashedBorder { radius, color })
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
@@ -15,6 +18,7 @@ pub(in crate::gui) fn dashed_border<'a, Message: 'a>(radius: f32) -> Element<'a,
 
 struct DashedBorder {
     radius: f32,
+    color: fn(&Tokens) -> Color,
 }
 
 #[derive(Default)]
@@ -34,7 +38,7 @@ impl<Message> canvas::Program<Message> for DashedBorder {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<canvas::Geometry> {
-        let color = tokens(theme).border_default;
+        let color = (self.color)(tokens(theme));
         if state.color.replace(Some(color)) != Some(color) {
             state.cache.clear();
         }

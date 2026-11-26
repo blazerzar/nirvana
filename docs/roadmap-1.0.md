@@ -341,7 +341,7 @@ thorough review to make sure we are not bringing any problems into the next stag
 - [x] Idle detection while tracking on macOS and Windows (take from main),
       shown as an empty idle modal.
 - [x] Idle modal content (v6 design).
-- [ ] Idle modal preview strip.
+- [x] Idle modal preview strip.
 - [ ] Idle detection on Linux.
 - [ ] Not tracking reminder.
 - [ ] GUI will have its own settings that are related to the GUI application.

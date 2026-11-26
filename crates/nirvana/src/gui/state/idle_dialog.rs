@@ -11,15 +11,16 @@ use crate::time::format_duration;
 
 const SAVE_FAILED: &str = "couldn't save the idle time";
 const TRACKING_CHANGED: &str = "tracking changed while you were away";
+const BEFORE_PORTION: u16 = 6;
+const AWAY_PORTION: u16 = 16;
+const NOW_PORTION: u16 = 7;
 
 /// The idle period of the running slot and the answers to what the user did
 /// while away and does now.
 pub(in crate::gui) struct Dialog {
     period: Period,
     slot_id: i64,
-    /// Whether the slot started when the user went idle, so nothing of it
-    /// is left before the period.
-    starts_with_slot: bool,
+    started_at: i64,
     running_key: String,
     running_connection_id: Option<i64>,
     away: Choice,
@@ -37,6 +38,40 @@ pub(in crate::gui) enum Choice {
     Same,
     Other,
     Neither,
+}
+
+/// What a part of the period becomes once the answers are saved.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(in crate::gui) enum Segment<'a> {
+    /// Time logged to the ticket.
+    Tracked(&'a str),
+    /// The ticket tracked from when the user is back.
+    Running(&'a str),
+    /// Another ticket, without a key yet.
+    Unpicked,
+    /// Time that is not tracked.
+    Untracked,
+}
+
+/// A part of the preview from `from` to `to`, or on from `from` when `to` is
+/// `None`, `portion` of the preview wide.
+#[derive(Debug, PartialEq)]
+pub(in crate::gui) struct Part<'a> {
+    pub(in crate::gui) segment: Segment<'a>,
+    pub(in crate::gui) from: i64,
+    pub(in crate::gui) to: Option<i64>,
+    pub(in crate::gui) portion: u16,
+}
+
+impl<'a> Part<'a> {
+    fn new(segment: Segment<'a>, from: i64, to: Option<i64>, portion: u16) -> Self {
+        Self {
+            segment,
+            from,
+            to,
+            portion,
+        }
+    }
 }
 
 /// A ticket picked from the recent tickets, or a typed key.
@@ -99,7 +134,7 @@ impl Dialog {
                 to: period.to,
             },
             slot_id: running.model.id,
-            starts_with_slot: period.from <= started_at,
+            started_at,
             running_key: running.ticket.ticket_key.clone(),
             running_connection_id: running.ticket.connection_id,
             away: Choice::default(),
@@ -141,6 +176,69 @@ impl Dialog {
 
     pub(in crate::gui) fn period(&self) -> Period {
         self.period
+    }
+
+    /// Returns whether the slot started when the user went idle, so nothing
+    /// of it is left before the period.
+    fn starts_with_slot(&self) -> bool {
+        self.period.from == self.started_at
+    }
+
+    /// Returns the slot from its start, the period and the time from when the
+    /// user is back as they are once the answers are saved, with the parts
+    /// that stay one slot joined.
+    pub(in crate::gui) fn preview(&self) -> Vec<Part<'_>> {
+        let Period { from, to } = self.period;
+        let running = self.running_key.as_str();
+        let kept = self.away == Choice::Same;
+        let before_portion = if self.starts_with_slot() {
+            0
+        } else {
+            BEFORE_PORTION
+        };
+        let (away_from, away_portion) = if kept {
+            (self.started_at, before_portion + AWAY_PORTION)
+        } else {
+            (from, AWAY_PORTION)
+        };
+        let mut parts = Vec::new();
+        if !kept && before_portion > 0 {
+            parts.push(Part::new(
+                Segment::Tracked(running),
+                self.started_at,
+                Some(from),
+                before_portion,
+            ));
+        }
+        match (self.away, self.now) {
+            (Choice::Same, Choice::Same) => parts.push(Part::new(
+                Segment::Running(running),
+                away_from,
+                None,
+                away_portion + NOW_PORTION,
+            )),
+            (Choice::Neither, Choice::Neither) => parts.push(Part::new(
+                Segment::Untracked,
+                from,
+                None,
+                AWAY_PORTION + NOW_PORTION,
+            )),
+            _ => parts.extend([
+                Part::new(
+                    segment(self.away, &self.away_pick, running, Segment::Tracked),
+                    away_from,
+                    Some(to),
+                    away_portion,
+                ),
+                Part::new(
+                    segment(self.now, &self.now_pick, running, Segment::Running),
+                    to,
+                    None,
+                    NOW_PORTION,
+                ),
+            ]),
+        }
+        parts
     }
 
     pub(in crate::gui) fn running_key(&self) -> &str {
@@ -201,7 +299,7 @@ impl Dialog {
         self.saving = true;
         let typed = self.typed_keys();
         let (period, slot_id, starts_with_slot) =
-            (self.period, self.slot_id, self.starts_with_slot);
+            (self.period, self.slot_id, self.starts_with_slot());
         let (key, connection_id) = (self.running_key.clone(), self.running_connection_id);
         Task::future(async move {
             for key in typed {
@@ -276,6 +374,19 @@ fn answer(choice: Choice, pick: &TicketPick) -> Option<Answer> {
         Choice::Other => Answer::Other(pick.ticket()?),
         Choice::Neither => Answer::Neither,
     })
+}
+
+fn segment<'a>(
+    choice: Choice,
+    pick: &'a TicketPick,
+    running: &'a str,
+    tracked: fn(&'a str) -> Segment<'a>,
+) -> Segment<'a> {
+    match choice {
+        Choice::Same => tracked(running),
+        Choice::Other => pick.key().map_or(Segment::Unpicked, tracked),
+        Choice::Neither => Segment::Untracked,
+    }
 }
 
 async fn connection_name(
@@ -563,6 +674,123 @@ mod tests {
         assert_eq!(answer(Choice::Other, &pick), None);
         pick.type_key(" ops-241 ".into());
         assert_eq!(answer(Choice::Other, &pick), Some(other("OPS-241")));
+    }
+
+    #[test]
+    fn segments_show_the_answers() {
+        let mut pick = TicketPick::default();
+        assert_eq!(
+            segment(Choice::Same, &pick, RUNNING, Segment::Tracked),
+            Segment::Tracked(RUNNING)
+        );
+        assert_eq!(
+            segment(Choice::Same, &pick, RUNNING, Segment::Running),
+            Segment::Running(RUNNING)
+        );
+        assert_eq!(
+            segment(Choice::Other, &pick, RUNNING, Segment::Tracked),
+            Segment::Unpicked
+        );
+        assert_eq!(
+            segment(Choice::Neither, &pick, RUNNING, Segment::Running),
+            Segment::Untracked
+        );
+        pick.type_key("ops-241".into());
+        assert_eq!(
+            segment(Choice::Other, &pick, RUNNING, Segment::Running),
+            Segment::Running("OPS-241")
+        );
+    }
+
+    fn dialog(started_at: i64, away: Choice, now: Choice) -> Dialog {
+        let mut away_pick = TicketPick::default();
+        away_pick.type_key("OPS-241".into());
+        let mut now_pick = TicketPick::default();
+        now_pick.type_key("NIR-9".into());
+        Dialog {
+            period: PERIOD,
+            slot_id: 1,
+            started_at,
+            running_key: RUNNING.into(),
+            running_connection_id: None,
+            away,
+            away_pick,
+            now,
+            now_pick,
+            saving: false,
+        }
+    }
+
+    #[test]
+    fn working_and_continuing_previews_one_running_slot() {
+        assert_eq!(
+            dialog(40, Choice::Same, Choice::Same).preview(),
+            [Part::new(Segment::Running(RUNNING), 40, None, 29)]
+        );
+    }
+
+    #[test]
+    fn working_previews_the_slot_kept_through_the_period() {
+        assert_eq!(
+            dialog(40, Choice::Same, Choice::Other).preview(),
+            [
+                Part::new(Segment::Tracked(RUNNING), 40, Some(1060), 22),
+                Part::new(Segment::Running("NIR-9"), 1060, None, 7),
+            ]
+        );
+    }
+
+    #[test]
+    fn another_ticket_previews_the_slot_stopped_when_idle() {
+        assert_eq!(
+            dialog(40, Choice::Other, Choice::Same).preview(),
+            [
+                Part::new(Segment::Tracked(RUNNING), 40, Some(100), 6),
+                Part::new(Segment::Tracked("OPS-241"), 100, Some(1060), 16),
+                Part::new(Segment::Running(RUNNING), 1060, None, 7),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_break_and_stopping_previews_nothing_tracked_from_the_period() {
+        assert_eq!(
+            dialog(100, Choice::Neither, Choice::Neither).preview(),
+            [Part::new(Segment::Untracked, 100, None, 23)]
+        );
+    }
+
+    #[test]
+    fn working_then_stopping_previews_the_kept_slot_then_nothing_tracked() {
+        assert_eq!(
+            dialog(40, Choice::Same, Choice::Neither).preview(),
+            [
+                Part::new(Segment::Tracked(RUNNING), 40, Some(1060), 22),
+                Part::new(Segment::Untracked, 1060, None, 7),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_break_and_stopping_previews_the_slot_before_the_period() {
+        assert_eq!(
+            dialog(40, Choice::Neither, Choice::Neither).preview(),
+            [
+                Part::new(Segment::Tracked(RUNNING), 40, Some(100), 6),
+                Part::new(Segment::Untracked, 100, None, 23),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_slot_started_with_the_period_previews_nothing_before_it() {
+        assert_eq!(
+            dialog(100, Choice::Neither, Choice::Same).preview(),
+            [
+                Part::new(Segment::Untracked, 100, Some(1060), 16),
+                Part::new(Segment::Running(RUNNING), 1060, None, 7),
+            ]
+        );
     }
 
     #[test]

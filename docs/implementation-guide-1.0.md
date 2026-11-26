@@ -299,7 +299,17 @@ decisions here (rounding, single active connection, …).
   error toast above it. A success toast tells what was saved
   ("logged 16m to X · now tracking K", or "continuing tracking K" when
   nothing changes). Esc changes nothing and shows no toast, only an info
-  log. The preview strip is not shown yet.
+  log. A preview strip below the title shows the slots as they are once
+  saved: the slot before A (left out when the slot started at A), A to B
+  and the time from B, 6 to 16 to 7 wide as in the design, whatever the
+  times. Parts that stay one slot are
+  joined and as wide as the parts they cover: working joins the slot
+  through B, working and continuing shows
+  one running slot, and a break and stopping shows one untracked part from
+  A. Kept or logged time is accent subtle,
+  the ticket from B is accent, a missing ticket is "pick a ticket" with a
+  dashed warning border, and untracked time ("away · not logged",
+  "stopped") has a dashed neutral border. The design's hatch is dropped.
 - **Toast** (`v6-toasts.jsx`) after stop, switch and publish, and for errors.
   Success, warning and error share one surface (raised bg, default border,
   3px status marker on the left, 16px status icon, message, optional detail

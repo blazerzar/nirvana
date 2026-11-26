@@ -99,7 +99,7 @@ fn no_profile_chip<'a>() -> Element<'a, Message> {
         });
     let chip = stack![
         container(label).padding([4, 8]),
-        dashed_border(radius::FULL),
+        dashed_border(radius::FULL, |tokens| tokens.border_default),
     ];
 
     container(chip).padding(padding::left(4)).into()

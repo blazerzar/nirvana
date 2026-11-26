@@ -1,21 +1,23 @@
 use iced::alignment::Vertical;
 use iced::font::Font;
 use iced::widget::text::{Span, Wrapping};
-use iced::widget::{Row, button, column, container, rich_text, row, space, span, text, text_input};
-use iced::{Border, Element, Length, Padding, Theme};
+use iced::widget::{
+    Row, button, column, container, rich_text, row, space, span, stack, text, text_input,
+};
+use iced::{Border, Color, Element, Length, Padding, Theme};
 
 use super::main::TOAST_BOTTOM;
 use super::start::input_style;
 use super::with_toast;
 use crate::gui::app::Message;
 use crate::gui::components::{
-    Button, RETURN_KEY, Size, modal, radio_option, status_icon, tracked_text,
+    Button, RETURN_KEY, Size, dashed_border, modal, radio_option, status_icon, tracked_text,
 };
 use crate::gui::design_system::typography::{
-    BODY, BODY_LG, BODY_STRONG, CAPTION, LABEL_CAPS, LABEL_STRONG, TITLE_SM,
+    BODY, BODY_LG, BODY_STRONG, CAPTION, CAPTION_STRONG, LABEL_CAPS, LABEL_STRONG, MICRO, TITLE_SM,
 };
 use crate::gui::design_system::{Tokens, radius, space as spacing, tokens};
-use crate::gui::state::idle_dialog::{self, Choice, Dialog, TicketPick};
+use crate::gui::state::idle_dialog::{self, Choice, Dialog, Part, Segment, TicketPick};
 use crate::gui::state::settings::IdleAfter;
 use crate::gui::state::start::Recent;
 use crate::gui::state::toast::{Kind, Toast};
@@ -28,6 +30,9 @@ const KEY_INPUT_HEIGHT: f32 = 24.0;
 const ICON_OFFSET: f32 = 2.0;
 const SUBTITLE_GAP: f32 = 2.0;
 const NOT_RECENT: &str = "not a recent ticket · checked when saved";
+const SEGMENT_DETAIL_ALPHA: f32 = 0.8;
+
+type TokenColor = fn(&Tokens) -> Color;
 
 /// Asks what the user did while away from the running ticket, and what they
 /// do now, with the toast over the modal so a failed save shows above it.
@@ -53,7 +58,7 @@ pub(in crate::gui) fn idle_modal<'a>(
     .size(BODY.size)
     .line_height(BODY.line_height)
     .style(tertiary);
-    let header = row![
+    let title = row![
         container(status_icon(Kind::Warning)).padding(Padding::ZERO.top(ICON_OFFSET)),
         column![
             TITLE_SM
@@ -64,6 +69,7 @@ pub(in crate::gui) fn idle_modal<'a>(
         .spacing(SUBTITLE_GAP),
     ]
     .spacing(spacing::S150);
+    let header = column![title, preview(dialog)].spacing(spacing::S150);
 
     let away = dialog.away();
     let away_options = [
@@ -145,6 +151,84 @@ pub(in crate::gui) fn idle_modal<'a>(
         toast,
         TOAST_BOTTOM,
     )
+}
+
+/// The slots as they are once the answers are saved.
+fn preview(dialog: &Dialog) -> Element<'_, Message> {
+    Row::with_children(dialog.preview().into_iter().map(segment))
+        .spacing(spacing::S050)
+        .into()
+}
+
+fn segment(part: Part<'_>) -> Element<'_, Message> {
+    let from = time_of_day(part.from);
+    let detail = match (part.segment, part.to) {
+        (Segment::Untracked, None) => from,
+        (_, Some(to)) => format!("{from}–{}", time_of_day(to)),
+        (_, None) => format!("from {from} →"),
+    };
+    let untracked = match part.to {
+        Some(_) => "away · not logged",
+        None => "stopped",
+    };
+    let (label, background, border, color): (&str, TokenColor, TokenColor, TokenColor) =
+        match part.segment {
+            Segment::Tracked(key) => (
+                key,
+                |tokens| tokens.fill_accent_subtle,
+                |tokens| tokens.border_accent,
+                |tokens| tokens.text_primary,
+            ),
+            Segment::Running(key) => (
+                key,
+                |tokens| tokens.fill_accent,
+                |tokens| tokens.border_accent,
+                |tokens| tokens.text_on_accent,
+            ),
+            Segment::Unpicked => (
+                "pick a ticket",
+                |tokens| tokens.bg_subtle,
+                |tokens| tokens.status_warning,
+                |tokens| tokens.text_primary,
+            ),
+            Segment::Untracked => (
+                untracked,
+                |_| Color::TRANSPARENT,
+                |tokens| tokens.fill_neutral_strong,
+                |tokens| tokens.text_tertiary,
+            ),
+        };
+    let is_dashed = matches!(part.segment, Segment::Unpicked | Segment::Untracked);
+    let content = column![
+        CAPTION_STRONG
+            .text(label)
+            .wrapping(Wrapping::None)
+            .style(move |theme| text::Style {
+                color: Some(color(tokens(theme))),
+            }),
+        MICRO
+            .text(detail)
+            .wrapping(Wrapping::None)
+            .style(move |theme| text::Style {
+                color: Some(color(tokens(theme)).scale_alpha(SEGMENT_DETAIL_ALPHA)),
+            }),
+    ];
+    let fill = container(content)
+        .width(Length::Fill)
+        .padding([spacing::S050, spacing::S100])
+        .clip(true)
+        .style(move |theme| {
+            let tokens = tokens(theme);
+            container::background(background(tokens)).border(Border {
+                color: border(tokens),
+                width: if is_dashed { 0.0 } else { 1.0 },
+                radius: radius::SM.into(),
+            })
+        });
+    stack![fill]
+        .push(is_dashed.then(|| dashed_border(radius::SM, border)))
+        .width(Length::FillPortion(part.portion))
+        .into()
 }
 
 fn question<'a>(

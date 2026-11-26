@@ -152,7 +152,7 @@ fn running_row(running: &Slot, now: i64, elapsed: i64) -> Element<'_, Message> {
     .align_y(Vertical::Center);
     stack![
         container(content).padding([spacing::S100, spacing::S150]),
-        dashed_border(radius::SM),
+        dashed_border(radius::SM, |tokens| tokens.border_default),
     ]
     .into()
 }
